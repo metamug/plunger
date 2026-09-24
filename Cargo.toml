@@ -1,0 +1,29 @@
+[package]
+name = "metamug-api-tester"
+version = "0.1.0"
+edition = "2021"
+description = "Metamug API Tester — a quick, lightweight desktop tool for sending HTTP requests, with no CORS restrictions."
+
+[[bin]]
+name = "metamug-api-tester"
+path = "src/main.rs"
+
+[dependencies]
+eframe = { version = "0.29", default-features = false, features = ["default_fonts", "glow", "persistence"] }
+egui = "0.29"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+egui_json_tree = "0.8"
+rusqlite = { version = "0.32", features = ["bundled"] }
+directories = "5"
+shell-words = "1"
+rfd = { version = "0.15", default-features = false }
+time = { version = "0.3", features = ["formatting"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
