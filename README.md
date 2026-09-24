@@ -6,7 +6,18 @@ Built with [egui](https://github.com/emilk/egui) — no webview, no bundled brow
 
 ## What it is not
 
-Not a Postman replacement. No collections, no environments, no scripting, no history. If you need those, use Postman. This is for the thirty-second "let me just check this one endpoint" moment.
+Not a Postman replacement. No collections, no environments, no scripting. If you need those, use Postman. This is for the thirty-second "let me just check this one endpoint" moment.
+
+What it does have, because it earns its place in that thirty seconds: a request history sidebar (local SQLite), curl and HAR import, and `localhost:3000/api`-style URLs (a missing scheme is filled in: `http://` for local/private hosts, `https://` otherwise).
+
+## Development
+
+```bash
+cargo test      # unit tests for parsing, request building, history, JSON highlighting
+cargo clippy --all-targets
+```
+
+Layout: `src/app/` is the UI (one file per panel), `src/http.rs` builds and sends requests, `src/history.rs` is the SQLite store, `src/curl_import.rs` parses curl/HAR.
 
 ## Building
 

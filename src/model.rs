@@ -49,6 +49,18 @@ impl Default for PersistedState {
     }
 }
 
+pub type SendResult = Result<ResponseData, String>;
+
+/// What the response area should show. One enum instead of two `Option`s that
+/// were only ever meant to be set one at a time.
+#[derive(Default)]
+pub enum Outcome {
+    #[default]
+    Empty,
+    Response(ResponseData),
+    Failed(String),
+}
+
 pub struct ResponseData {
     pub status: u16,
     pub status_text: String,

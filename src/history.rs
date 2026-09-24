@@ -66,7 +66,10 @@ impl History {
             let _ = std::fs::create_dir_all(parent);
         }
 
-        let conn = Connection::open(path)?;
+        Self::with_connection(Connection::open(path)?)
+    }
+
+    fn with_connection(conn: Connection) -> rusqlite::Result<Self> {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS requests (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -141,5 +144,62 @@ impl History {
     pub fn clear(&self) -> rusqlite::Result<()> {
         self.conn.execute("DELETE FROM requests", [])?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn history() -> History {
+        History::with_connection(Connection::open_in_memory().unwrap()).unwrap()
+    }
+
+    fn state(url: &str, mode: BodyMode) -> PersistedState {
+        PersistedState {
+            method: "POST".into(),
+            url: url.into(),
+            body_mode: mode,
+            json_body: "{\"k\":1}".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn insert_then_list_newest_first_and_round_trips_state() {
+        let h = history();
+        h.insert(&state("http://a", BodyMode::Json), Some(200), Some(12)).unwrap();
+        h.insert(&state("http://b", BodyMode::Raw), None, None).unwrap();
+
+        let rows = h.list_recent(10).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].url, "http://b");
+        assert_eq!(rows[0].status, None);
+        assert_eq!(rows[1].status, Some(200));
+        assert_eq!(rows[1].elapsed_ms, Some(12));
+
+        let restored = rows[1].to_persisted_state();
+        assert_eq!(restored.url, "http://a");
+        assert!(restored.body_mode == BodyMode::Json);
+        assert_eq!(restored.json_body, "{\"k\":1}");
+    }
+
+    #[test]
+    fn list_recent_honours_limit_and_clear_empties() {
+        let h = history();
+        for i in 0..5 {
+            h.insert(&state(&format!("http://x/{i}"), BodyMode::None), Some(200), Some(1)).unwrap();
+        }
+        assert_eq!(h.list_recent(3).unwrap().len(), 3);
+        h.clear().unwrap();
+        assert!(h.list_recent(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn body_mode_string_round_trip() {
+        for m in [BodyMode::None, BodyMode::Json, BodyMode::UrlEncoded, BodyMode::Raw] {
+            assert!(body_mode_from_str(body_mode_to_str(m)) == m);
+        }
+        assert!(body_mode_from_str("garbage") == BodyMode::None);
     }
 }

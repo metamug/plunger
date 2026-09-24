@@ -119,7 +119,11 @@ struct HarPostData {
 /// list rather than guessing which one the user wants.
 pub fn parse_har(path: &Path) -> Result<Vec<ParsedRequest>, String> {
     let content = std::fs::read_to_string(path).map_err(|e| format!("Could not read file: {e}"))?;
-    let har: Har = serde_json::from_str(&content).map_err(|e| format!("Not a valid HAR file: {e}"))?;
+    parse_har_str(&content)
+}
+
+fn parse_har_str(content: &str) -> Result<Vec<ParsedRequest>, String> {
+    let har: Har = serde_json::from_str(content).map_err(|e| format!("Not a valid HAR file: {e}"))?;
 
     Ok(har
         .log
@@ -145,4 +149,65 @@ pub fn parse_har(path: &Path) -> Result<Vec<ParsedRequest>, String> {
             }
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_typical_browser_copy_as_curl() {
+        let r = parse_curl(
+            r#"curl 'https://api.example.com/items?x=1' -H 'Accept: application/json' -H "Authorization: Bearer abc" --compressed -X put --data-raw '{"a":"b c"}'"#,
+        )
+        .unwrap();
+        assert_eq!(r.method, "PUT");
+        assert_eq!(r.url, "https://api.example.com/items?x=1");
+        assert_eq!(r.headers.len(), 2);
+        assert_eq!(r.headers[1], ("Authorization".to_string(), "Bearer abc".to_string()));
+        assert_eq!(r.body.as_deref(), Some(r#"{"a":"b c"}"#));
+    }
+
+    #[test]
+    fn data_implies_post_and_no_data_implies_get() {
+        assert_eq!(parse_curl("curl https://a.com -d x=1").unwrap().method, "POST");
+        assert_eq!(parse_curl("curl https://a.com").unwrap().method, "GET");
+    }
+
+    #[test]
+    fn supports_equals_forms_and_optional_curl_prefix() {
+        let r = parse_curl("https://a.com --request=DELETE --header=X-A:1 --data=raw").unwrap();
+        assert_eq!(r.method, "DELETE");
+        assert_eq!(r.headers, vec![("X-A".to_string(), "1".to_string())]);
+        assert_eq!(r.body.as_deref(), Some("raw"));
+    }
+
+    #[test]
+    fn unknown_flags_do_not_swallow_the_url() {
+        let r = parse_curl("curl -k -s https://a.com").unwrap();
+        assert_eq!(r.url, "https://a.com");
+    }
+
+    #[test]
+    fn errors_are_reported() {
+        assert!(parse_curl("   ").is_err());
+        assert!(parse_curl("curl -H 'A: b'").is_err());
+        assert!(parse_curl("curl 'unterminated").is_err());
+    }
+
+    #[test]
+    fn har_parses_entries_and_drops_pseudo_headers() {
+        let har = r#"{"log":{"entries":[
+            {"request":{"method":"post","url":"https://a.com/x",
+              "headers":[{"name":":authority","value":"a.com"},{"name":"Accept","value":"*/*"}],
+              "postData":{"text":"hello"}}},
+            {"request":{"method":"GET","url":"https://a.com/y"}}]}}"#;
+        let v = parse_har_str(har).unwrap();
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].method, "POST");
+        assert_eq!(v[0].headers, vec![("Accept".to_string(), "*/*".to_string())]);
+        assert_eq!(v[0].body.as_deref(), Some("hello"));
+        assert!(v[1].body.is_none());
+        assert!(parse_har_str("{}").is_err());
+    }
 }

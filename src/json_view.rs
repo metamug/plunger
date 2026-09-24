@@ -142,3 +142,31 @@ pub fn highlight_json(text: &str) -> egui::text::LayoutJob {
 
     job
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pretty_prints_valid_json_and_passes_through_invalid() {
+        let (pretty, value) = pretty_json_if_possible("{\"a\":[1,2]}");
+        assert!(pretty.contains("\n  \"a\""));
+        assert!(value.is_some());
+        let (raw, none) = pretty_json_if_possible("not json");
+        assert_eq!(raw, "not json");
+        assert!(none.is_none());
+    }
+
+    #[test]
+    fn highlighter_never_drops_or_reorders_text() {
+        for text in [
+            "",
+            "{\"a\": [1, -2.5e+3, true, null, \"x\\\"y\"]}",
+            "{\"unterminated\": \"abc",
+            "{\"emoji\": \"héllo 🚀 世界\"}",
+            "garbage ~!@ {{ ]] 12abc",
+        ] {
+            assert_eq!(highlight_json(text).text, text, "{text:?}");
+        }
+    }
+}
