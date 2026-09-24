@@ -1,5 +1,17 @@
 use crate::model::{BodyMode, PersistedState};
+use crate::redact::{redact_headers_text, redact_url};
 use rusqlite::{params, Connection};
+use std::path::PathBuf;
+
+/// Oldest rows beyond this are pruned on insert so the database can't grow forever.
+const MAX_ROWS: i64 = 1000;
+
+/// Per-user application data directory (history database, crash log).
+pub fn app_data_dir() -> PathBuf {
+    directories::ProjectDirs::from("", "", "Metamug API Tester")
+        .map(|dirs| dirs.data_dir().to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."))
+}
 
 #[derive(Clone)]
 pub struct HistoryEntry {
@@ -28,6 +40,8 @@ impl HistoryEntry {
             json_body: self.json_body.clone(),
             urlencoded_body: self.urlencoded_body.clone(),
             raw_body: self.raw_body.clone(),
+            // Options are session-wide; callers overlay them with `with_options_from`.
+            ..PersistedState::default()
         }
     }
 }
@@ -58,15 +72,31 @@ impl History {
     /// Opens (creating if needed) the SQLite database in the platform's
     /// standard per-app data directory, next to eframe's own persistence file.
     pub fn open() -> rusqlite::Result<Self> {
-        let path = directories::ProjectDirs::from("", "", "Metamug API Tester")
-            .map(|dirs| dirs.data_dir().join("history.sqlite3"))
-            .unwrap_or_else(|| std::path::PathBuf::from("history.sqlite3"));
+        let dir = app_data_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        let history = Self::with_connection(Connection::open(dir.join("history.sqlite3"))?)?;
+        history.scrub_credentials()?;
+        Ok(history)
+    }
 
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+    /// Redacts rows written before redaction existed. Idempotent, so it is
+    /// cheap to run on every start.
+    fn scrub_credentials(&self) -> rusqlite::Result<()> {
+        let rows: Vec<(i64, String, String)> = self
+            .conn
+            .prepare("SELECT id, url, headers_text FROM requests")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (id, url, headers) in rows {
+            let (clean_url, clean_headers) = (redact_url(&url), redact_headers_text(&headers));
+            if clean_url != url || clean_headers != headers {
+                self.conn.execute(
+                    "UPDATE requests SET url = ?1, headers_text = ?2 WHERE id = ?3",
+                    params![clean_url, clean_headers, id],
+                )?;
+            }
         }
-
-        Self::with_connection(Connection::open(path)?)
+        Ok(())
     }
 
     fn with_connection(conn: Connection) -> rusqlite::Result<Self> {
@@ -105,8 +135,8 @@ impl History {
             params![
                 created_at,
                 state.method,
-                state.url,
-                state.headers_text,
+                redact_url(&state.url),
+                redact_headers_text(&state.headers_text),
                 body_mode_to_str(state.body_mode),
                 state.json_body,
                 state.urlencoded_body,
@@ -114,6 +144,10 @@ impl History {
                 status.map(|s| s as i64),
                 elapsed_ms.map(|e| e as i64),
             ],
+        )?;
+        self.conn.execute(
+            "DELETE FROM requests WHERE id NOT IN (SELECT id FROM requests ORDER BY id DESC LIMIT ?1)",
+            params![MAX_ROWS],
         )?;
         Ok(())
     }
@@ -193,6 +227,48 @@ mod tests {
         assert_eq!(h.list_recent(3).unwrap().len(), 3);
         h.clear().unwrap();
         assert!(h.list_recent(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn credentials_never_reach_the_database() {
+        let h = history();
+        let mut s = state("https://bob:pw@a.com/x?token=T&page=1", BodyMode::None);
+        s.headers_text = "Accept: */*\nAuthorization: Bearer SECRET\nCookie: sid=1".into();
+        h.insert(&s, Some(200), Some(1)).unwrap();
+
+        let row = &h.list_recent(1).unwrap()[0];
+        assert_eq!(row.url, "https://bob@a.com/x?token=&page=1");
+        assert_eq!(row.headers_text, "Accept: */*\nAuthorization:\nCookie:");
+        assert!(!format!("{} {}", row.url, row.headers_text).contains("SECRET"));
+    }
+
+    #[test]
+    fn rows_saved_before_redaction_existed_get_scrubbed() {
+        let h = history();
+        h.conn
+            .execute(
+                "INSERT INTO requests (created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body)
+                 VALUES ('t', 'GET', 'https://a.com/?api_key=OLD', 'Authorization: Bearer OLD', 'None', '', '', '')",
+                [],
+            )
+            .unwrap();
+        h.scrub_credentials().unwrap();
+        h.scrub_credentials().unwrap(); // idempotent
+        let row = &h.list_recent(1).unwrap()[0];
+        assert_eq!(row.url, "https://a.com/?api_key=");
+        assert_eq!(row.headers_text, "Authorization:");
+    }
+
+    #[test]
+    fn old_rows_are_pruned_beyond_the_cap() {
+        let h = history();
+        for i in 0..(MAX_ROWS + 25) {
+            h.insert(&state(&format!("http://x/{i}"), BodyMode::None), Some(200), Some(1)).unwrap();
+        }
+        let rows = h.list_recent(MAX_ROWS + 100).unwrap();
+        assert_eq!(rows.len() as i64, MAX_ROWS);
+        assert_eq!(rows[0].url, format!("http://x/{}", MAX_ROWS + 24));
+        assert_eq!(rows.last().unwrap().url, "http://x/25");
     }
 
     #[test]

@@ -1,12 +1,13 @@
 use super::ApiTesterApp;
 use crate::http::format_bytes;
 use crate::model::{Outcome, ResponseTab};
-use crate::theme::{copy_icon_button, status_badge};
+use crate::theme::{copy_icon_button, status_badge, AMBER};
 use eframe::egui;
 use egui_json_tree::{DefaultExpand, JsonTree};
 use std::time::{Duration, Instant};
 
 const COPIED_FLASH: Duration = Duration::from_millis(1200);
+const LARGE_JSON_BYTES: usize = 200 * 1024;
 
 impl ApiTesterApp {
     pub(super) fn render_response_section(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -29,6 +30,14 @@ impl ApiTesterApp {
             ui.label(format_bytes(resp.size_bytes));
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("Save…").on_hover_text("Save the body to a file").clicked() {
+                    let name = if resp.json_value.is_some() { "response.json" } else { "response.txt" };
+                    if let Some(path) = rfd::FileDialog::new().set_file_name(name).save_file() {
+                        self.save_error = std::fs::write(&path, &resp.body)
+                            .err()
+                            .map(|e| format!("Could not save file: {e}"));
+                    }
+                }
                 if copy_icon_button(ui) {
                     ui.output_mut(|o| o.copied_text = resp.body.clone());
                     self.copied_flash = Some(Instant::now());
@@ -39,6 +48,17 @@ impl ApiTesterApp {
                 }
             });
         });
+
+        if resp.truncated {
+            let total = resp.total_size.map(|t| format!(" of {}", format_bytes(t as usize))).unwrap_or_default();
+            ui.colored_label(
+                AMBER,
+                format!("Response too large: showing the first {}{total}.", format_bytes(resp.size_bytes)),
+            );
+        }
+        if let Some(err) = &self.save_error {
+            ui.colored_label(egui::Color32::from_rgb(230, 100, 90), err);
+        }
 
         ui.add_space(6.0);
         ui.horizontal(|ui| {
@@ -52,9 +72,13 @@ impl ApiTesterApp {
             .show(ui, |ui| match self.response_tab {
                 ResponseTab::Body => {
                     if let Some(value) = &resp.json_value {
-                        JsonTree::new("response-json-tree", value)
-                            .default_expand(DefaultExpand::All)
-                            .show(ui);
+                        // Expanding every node of a big document stalls the UI.
+                        let expand = if resp.body.len() > LARGE_JSON_BYTES {
+                            DefaultExpand::ToLevel(1)
+                        } else {
+                            DefaultExpand::All
+                        };
+                        JsonTree::new("response-json-tree", value).default_expand(expand).show(ui);
                     } else {
                         // `&str` is a read-only text buffer: selectable and copyable,
                         // but no per-frame clone of the body and no accidental edits.

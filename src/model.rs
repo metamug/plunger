@@ -13,6 +13,7 @@ pub enum BodyMode {
 pub enum RequestTab {
     Headers,
     Body,
+    Options,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -33,6 +34,9 @@ pub struct PersistedState {
     pub json_body: String,
     pub urlencoded_body: String,
     pub raw_body: String,
+    pub timeout_secs: u64,
+    pub follow_redirects: bool,
+    pub insecure_tls: bool,
 }
 
 impl Default for PersistedState {
@@ -45,7 +49,21 @@ impl Default for PersistedState {
             json_body: String::from("{\n  \"key\": \"value\"\n}"),
             urlencoded_body: String::new(),
             raw_body: String::new(),
+            timeout_secs: 20,
+            follow_redirects: true,
+            insecure_tls: false,
         }
+    }
+}
+
+impl PersistedState {
+    /// Request options (timeout, redirects, TLS) belong to the session, not to
+    /// a request, so loading a history entry must not change them.
+    pub fn with_options_from(mut self, current: &PersistedState) -> Self {
+        self.timeout_secs = current.timeout_secs;
+        self.follow_redirects = current.follow_redirects;
+        self.insecure_tls = current.insecure_tls;
+        self
     }
 }
 
@@ -69,6 +87,10 @@ pub struct ResponseData {
     pub headers: Vec<(String, String)>,
     pub body: String,
     pub json_value: Option<serde_json::Value>,
+    /// True when the body was cut at the read cap; `total_size` is the
+    /// server-reported length when it sent one.
+    pub truncated: bool,
+    pub total_size: Option<u64>,
 }
 
 /// A parsed request — the common output shape for both curl and HAR import,

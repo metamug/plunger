@@ -10,6 +10,26 @@ Not a Postman replacement. No collections, no environments, no scripting. If you
 
 What it does have, because it earns its place in that thirty seconds: a request history sidebar (local SQLite), curl and HAR import, and `localhost:3000/api`-style URLs (a missing scheme is filled in: `http://` for local/private hosts, `https://` otherwise).
 
+### Options tab
+
+Per-session settings, kept when you load a request from history: timeout (1-600 s, default 20), follow redirects, and **Skip TLS certificate verification** for local APIs behind a self-signed certificate. When that is on, the tab is labelled "Options (TLS check off)" so it can't be forgotten.
+
+### What is and isn't written to disk
+
+- The Bearer field is never saved.
+- Credential-looking headers (`Authorization`, `Cookie`, `X-Api-Key`, anything containing `token`/`secret`/`password`) are blanked before being written to history or the saved form state, and credential-looking query parameters and `user:password@` URL parts are blanked in history. A blanked credential header is not sent.
+- Request bodies are stored as typed. Don't paste secrets into a body you don't want in the local history; **Clear** deletes it. History keeps the newest 1000 requests.
+- Responses over 10 MB are cut off, with a notice showing the real size; large JSON opens collapsed one level deep instead of fully expanded.
+- HTTPS uses the operating system's certificate store, so corporate CAs work.
+- A crash writes `crash.log` next to the history database (`%APPDATA%\Metamug API Tester\data\` on Windows).
+
+### Known limits
+
+- **Cancel** stops the app waiting; the underlying request finishes or times out in the background (`reqwest::blocking` can't be interrupted).
+- No multipart/file upload, cookie jar, or query-parameter editor.
+- HTTP/1.1 only.
+- Windows is the only platform tested.
+
 ## Development
 
 ```bash
@@ -39,5 +59,7 @@ The binary is at `target/x86_64-pc-windows-gnu/release/metamug-api-tester.exe` (
 2. Zip the `.exe` as `metamug-api-tester-windows.zip`
 3. Upload to `s3://metamug-static-site/downloads/metamug-api-tester-windows.zip`
 4. Invalidate CloudFront for `/downloads/metamug-api-tester-windows.zip`
+
+Size: the exe is about 5.5 MB and the zip about 2.9 MB.
 
 It's unsigned, so Windows SmartScreen will show an "Unknown publisher" warning on first run — expected until/unless a code-signing certificate is added. Not blocking, just a known first-run speed bump.

@@ -7,6 +7,7 @@ mod response_panel;
 use crate::history::{History, HistoryEntry};
 use crate::http::{build_request, parse_headers, send_request};
 use crate::model::{BodyMode, Outcome, ParsedRequest, PersistedState, RequestTab, ResponseTab, SendResult};
+use crate::redact::redact_headers_text;
 use crate::theme::{self, card};
 use eframe::egui;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -57,6 +58,7 @@ pub struct ApiTesterApp {
     status: RequestStatus,
     outcome: Outcome,
     copied_flash: Option<Instant>,
+    save_error: Option<String>,
 
     history: Option<History>,
     history_entries: Vec<HistoryEntry>,
@@ -82,6 +84,7 @@ impl ApiTesterApp {
             status: RequestStatus::Idle,
             outcome: Outcome::Empty,
             copied_flash: None,
+            save_error: None,
             history,
             history_entries,
             import: ImportState::default(),
@@ -128,7 +131,7 @@ impl ApiTesterApp {
     }
 
     fn load_history_entry(&mut self, entry: &HistoryEntry) {
-        self.state = entry.to_persisted_state();
+        self.state = entry.to_persisted_state().with_options_from(&self.state);
         self.header_rows = parse_headers(&self.state.headers_text);
         self.outcome = Outcome::Empty;
     }
@@ -145,6 +148,7 @@ impl ApiTesterApp {
             sent: self.state.clone(),
         };
         self.outcome = Outcome::Empty;
+        self.save_error = None;
         send_request(req, tx);
         ctx.request_repaint();
     }
@@ -191,7 +195,11 @@ impl ApiTesterApp {
 
 impl eframe::App for ApiTesterApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, eframe::APP_KEY, &self.state);
+        // Credentials in the headers table must not land in the plaintext
+        // config file (the Bearer field is never part of `state` at all).
+        let mut state = self.state.clone();
+        state.headers_text = redact_headers_text(&state.headers_text);
+        eframe::set_value(storage, eframe::APP_KEY, &state);
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -219,11 +227,14 @@ impl eframe::App for ApiTesterApp {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.request_tab, RequestTab::Headers, "Headers");
                 ui.selectable_value(&mut self.request_tab, RequestTab::Body, "Body");
+                let options_label = if self.state.insecure_tls { "Options (TLS check off)" } else { "Options" };
+                ui.selectable_value(&mut self.request_tab, RequestTab::Options, options_label);
             });
             ui.add_space(4.0);
             card(ui, |ui| match self.request_tab {
                 RequestTab::Headers => self.render_headers_tab(ui),
                 RequestTab::Body => self.render_body_tab(ui),
+                RequestTab::Options => self.render_options_tab(ui),
             });
 
             ui.add_space(10.0);

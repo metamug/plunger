@@ -1,10 +1,17 @@
 use crate::json_view::pretty_json_if_possible;
 use crate::model::{BodyMode, PersistedState, ResponseData, SendResult};
+use crate::redact::is_sensitive_header;
+use std::io::Read;
 use std::net::IpAddr;
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+/// Bodies larger than this are cut off: they'd otherwise be held in memory
+/// and laid out by the UI in full, which freezes the window.
+pub const MAX_BODY_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_REDIRECTS: usize = 10;
+const MIN_TIMEOUT_SECS: u64 = 1;
+const MAX_TIMEOUT_SECS: u64 = 600;
 
 /// A fully-resolved request, ready to hand to the network thread.
 pub struct OutgoingRequest {
@@ -12,6 +19,9 @@ pub struct OutgoingRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: Option<String>,
+    pub timeout: Duration,
+    pub follow_redirects: bool,
+    pub insecure_tls: bool,
 }
 
 pub fn parse_headers(text: &str) -> Vec<(String, String)> {
@@ -83,6 +93,9 @@ pub fn ensure_header(headers: &mut Vec<(String, String)>, name: &str, value: &st
 /// request that will actually be sent.
 pub fn build_request(state: &PersistedState, bearer_token: &str) -> OutgoingRequest {
     let mut headers = parse_headers(&state.headers_text);
+    // A credential header with an empty value is a blanked placeholder from
+    // disk (see redact.rs), not something the user meant to send.
+    headers.retain(|(k, v)| !(v.is_empty() && is_sensitive_header(k)));
     let bearer = bearer_token.trim();
     if !bearer.is_empty() {
         ensure_header(&mut headers, "Authorization", &format!("Bearer {bearer}"));
@@ -114,6 +127,9 @@ pub fn build_request(state: &PersistedState, bearer_token: &str) -> OutgoingRequ
         url: normalize_url(&state.url),
         headers,
         body,
+        timeout: Duration::from_secs(state.timeout_secs.clamp(MIN_TIMEOUT_SECS, MAX_TIMEOUT_SECS)),
+        follow_redirects: state.follow_redirects,
+        insecure_tls: state.insecure_tls,
     }
 }
 
@@ -123,9 +139,32 @@ pub fn send_request(req: OutgoingRequest, tx: Sender<SendResult>) {
     });
 }
 
+/// reqwest's own message is just "error sending request for url (...)"; the
+/// useful part (refused, DNS failure, bad certificate, timeout) is in the
+/// source chain, so join it all together.
+fn describe_error(err: &(dyn std::error::Error + 'static)) -> String {
+    let mut parts = vec![err.to_string()];
+    let mut source = err.source();
+    while let Some(e) = source {
+        let msg = e.to_string();
+        if parts.last() != Some(&msg) {
+            parts.push(msg);
+        }
+        source = e.source();
+    }
+    parts.join(": ")
+}
+
 fn execute(req: OutgoingRequest) -> SendResult {
+    let redirect = if req.follow_redirects {
+        reqwest::redirect::Policy::limited(MAX_REDIRECTS)
+    } else {
+        reqwest::redirect::Policy::none()
+    };
     let client = reqwest::blocking::Client::builder()
-        .timeout(REQUEST_TIMEOUT)
+        .timeout(req.timeout)
+        .redirect(redirect)
+        .danger_accept_invalid_certs(req.insecure_tls)
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -140,7 +179,7 @@ fn execute(req: OutgoingRequest) -> SendResult {
     }
 
     let start = Instant::now();
-    let res = builder.send().map_err(|e| e.to_string())?;
+    let res = builder.send().map_err(|e| describe_error(&e))?;
     let elapsed_ms = start.elapsed().as_millis();
 
     let status = res.status().as_u16();
@@ -157,9 +196,17 @@ fn execute(req: OutgoingRequest) -> SendResult {
         .unwrap_or("")
         .to_string();
 
-    // Read raw bytes so the reported size is the real payload size even when
-    // the body isn't valid UTF-8; decode lossily only for display.
-    let bytes = res.bytes().map_err(|e| e.to_string())?;
+    // Read raw bytes (capped) so the reported size is the real payload size
+    // even when the body isn't valid UTF-8; decode lossily only for display.
+    let total_size = res.content_length();
+    let mut bytes = Vec::new();
+    res.take(MAX_BODY_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    let truncated = bytes.len() as u64 > MAX_BODY_BYTES;
+    if truncated {
+        bytes.truncate(MAX_BODY_BYTES as usize);
+    }
     let size_bytes = bytes.len();
     let text = String::from_utf8_lossy(&bytes).into_owned();
 
@@ -179,6 +226,8 @@ fn execute(req: OutgoingRequest) -> SendResult {
         headers,
         body,
         json_value,
+        truncated,
+        total_size,
     })
 }
 
@@ -294,5 +343,119 @@ mod tests {
         let r = build_request(&state(), "");
         assert!(r.body.is_none());
         assert!(r.headers.is_empty());
+    }
+
+    #[test]
+    fn build_request_skips_blanked_credential_headers_only() {
+        let mut s = state();
+        s.headers_text = "Authorization:\nX-Api-Key: real\nAccept:".into();
+        let r = build_request(&s, "");
+        assert_eq!(
+            r.headers,
+            vec![
+                ("X-Api-Key".to_string(), "real".to_string()),
+                ("Accept".to_string(), String::new())
+            ]
+        );
+    }
+
+    #[test]
+    fn build_request_clamps_timeout_and_carries_options() {
+        let mut s = state();
+        s.timeout_secs = 0;
+        s.follow_redirects = false;
+        s.insecure_tls = true;
+        let r = build_request(&s, "");
+        assert_eq!(r.timeout, Duration::from_secs(1));
+        assert!(!r.follow_redirects && r.insecure_tls);
+        s.timeout_secs = 99_999;
+        assert_eq!(build_request(&s, "").timeout, Duration::from_secs(600));
+    }
+
+    // ---- real requests against a throwaway loopback server -----------------
+
+    use std::io::Write;
+    use std::net::TcpListener;
+
+    /// Serves exactly one canned response; returns the URL to hit.
+    fn serve_once(head: &'static str, body: Vec<u8>, stall: Option<Duration>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            if let Some(d) = stall {
+                std::thread::sleep(d);
+            }
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(&body);
+        });
+        format!("http://127.0.0.1:{port}/")
+    }
+
+    fn req(url: String) -> OutgoingRequest {
+        let mut r = build_request(&state(), "");
+        r.method = "GET".into();
+        r.url = url;
+        r
+    }
+
+    #[test]
+    fn execute_parses_a_json_response() {
+        let body = br#"{"a":1}"#.to_vec();
+        let url = serve_once(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 7\r\nConnection: close\r\n\r\n",
+            body,
+            None,
+        );
+        let r = execute(req(url)).unwrap();
+        assert_eq!(r.status, 200);
+        assert_eq!(r.size_bytes, 7);
+        assert!(r.json_value.is_some() && !r.truncated);
+    }
+
+    #[test]
+    fn execute_truncates_oversized_bodies() {
+        let extra = 100usize;
+        let total = MAX_BODY_BYTES as usize + extra;
+        let head: &'static str = Box::leak(
+            format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n")
+                .into_boxed_str(),
+        );
+        let url = serve_once(head, vec![b'a'; total], None);
+        let r = execute(req(url)).unwrap();
+        assert!(r.truncated);
+        assert_eq!(r.size_bytes as u64, MAX_BODY_BYTES);
+        assert_eq!(r.total_size, Some(total as u64));
+    }
+
+    #[test]
+    fn execute_can_stop_at_a_redirect() {
+        let url = serve_once(
+            "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/never\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            vec![],
+            None,
+        );
+        let mut r = req(url);
+        r.follow_redirects = false;
+        assert_eq!(execute(r).unwrap().status, 302);
+    }
+
+    #[test]
+    fn execute_times_out() {
+        let url = serve_once("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n", vec![], Some(Duration::from_secs(4)));
+        let mut r = req(url);
+        r.timeout = Duration::from_secs(1);
+        let started = Instant::now();
+        assert!(execute(r).is_err());
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[test]
+    fn execute_reports_the_underlying_cause_not_just_a_generic_error() {
+        let err = execute(req("http://127.0.0.1:1/".into())).err().unwrap();
+        // reqwest alone says only "error sending request for url (...)".
+        assert!(err.contains("error sending request") && err.contains("(Connect)"), "{err}");
     }
 }
