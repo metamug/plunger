@@ -1,5 +1,4 @@
 use super::ApiTesterApp;
-use crate::http::format_bytes;
 use crate::model::{Outcome, ResponseTab};
 use crate::theme::{copy_icon_button, status_badge, AMBER};
 use eframe::egui;
@@ -96,5 +95,28 @@ impl ApiTesterApp {
                     }
                 }
             });
+    }
+}
+
+fn format_bytes(n: usize) -> String {
+    if n < 1024 {
+        format!("{n} B")
+    } else if n < 1024 * 1024 {
+        format!("{:.1} KB", n as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", n as f64 / (1024.0 * 1024.0))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_bytes;
+
+    #[test]
+    fn format_bytes_picks_unit() {
+        assert_eq!(format_bytes(0), "0 B");
+        assert_eq!(format_bytes(1023), "1023 B");
+        assert_eq!(format_bytes(1536), "1.5 KB");
+        assert_eq!(format_bytes(3 * 1024 * 1024), "3.0 MB");
     }
 }

@@ -45,7 +45,7 @@ cargo test      # unit tests for parsing, request building, history, JSON highli
 cargo clippy --all-targets
 ```
 
-Layout: `src/app/` is the UI (one file per panel), `src/http.rs` builds and sends requests, `src/history.rs` is the SQLite store, `src/curl_import.rs` parses curl/HAR.
+Layout: `src/app/` is the UI (`app/request/` has one file per request tab), `src/request.rs` turns the form into a request (variables, params, body; pure logic), `src/http.rs` sends it, `src/vars.rs` substitutes `{{variables}}`, `src/redact.rs` keeps credentials off disk, `src/history.rs` is the SQLite store, `src/curl_import.rs` parses curl/HAR.
 
 ## Building
 

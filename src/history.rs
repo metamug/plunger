@@ -115,6 +115,11 @@ impl History {
         Ok(())
     }
 
+    #[cfg(test)]
+    pub fn in_memory() -> Self {
+        Self::with_connection(Connection::open_in_memory().unwrap()).unwrap()
+    }
+
     fn with_connection(conn: Connection) -> rusqlite::Result<Self> {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS requests (

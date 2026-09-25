@@ -1,12 +1,13 @@
 mod command_bar;
 mod history_panel;
 mod import_window;
-mod request_panel;
+mod request;
 mod response_panel;
 
 use crate::history::{History, HistoryEntry};
-use crate::http::{build_request, normalize_url, parse_headers, send_request};
+use crate::http::send_request;
 use crate::model::{BodyMode, Outcome, ParsedRequest, PersistedState, RequestTab, ResponseTab, SendResult};
+use crate::request::{build_request, normalize_url, parse_headers};
 use crate::theme::{self, card};
 use eframe::egui;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -67,8 +68,11 @@ pub struct ApiTesterApp {
 
 impl ApiTesterApp {
     pub fn from_persisted(state: PersistedState) -> Self {
+        Self::new(state, History::open().ok())
+    }
+
+    fn new(state: PersistedState, history: Option<History>) -> Self {
         let header_rows = parse_headers(&state.headers_text);
-        let history = History::open().ok();
         let history_entries = history
             .as_ref()
             .and_then(|h| h.list_recent(HISTORY_LIMIT).ok())
@@ -227,7 +231,13 @@ impl eframe::App for ApiTesterApp {
 
         let ctrl_enter =
             ctx.input(|i| i.key_pressed(egui::Key::Enter) && (i.modifiers.ctrl || i.modifiers.command));
+        self.render_ui(ctx, ctrl_enter);
+    }
+}
 
+impl ApiTesterApp {
+    /// Everything drawn each frame, separate from `update` so it can run headless in tests.
+    fn render_ui(&mut self, ctx: &egui::Context, ctrl_enter: bool) {
         self.render_history_panel(ctx);
         self.render_import_window(ctx);
 
@@ -260,5 +270,173 @@ impl eframe::App for ApiTesterApp {
             ui.separator();
             self.render_response_section(ui, ctx);
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{FieldKind, FormField, KeyValue, ResponseData, Variable};
+
+    fn app(state: PersistedState) -> ApiTesterApp {
+        ApiTesterApp::new(state, Some(History::in_memory()))
+    }
+
+    /// Runs a few real egui frames (layout and all) without a window.
+    fn draw(app: &mut ApiTesterApp) {
+        let ctx = egui::Context::default();
+        theme::apply_theme(&ctx);
+        for _ in 0..3 {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| app.render_ui(ctx, false));
+        }
+    }
+
+    fn busy_state() -> PersistedState {
+        PersistedState {
+            headers_text: "Accept: */*\nX-Trace: 1".into(),
+            params: vec![KeyValue { key: "page".into(), value: "2".into(), enabled: true }],
+            variables: vec![Variable { name: "host".into(), value: "localhost".into(), secret: false }],
+            multipart_fields: vec![
+                FormField { key: "title".into(), kind: FieldKind::Text, value: "hi".into(), enabled: true },
+                FormField { key: "doc".into(), kind: FieldKind::File, value: "C:/x/report.pdf".into(), enabled: true },
+            ],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn every_request_tab_draws_and_keeps_one_spare_row() {
+        let mut a = app(busy_state());
+        for tab in [
+            RequestTab::Params,
+            RequestTab::Headers,
+            RequestTab::Body,
+            RequestTab::Variables,
+            RequestTab::Options,
+        ] {
+            a.request_tab = tab;
+            draw(&mut a);
+        }
+        assert!(a.state.params.last().unwrap().is_blank());
+        assert_eq!(a.state.params.iter().filter(|p| p.is_blank()).count(), 1);
+        assert!(a.state.variables.last().unwrap().is_blank());
+        assert!(a.header_rows.last().unwrap().0.is_empty());
+        assert_eq!(a.state.headers_text, "Accept: */*\nX-Trace: 1", "drawing must not alter the headers");
+    }
+
+    #[test]
+    fn every_body_mode_draws_and_form_data_keeps_a_spare_row() {
+        let mut a = app(busy_state());
+        a.request_tab = RequestTab::Body;
+        for mode in [BodyMode::None, BodyMode::Json, BodyMode::Multipart, BodyMode::UrlEncoded, BodyMode::Raw] {
+            a.state.body_mode = mode;
+            draw(&mut a);
+        }
+        // the last real row is a File, which counts as in use, so one blank follows it
+        let fields = &a.state.multipart_fields;
+        assert_eq!(fields.len(), 3);
+        assert!(fields[2].is_blank() && fields[2].kind == FieldKind::Text);
+        assert_eq!(fields[1].value, "C:/x/report.pdf");
+    }
+
+    #[test]
+    fn invalid_and_variable_json_bodies_draw() {
+        let mut a = app(busy_state());
+        a.request_tab = RequestTab::Body;
+        a.state.body_mode = BodyMode::Json;
+        for body in ["{\"a\":", "{\"n\": {{count}}}", "", "   "] {
+            a.state.json_body = body.into();
+            draw(&mut a);
+        }
+    }
+
+    fn response(body: &str, json: bool, truncated: bool) -> ResponseData {
+        ResponseData {
+            status: 200,
+            status_text: "OK".into(),
+            elapsed_ms: 12,
+            size_bytes: body.len(),
+            headers: vec![("content-type".into(), "application/json".into())],
+            body: body.into(),
+            json_value: json.then(|| serde_json::from_str(body).unwrap()),
+            truncated,
+            total_size: truncated.then_some(99_999_999),
+        }
+    }
+
+    #[test]
+    fn every_response_state_draws() {
+        let mut a = app(PersistedState::default());
+        for outcome in [
+            Outcome::Empty,
+            Outcome::Failed("boom".into()),
+            Outcome::Response(response("{\"a\":[1,2,{\"b\":null}]}", true, false)),
+            Outcome::Response(response("plain text", false, false)),
+            Outcome::Response(response("{\"a\":1}", true, true)),
+        ] {
+            a.outcome = outcome;
+            for tab in [ResponseTab::Body, ResponseTab::Headers] {
+                a.response_tab = tab;
+                draw(&mut a);
+            }
+        }
+    }
+
+    #[test]
+    fn history_and_import_panels_draw() {
+        let mut a = app(PersistedState::default());
+        if let Some(h) = &a.history {
+            h.insert(&busy_state(), Some(200), Some(5)).unwrap();
+            h.insert(&PersistedState { url: "https://exämple.com/ü/🚀/long/long/long/long/long/long".into(), ..Default::default() }, None, None)
+                .unwrap();
+        }
+        a.refresh_history();
+        assert_eq!(a.history_entries.len(), 2);
+        a.import.open = true;
+        draw(&mut a);
+    }
+
+    #[test]
+    fn an_undefined_variable_stops_the_send_and_names_it() {
+        let mut a = app(PersistedState { url: "http://{{host}}/x/{{id}}".into(), ..Default::default() });
+        a.trigger_send(&egui::Context::default());
+        assert!(!a.is_loading(), "nothing should be in flight");
+        let Outcome::Failed(msg) = &a.outcome else { panic!("expected a failure message") };
+        assert!(msg.contains("{{host}}") && msg.contains("{{id}}"), "{msg}");
+        assert_eq!(a.state.url, "http://{{host}}/x/{{id}}", "the template must be left untouched");
+        assert!(a.history_entries.is_empty(), "a blocked send is not a request");
+    }
+
+    #[test]
+    fn a_bare_host_gets_its_scheme_in_the_field_but_a_template_does_not() {
+        let mut a = app(PersistedState { url: "localhost:3000/x".into(), ..Default::default() });
+        a.trigger_send(&egui::Context::default());
+        assert_eq!(a.state.url, "http://localhost:3000/x");
+        a.cancel_send();
+        assert!(!a.is_loading());
+
+        a.state.url = "{{base}}/x".into();
+        a.state.variables = vec![Variable { name: "base".into(), value: "localhost:1".into(), secret: false }];
+        a.trigger_send(&egui::Context::default());
+        assert_eq!(a.state.url, "{{base}}/x");
+        a.cancel_send();
+    }
+
+    #[test]
+    fn loading_history_keeps_session_variables_and_options() {
+        let mut a = app(PersistedState {
+            variables: vec![Variable { name: "keep".into(), value: "me".into(), secret: false }],
+            insecure_tls: true,
+            ..Default::default()
+        });
+        let entry = {
+            let h = a.history.as_ref().unwrap();
+            h.insert(&PersistedState { url: "http://old/x".into(), ..Default::default() }, Some(200), Some(1)).unwrap();
+            h.list_recent(1).unwrap().remove(0)
+        };
+        a.load_history_entry(&entry);
+        assert_eq!(a.state.url, "http://old/x");
+        assert_eq!(a.state.variables[0].name, "keep");
+        assert!(a.state.insecure_tls);
     }
 }

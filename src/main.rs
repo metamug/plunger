@@ -7,6 +7,7 @@ mod http;
 mod json_view;
 mod model;
 mod redact;
+mod request;
 mod theme;
 mod vars;
 
