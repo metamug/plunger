@@ -1,6 +1,7 @@
 //! Shared behaviour for the "one editable line per item, plus a spare blank
 //! line at the end" lists (headers, params, variables, form-data fields).
 
+use crate::icons::{self, Icon};
 use eframe::egui;
 
 /// Removes the row at `remove` (if any), then makes sure the list ends with
@@ -39,8 +40,14 @@ pub(super) fn edit_rows<T>(
     tidy_rows(rows, remove, blank, is_blank);
 }
 
-pub(super) fn remove_button(ui: &mut egui::Ui) -> bool {
-    ui.small_button("x").on_hover_text("Remove").clicked()
+pub(super) fn remove_button(ui: &mut egui::Ui, what: &str) -> bool {
+    icons::button(ui, Icon::Trash, &format!("Remove this {what}")).clicked()
+}
+
+/// The "include this row" tick box that starts param and form-field rows.
+pub(super) fn enabled_checkbox(ui: &mut egui::Ui, enabled: &mut bool) {
+    ui.checkbox(enabled, "")
+        .on_hover_text(if *enabled { "Included — untick to leave it out" } else { "Left out — tick to include" });
 }
 
 #[cfg(test)]

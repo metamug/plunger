@@ -1,7 +1,8 @@
 use super::rows::{edit_rows, remove_button};
-use crate::app::ApiTesterApp;
+use crate::app::tab::Tab;
+use crate::icons::{self, Icon};
 use crate::request::parse_headers;
-use crate::theme::{accented_card, AMBER};
+use crate::theme::{self, accented_card, palette};
 use eframe::egui;
 
 const COMMON_HEADERS: &[&str] = &[
@@ -69,49 +70,59 @@ fn rows_to_text(rows: &[(String, String)]) -> String {
         .join("\n")
 }
 
-impl ApiTesterApp {
-    pub(in crate::app) fn render_headers_tab(&mut self, ui: &mut egui::Ui) {
-        accented_card(ui, AMBER, |ui| {
+impl Tab {
+    pub(in crate::app) fn render_headers_tab(&mut self, ui: &mut egui::Ui, bearer: &mut String, secrets_error: Option<&str>) {
+        accented_card(ui, palette().amber, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Authorization: Bearer");
-                ui.checkbox(&mut self.state.remember_bearer, "remember")
-                    .on_hover_text("Keep the token in the system credential store (never in a file)");
                 let hint = if self.state.remember_bearer {
                     "token — kept in the system credential store"
                 } else {
                     "token — not saved between runs"
                 };
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.bearer_token)
-                        .desired_width(ui.available_width())
-                        .hint_text(hint)
-                        .password(true),
+                let width = ui.available_width() - icons::trailing_room(ui, 1);
+                ui.add(theme::field(bearer).desired_width(width).hint_text(hint).password(true));
+                icons::toggle(
+                    ui,
+                    &mut self.state.remember_bearer,
+                    Icon::Key,
+                    "Remembered in the system credential store (never in a file). Click to stop remembering",
+                    "Not remembered: cleared when the app closes. Click to keep it in the system credential store",
                 );
             });
-            if let Some(err) = &self.secrets_error {
-                ui.colored_label(egui::Color32::from_rgb(230, 100, 90), err);
+            if let Some(err) = secrets_error {
+                ui.colored_label(palette().error, err);
             }
         });
         ui.add_space(8.0);
 
         ui.horizontal(|ui| {
-            let toggled = ui.checkbox(&mut self.headers_as_text, "Edit as raw text").changed();
-            // Back to the table: rebuild the rows from the text, or edits made
-            // in raw mode would be lost (and overwritten on the next table edit).
-            if toggled && !self.headers_as_text {
-                self.header_rows = parse_headers(&self.state.headers_text);
-            }
             ui.label(
                 egui::RichText::new("The Bearer token above is added automatically — no need to repeat it here.")
                     .weak()
                     .small(),
             );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let toggled = icons::toggle(
+                    ui,
+                    &mut self.headers_as_text,
+                    Icon::Code,
+                    "Editing as raw text. Click to go back to the table",
+                    "Edit as raw text (one \"Name: value\" per line)",
+                )
+                .changed();
+                // Back to the table: rebuild the rows from the text, or edits made
+                // in raw mode would be lost (and overwritten on the next table edit).
+                if toggled && !self.headers_as_text {
+                    self.header_rows = parse_headers(&self.state.headers_text);
+                }
+            });
         });
         ui.add_space(6.0);
 
         if self.headers_as_text {
             ui.add(
-                egui::TextEdit::multiline(&mut self.state.headers_text)
+                theme::area(&mut self.state.headers_text)
                     .desired_rows(3)
                     .desired_width(f32::INFINITY)
                     .hint_text("Content-Type: application/json"),
@@ -128,16 +139,13 @@ impl ApiTesterApp {
                 let (key_resp, val_resp, remove) = ui
                     .horizontal(|ui| {
                         let key_resp = ui.add(
-                            egui::TextEdit::singleline(key)
+                            theme::field(key)
                                 .desired_width(200.0)
                                 .hint_text("Header name"),
                         );
-                        let val_resp = ui.add(
-                            egui::TextEdit::singleline(value)
-                                .desired_width(ui.available_width() - 34.0)
-                                .hint_text("Value"),
-                        );
-                        (key_resp, val_resp, remove_button(ui))
+                        let width = ui.available_width() - icons::trailing_room(ui, 1);
+                        let val_resp = ui.add(theme::field(value).desired_width(width).hint_text("Value"));
+                        (key_resp, val_resp, remove_button(ui, "header"))
                     })
                     .inner;
 

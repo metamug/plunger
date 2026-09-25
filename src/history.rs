@@ -7,8 +7,16 @@ use std::path::PathBuf;
 /// Oldest rows beyond this are pruned on insert so the database can't grow forever.
 const MAX_ROWS: i64 = 1000;
 
+/// Overrides where all app data lives (history, window state, crash log).
+/// For demos and testing: run a copy against a throwaway folder without
+/// touching your real history.
+pub const DATA_DIR_ENV: &str = "METAMUG_DATA_DIR";
+
 /// Per-user application data directory (history database, crash log).
 pub fn app_data_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os(DATA_DIR_ENV).filter(|d| !d.is_empty()) {
+        return PathBuf::from(dir);
+    }
     directories::ProjectDirs::from("", "", "Metamug API Tester")
         .map(|dirs| dirs.data_dir().to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."))
@@ -17,6 +25,8 @@ pub fn app_data_dir() -> PathBuf {
 #[derive(Clone)]
 pub struct HistoryEntry {
     pub id: i64,
+    /// Set once the user names the request; named rows are "saved" requests.
+    pub name: Option<String>,
     pub created_at: String,
     pub method: String,
     pub url: String,
@@ -84,6 +94,43 @@ pub struct History {
     conn: Connection,
 }
 
+const COLUMNS: &str = "id, created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body, \
+                       status, elapsed_ms, extra_json, name";
+
+/// A request's columns as written to disk: credentials already blanked.
+struct StoredRequest {
+    method: String,
+    url: String,
+    headers_text: String,
+    body_mode: &'static str,
+    json_body: String,
+    urlencoded_body: String,
+    raw_body: String,
+    extra: String,
+}
+
+impl From<&PersistedState> for StoredRequest {
+    fn from(state: &PersistedState) -> Self {
+        // Same credential rules as the saved form state: blank secrets before they hit disk.
+        let safe = state.redacted();
+        let extra = serde_json::to_string(&Extra {
+            params: safe.params,
+            multipart: safe.multipart_fields,
+        })
+        .unwrap_or_default();
+        Self {
+            method: safe.method,
+            url: safe.url,
+            headers_text: safe.headers_text,
+            body_mode: body_mode_to_str(safe.body_mode),
+            json_body: safe.json_body,
+            urlencoded_body: safe.urlencoded_body,
+            raw_body: safe.raw_body,
+            extra,
+        }
+    }
+}
+
 impl History {
     /// Opens (creating if needed) the SQLite database in the platform's
     /// standard per-app data directory, next to eframe's own persistence file.
@@ -137,63 +184,140 @@ impl History {
             )",
             [],
         )?;
-        let has_extra = conn
+        let columns: Vec<String> = conn
             .prepare("PRAGMA table_info(requests)")?
             .query_map([], |r| r.get::<_, String>(1))?
-            .any(|name| name.is_ok_and(|n| n == "extra_json"));
-        if !has_extra {
-            conn.execute("ALTER TABLE requests ADD COLUMN extra_json TEXT NOT NULL DEFAULT ''", [])?;
+            .collect::<rusqlite::Result<_>>()?;
+        // Columns added after the first release; each is added once, in place.
+        for (column, definition) in [
+            ("extra_json", "extra_json TEXT NOT NULL DEFAULT ''"),
+            ("name", "name TEXT"),
+            // 0 once the history is cleared: a saved request outlives that.
+            ("in_history", "in_history INTEGER NOT NULL DEFAULT 1"),
+        ] {
+            if !columns.iter().any(|c| c == column) {
+                conn.execute(&format!("ALTER TABLE requests ADD COLUMN {definition}"), [])?;
+            }
         }
         Ok(Self { conn })
     }
 
+    /// Records a request that was sent. Returns the new row's id.
     pub fn insert(
         &self,
         state: &PersistedState,
         status: Option<u16>,
         elapsed_ms: Option<u128>,
-    ) -> rusqlite::Result<()> {
+    ) -> rusqlite::Result<i64> {
+        let id = self.insert_row(state, status, elapsed_ms, None)?;
+        // Only unnamed history is pruned; saved requests are kept however many there are.
+        self.conn.execute(
+            "DELETE FROM requests WHERE name IS NULL AND id NOT IN
+                (SELECT id FROM requests WHERE name IS NULL ORDER BY id DESC LIMIT ?1)",
+            params![MAX_ROWS],
+        )?;
+        Ok(id)
+    }
+
+    /// Saves a request under `name` without adding it to the history list.
+    pub fn save_new(&self, state: &PersistedState, name: &str) -> rusqlite::Result<i64> {
+        self.insert_row(state, None, None, Some(name))
+    }
+
+    fn insert_row(
+        &self,
+        state: &PersistedState,
+        status: Option<u16>,
+        elapsed_ms: Option<u128>,
+        name: Option<&str>,
+    ) -> rusqlite::Result<i64> {
         let created_at = time::OffsetDateTime::now_utc()
             .format(&time::format_description::well_known::Rfc3339)
             .unwrap_or_default();
-        // Same credential rules as the saved form state: blank secrets before they hit disk.
-        let safe = state.redacted();
-        let extra = serde_json::to_string(&Extra {
-            params: safe.params,
-            multipart: safe.multipart_fields,
-        })
-        .unwrap_or_default();
+        let row = StoredRequest::from(state);
         self.conn.execute(
             "INSERT INTO requests
-                (created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body, status, elapsed_ms, extra_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                (created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body,
+                 status, elapsed_ms, extra_json, name, in_history)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 created_at,
-                state.method,
-                redact_url(&state.url),
-                safe.headers_text,
-                body_mode_to_str(state.body_mode),
-                state.json_body,
-                state.urlencoded_body,
-                state.raw_body,
+                row.method,
+                row.url,
+                row.headers_text,
+                row.body_mode,
+                row.json_body,
+                row.urlencoded_body,
+                row.raw_body,
                 status.map(|s| s as i64),
                 elapsed_ms.map(|e| e as i64),
-                extra,
+                row.extra,
+                name,
+                // A request saved directly (not from a send) isn't part of the history.
+                name.is_none(),
             ],
         )?;
-        self.conn.execute(
-            "DELETE FROM requests WHERE id NOT IN (SELECT id FROM requests ORDER BY id DESC LIMIT ?1)",
-            params![MAX_ROWS],
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Overwrites a saved request's contents with `state`. Returns false if
+    /// the row no longer exists.
+    pub fn update_request(&self, id: i64, state: &PersistedState) -> rusqlite::Result<bool> {
+        let row = StoredRequest::from(state);
+        let changed = self.conn.execute(
+            "UPDATE requests SET method = ?1, url = ?2, headers_text = ?3, body_mode = ?4, json_body = ?5,
+                urlencoded_body = ?6, raw_body = ?7, extra_json = ?8
+             WHERE id = ?9",
+            params![
+                row.method,
+                row.url,
+                row.headers_text,
+                row.body_mode,
+                row.json_body,
+                row.urlencoded_body,
+                row.raw_body,
+                row.extra,
+                id
+            ],
         )?;
+        Ok(changed > 0)
+    }
+
+    /// Names (saves) a row, or with `None` un-saves it. A saved request that is
+    /// no longer in the history list has nothing left to show, so it's deleted.
+    pub fn set_name(&self, id: i64, name: Option<&str>) -> rusqlite::Result<()> {
+        match name {
+            Some(name) => {
+                self.conn.execute("UPDATE requests SET name = ?1 WHERE id = ?2", params![name, id])?;
+            }
+            None => {
+                self.conn.execute("DELETE FROM requests WHERE id = ?1 AND in_history = 0", params![id])?;
+                self.conn.execute("UPDATE requests SET name = NULL WHERE id = ?1", params![id])?;
+            }
+        }
         Ok(())
     }
 
+    /// Saved requests, alphabetically.
+    pub fn list_saved(&self) -> rusqlite::Result<Vec<HistoryEntry>> {
+        self.query(
+            &format!("SELECT {COLUMNS} FROM requests WHERE name IS NOT NULL ORDER BY name COLLATE NOCASE, id"),
+            [],
+        )
+    }
+
+    /// Sent requests, newest first. Saved ones appear here too (with their
+    /// name) until the history is cleared.
     pub fn list_recent(&self, limit: i64) -> rusqlite::Result<Vec<HistoryEntry>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body, status, elapsed_ms, extra_json
-             FROM requests ORDER BY id DESC LIMIT ?1",
-        )?;
-        let rows = stmt.query_map(params![limit], |row| {
+        self.query(
+            &format!("SELECT {COLUMNS} FROM requests WHERE in_history = 1 ORDER BY id DESC LIMIT ?1"),
+            params![limit],
+        )
+    }
+
+    fn query(&self, sql: &str, args: impl rusqlite::Params) -> rusqlite::Result<Vec<HistoryEntry>> {
+        let mut stmt = self.conn.prepare(sql)?;
+        let rows = stmt.query_map(args, |row| {
             let extra: Extra = serde_json::from_str(&row.get::<_, String>(11)?).unwrap_or_default();
             Ok(HistoryEntry {
                 params: extra.params,
@@ -209,13 +333,17 @@ impl History {
                 raw_body: row.get(8)?,
                 status: row.get(9)?,
                 elapsed_ms: row.get(10)?,
+                name: row.get(12)?,
             })
         })?;
         rows.collect()
     }
 
+    /// Empties the history list. Saved requests are kept (and stay in the
+    /// Saved list); they just stop appearing under History.
     pub fn clear(&self) -> rusqlite::Result<()> {
-        self.conn.execute("DELETE FROM requests", [])?;
+        self.conn.execute("DELETE FROM requests WHERE name IS NULL", [])?;
+        self.conn.execute("UPDATE requests SET in_history = 0", [])?;
         Ok(())
     }
 }
@@ -362,6 +490,61 @@ mod tests {
         assert_eq!(rows.len() as i64, MAX_ROWS);
         assert_eq!(rows[0].url, format!("http://x/{}", MAX_ROWS + 24));
         assert_eq!(rows.last().unwrap().url, "http://x/25");
+    }
+
+    #[test]
+    fn naming_a_row_saves_it_and_it_survives_clearing_the_history() {
+        let h = history();
+        let a = h.insert(&state("http://a", BodyMode::None), Some(200), Some(1)).unwrap();
+        h.insert(&state("http://b", BodyMode::None), Some(200), Some(1)).unwrap();
+        h.set_name(a, Some("Get A")).unwrap();
+
+        let saved = h.list_saved().unwrap();
+        assert_eq!((saved.len(), saved[0].name.as_deref()), (1, Some("Get A")));
+        // Still in the history list, now carrying its name.
+        assert_eq!(h.list_recent(10).unwrap().iter().filter(|r| r.name.is_some()).count(), 1);
+
+        h.clear().unwrap();
+        assert!(h.list_recent(10).unwrap().is_empty());
+        assert_eq!(h.list_saved().unwrap()[0].url, "http://a");
+
+        // Un-saving something no longer in the history deletes it for good.
+        h.set_name(a, None).unwrap();
+        assert!(h.list_saved().unwrap().is_empty());
+    }
+
+    #[test]
+    fn unsaving_a_row_still_in_the_history_keeps_it_there() {
+        let h = history();
+        let a = h.insert(&state("http://a", BodyMode::None), Some(200), Some(1)).unwrap();
+        h.set_name(a, Some("A")).unwrap();
+        h.set_name(a, None).unwrap();
+        let rows = h.list_recent(10).unwrap();
+        assert_eq!((rows.len(), rows[0].name.clone()), (1, None));
+    }
+
+    #[test]
+    fn a_saved_request_is_updated_in_place_and_not_listed_as_history() {
+        let h = history();
+        let id = h.save_new(&state("http://v1", BodyMode::None), "Mine").unwrap();
+        assert!(h.list_recent(10).unwrap().is_empty());
+        let mut s = state("http://v2?token=T", BodyMode::Json);
+        s.headers_text = "Authorization: Bearer X".into();
+        assert!(h.update_request(id, &s).unwrap());
+        let row = &h.list_saved().unwrap()[0];
+        assert_eq!((row.url.as_str(), row.headers_text.as_str()), ("http://v2?token=", "Authorization:"));
+        assert!(!h.update_request(9999, &s).unwrap());
+    }
+
+    #[test]
+    fn saved_requests_are_never_pruned() {
+        let h = history();
+        let keep = h.insert(&state("http://keep", BodyMode::None), None, None).unwrap();
+        h.set_name(keep, Some("Keep")).unwrap();
+        for i in 0..(MAX_ROWS + 5) {
+            h.insert(&state(&format!("http://x/{i}"), BodyMode::None), None, None).unwrap();
+        }
+        assert_eq!(h.list_saved().unwrap().len(), 1);
     }
 
     #[test]

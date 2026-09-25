@@ -23,6 +23,12 @@ impl<'a> Resolver<'a> {
     }
 
     pub fn apply(&mut self, text: &str) -> String {
+        self.apply_with(text, str::to_string)
+    }
+
+    /// Like `apply`, but each substituted value is passed through `encode`
+    /// first — e.g. to percent-encode values that land in a query string.
+    pub fn apply_with(&mut self, text: &str, encode: impl Fn(&str) -> String) -> String {
         let mut out = String::with_capacity(text.len());
         let mut rest = text;
         while let Some(start) = rest.find("{{") {
@@ -36,7 +42,7 @@ impl<'a> Resolver<'a> {
             let token_len = 2 + end + 2;
             let name = after[..end].trim();
             match self.lookup(name) {
-                Some(value) => out.push_str(&value),
+                Some(value) => out.push_str(&encode(&value)),
                 None => {
                     if is_valid_name(name) {
                         self.undefined.insert(name.to_string());

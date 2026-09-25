@@ -1,8 +1,8 @@
-use crate::app::ApiTesterApp;
-use crate::theme::AMBER;
+use crate::app::tab::Tab;
+use crate::theme::palette;
 use eframe::egui;
 
-impl ApiTesterApp {
+impl Tab {
     pub(in crate::app) fn render_options_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Timeout");
@@ -14,7 +14,7 @@ impl ApiTesterApp {
         ui.checkbox(&mut self.state.insecure_tls, "Skip TLS certificate verification");
         if self.state.insecure_tls {
             ui.colored_label(
-                AMBER,
+                palette().amber,
                 "Certificates are not checked. Use this only for servers you trust, e.g. a local API with a self-signed certificate.",
             );
         }

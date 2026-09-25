@@ -1,19 +1,27 @@
-use super::ApiTesterApp;
+use super::copy_button;
+use super::tab::Tab;
 use crate::model::{Outcome, ResponseTab};
-use crate::theme::{copy_icon_button, status_badge, AMBER};
+use crate::icons::{self, Icon};
+use crate::theme::{self, palette, status_badge};
 use eframe::egui;
 use egui_json_tree::{DefaultExpand, JsonTree};
-use std::time::{Duration, Instant};
-
-const COPIED_FLASH: Duration = Duration::from_millis(1200);
 const LARGE_JSON_BYTES: usize = 200 * 1024;
 
-impl ApiTesterApp {
-    pub(super) fn render_response_section(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+impl Tab {
+    pub(super) fn render_response_section(&mut self, ui: &mut egui::Ui) {
         let resp = match &self.outcome {
-            Outcome::Empty => return,
+            Outcome::Empty => {
+                if !self.is_loading() {
+                    ui.add_space(24.0);
+                    ui.vertical_centered(|ui| {
+                        ui.label(egui::RichText::new("Send a request to see the response here").weak());
+                        ui.label(egui::RichText::new("Ctrl+Enter sends from anywhere").weak().small());
+                    });
+                }
+                return;
+            }
             Outcome::Failed(err) => {
-                ui.colored_label(egui::Color32::from_rgb(230, 100, 90), format!("Request failed: {err}"));
+                ui.colored_label(palette().error, format!("Request failed: {err}"));
                 return;
             }
             Outcome::Response(resp) => resp,
@@ -25,11 +33,11 @@ impl ApiTesterApp {
 
         ui.horizontal(|ui| {
             status_badge(ui, resp.status, &resp.status_text);
-            ui.label(format!("{} ms", resp.elapsed_ms));
-            ui.label(format_bytes(resp.size_bytes));
+            ui.label(egui::RichText::new(format!("{} ms", resp.elapsed_ms)).weak());
+            ui.label(egui::RichText::new(format_bytes(resp.size_bytes)).weak());
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Save…").on_hover_text("Save the body to a file").clicked() {
+                if icons::button(ui, Icon::Download, "Save response body to a file").clicked() {
                     let name = if resp.json_value.is_some() { "response.json" } else { "response.txt" };
                     if let Some(path) = rfd::FileDialog::new().set_file_name(name).save_file() {
                         self.save_error = std::fs::write(&path, &resp.body)
@@ -37,13 +45,16 @@ impl ApiTesterApp {
                             .map(|e| format!("Could not save file: {e}"));
                     }
                 }
-                if copy_icon_button(ui) {
-                    ui.output_mut(|o| o.copied_text = resp.body.clone());
-                    self.copied_flash = Some(Instant::now());
-                }
-                if self.copied_flash.is_some_and(|t| t.elapsed() < COPIED_FLASH) {
-                    ui.label(egui::RichText::new("Copied!").small().weak());
-                    ctx.request_repaint_after(Duration::from_millis(200));
+                // Copies whatever tab is showing.
+                match self.response_tab {
+                    ResponseTab::Body => {
+                        copy_button(ui, &mut self.copied_flash, "body", "Copy response body", &resp.body);
+                    }
+                    ResponseTab::Headers => {
+                        let headers: String = resp.headers.iter().map(|(k, v)| format!("{k}: {v}
+")).collect();
+                        copy_button(ui, &mut self.copied_flash, "headers", "Copy response headers", &headers);
+                    }
                 }
             });
         });
@@ -51,12 +62,12 @@ impl ApiTesterApp {
         if resp.truncated {
             let total = resp.total_size.map(|t| format!(" of {}", format_bytes(t as usize))).unwrap_or_default();
             ui.colored_label(
-                AMBER,
+                palette().amber,
                 format!("Response too large: showing the first {}{total}.", format_bytes(resp.size_bytes)),
             );
         }
         if let Some(err) = &self.save_error {
-            ui.colored_label(egui::Color32::from_rgb(230, 100, 90), err);
+            ui.colored_label(palette().error, err);
         }
 
         ui.add_space(6.0);
@@ -83,22 +94,29 @@ impl ApiTesterApp {
                         // but no per-frame clone of the body and no accidental edits.
                         let mut text: &str = &resp.body;
                         ui.add(
-                            egui::TextEdit::multiline(&mut text)
+                            theme::area(&mut text)
                                 .font(egui::TextStyle::Monospace)
                                 .desired_width(f32::INFINITY),
                         );
                     }
                 }
                 ResponseTab::Headers => {
-                    for (k, v) in &resp.headers {
-                        ui.monospace(format!("{k}: {v}"));
-                    }
+                    egui::Grid::new("response-headers").num_columns(2).spacing([16.0, 6.0]).striped(true).show(
+                        ui,
+                        |ui| {
+                            for (k, v) in &resp.headers {
+                                ui.label(egui::RichText::new(k).monospace().weak());
+                                ui.add(egui::Label::new(egui::RichText::new(v).monospace()).wrap());
+                                ui.end_row();
+                            }
+                        },
+                    );
                 }
             });
     }
 }
 
-fn format_bytes(n: usize) -> String {
+pub(super) fn format_bytes(n: usize) -> String {
     if n < 1024 {
         format!("{n} B")
     } else if n < 1024 * 1024 {

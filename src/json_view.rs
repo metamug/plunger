@@ -19,12 +19,7 @@ pub fn highlight_json(text: &str) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
     let font_id = egui::FontId::monospace(13.0);
 
-    let color_punct = egui::Color32::from_rgb(150, 150, 150);
-    let color_key = egui::Color32::from_rgb(220, 120, 160);
-    let color_string = egui::Color32::from_rgb(120, 200, 140);
-    let color_number = egui::Color32::from_rgb(110, 170, 230);
-    let color_literal = egui::Color32::from_rgb(220, 160, 90);
-    let color_default = egui::Color32::from_rgb(210, 210, 210);
+    let [color_punct, color_key, color_string, color_number, color_literal, color_default] = crate::theme::palette().json;
 
     let append = |job: &mut egui::text::LayoutJob, s: &str, color: egui::Color32| {
         job.append(

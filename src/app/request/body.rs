@@ -1,11 +1,12 @@
-use super::rows::{edit_rows, remove_button};
-use super::{ERROR_COLOR, OK_COLOR};
-use crate::app::ApiTesterApp;
+use super::rows::{edit_rows, enabled_checkbox, remove_button};
+use crate::app::tab::Tab;
+use crate::icons::{self, Icon};
 use crate::json_view::highlight_json;
 use crate::model::{BodyMode, FieldKind, FormField};
+use crate::theme::{self, palette};
 use eframe::egui;
 
-impl ApiTesterApp {
+impl Tab {
     pub(in crate::app) fn render_body_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.state.body_mode, BodyMode::None, "None");
@@ -24,14 +25,14 @@ impl ApiTesterApp {
             BodyMode::UrlEncoded => {
                 ui.label(egui::RichText::new("One key=value per line").weak());
                 ui.add(
-                    egui::TextEdit::multiline(&mut self.state.urlencoded_body)
+                    theme::area(&mut self.state.urlencoded_body)
                         .desired_rows(5)
                         .desired_width(f32::INFINITY),
                 );
             }
             BodyMode::Raw => {
                 ui.add(
-                    egui::TextEdit::multiline(&mut self.state.raw_body)
+                    theme::area(&mut self.state.raw_body)
                         .desired_rows(5)
                         .desired_width(f32::INFINITY)
                         .font(egui::TextStyle::Monospace),
@@ -47,7 +48,7 @@ impl ApiTesterApp {
             ui.fonts(|f| f.layout_job(job))
         };
         ui.add(
-            egui::TextEdit::multiline(&mut self.state.json_body)
+            theme::area(&mut self.state.json_body)
                 .desired_rows(5)
                 .desired_width(f32::INFINITY)
                 .layouter(&mut layouter),
@@ -61,8 +62,8 @@ impl ApiTesterApp {
         let verdict = serde_json::from_str::<serde::de::IgnoredAny>(trimmed).map_err(|e| e.to_string());
         ui.horizontal(|ui| match verdict {
             Ok(_) => {
-                ui.colored_label(OK_COLOR, "Valid JSON");
-                if ui.small_button("Prettify").clicked() {
+                ui.colored_label(palette().ok, "Valid JSON");
+                if icons::button(ui, Icon::Format, "Prettify: re-indent the JSON").clicked() {
                     // Formatting only happens on click, not on every frame.
                     if let Ok(value) = serde_json::from_str::<serde_json::Value>(&self.state.json_body) {
                         if let Ok(pretty) = serde_json::to_string_pretty(&value) {
@@ -79,7 +80,7 @@ impl ApiTesterApp {
                 } else {
                     ""
                 };
-                ui.colored_label(ERROR_COLOR, format!("Invalid JSON: {e}{hint}"));
+                ui.colored_label(palette().error, format!("Invalid JSON: {e}{hint}"));
             }
         });
     }
@@ -102,8 +103,8 @@ impl ApiTesterApp {
             |ui, f| {
                 next_id += 1;
                 ui.horizontal(|ui| {
-                    ui.checkbox(&mut f.enabled, "");
-                    ui.add(egui::TextEdit::singleline(&mut f.key).desired_width(140.0).hint_text("field name"));
+                    enabled_checkbox(ui, &mut f.enabled);
+                    ui.add(theme::field(&mut f.key).desired_width(140.0).hint_text("field name"));
                     egui::ComboBox::from_id_salt(("field-kind", next_id))
                         .selected_text(if f.kind == FieldKind::Text { "Text" } else { "File" })
                         .width(60.0)
@@ -111,32 +112,34 @@ impl ApiTesterApp {
                             ui.selectable_value(&mut f.kind, FieldKind::Text, "Text");
                             ui.selectable_value(&mut f.kind, FieldKind::File, "File");
                         });
+                    let width = ui.available_width() - icons::trailing_room(ui, 1);
                     match f.kind {
                         FieldKind::Text => {
-                            ui.add(
-                                egui::TextEdit::singleline(&mut f.value)
-                                    .desired_width(ui.available_width() - 34.0)
-                                    .hint_text("value  (or {{variable}})"),
-                            );
+                            ui.add(theme::field(&mut f.value).desired_width(width).hint_text("value  (or {{variable}})"));
                         }
                         FieldKind::File => {
-                            if ui.button("Choose file…").clicked() {
-                                if let Some(path) = rfd::FileDialog::new().pick_file() {
-                                    f.value = path.to_string_lossy().into_owned();
+                            // Same width as a text value, so the remove icon lines up across rows.
+                            let size = egui::vec2(width + theme::FIELD_MARGIN_X, icons::SIZE);
+                            ui.allocate_ui_with_layout(size, egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                ui.set_min_size(size);
+                                if icons::button(ui, Icon::Folder, "Choose a file to upload").clicked() {
+                                    if let Some(path) = rfd::FileDialog::new().pick_file() {
+                                        f.value = path.to_string_lossy().into_owned();
+                                    }
                                 }
-                            }
-                            let shown = std::path::Path::new(&f.value)
-                                .file_name()
-                                .map(|n| n.to_string_lossy().into_owned())
-                                .unwrap_or_default();
-                            if shown.is_empty() {
-                                ui.label(egui::RichText::new("no file chosen").weak());
-                            } else {
-                                ui.label(shown).on_hover_text(&f.value);
-                            }
+                                let shown = std::path::Path::new(&f.value)
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().into_owned())
+                                    .unwrap_or_default();
+                                if shown.is_empty() {
+                                    ui.label(egui::RichText::new("no file chosen").weak());
+                                } else {
+                                    ui.label(shown).on_hover_text(&f.value);
+                                }
+                            });
                         }
                     }
-                    remove_button(ui)
+                    remove_button(ui, "field")
                 })
                 .inner
             },

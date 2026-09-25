@@ -167,6 +167,8 @@ impl PersistedState {
     /// The Bearer field is never part of the state at all.
     pub fn redacted(&self) -> PersistedState {
         let mut s = self.clone();
+        // The URL carries the query params too, so it needs the same treatment.
+        s.url = crate::redact::redact_url(&s.url);
         s.headers_text = crate::redact::redact_headers_text(&s.headers_text);
         for p in &mut s.params {
             if is_sensitive_param(&p.key) {

@@ -2,6 +2,7 @@
 //! query parameters appended, body assembled. Pure logic, no network.
 
 use crate::model::{BodyMode, FormField, PersistedState};
+use crate::query::{encode_value, split_url};
 use crate::redact::is_sensitive_header;
 use crate::vars::Resolver;
 use std::net::IpAddr;
@@ -83,21 +84,28 @@ pub fn ensure_header(headers: &mut Vec<(String, String)>, name: &str, value: &st
 }
 
 /// Turns the form state (plus the never-persisted bearer token) into the
-/// request that will actually be sent: variables substituted, query
-/// parameters appended, body assembled. Fails, without sending anything, if a
+/// request that will actually be sent: variables substituted, body
+/// assembled. Fails, without sending anything, if a
 /// `{{variable}}` is undefined or the URL is invalid.
 pub fn build_request(state: &PersistedState, bearer_token: &str) -> Result<OutgoingRequest, String> {
     let mut r = Resolver::new(&state.variables);
 
-    let url_text = normalize_url(&r.apply(&state.url));
+    // Query params already live in the URL (the Params tab edits it). Values
+    // substituted into the query are encoded so `&`, `#` or `+` in a variable
+    // can't split or corrupt it.
+    let (base, query, fragment) = split_url(&state.url);
+    let mut url_text = r.apply(base);
+    if let Some(q) = query {
+        url_text.push('?');
+        url_text.push_str(&r.apply_with(q, encode_value));
+    }
+    if let Some(f) = fragment {
+        url_text.push('#');
+        url_text.push_str(&r.apply(f));
+    }
+    let url_text = normalize_url(&url_text);
     let headers_text = r.apply(&state.headers_text);
     let bearer = r.apply(bearer_token.trim());
-    let params: Vec<(String, String)> = state
-        .params
-        .iter()
-        .filter(|p| p.enabled && !p.key.trim().is_empty())
-        .map(|p| (r.apply(p.key.trim()), r.apply(&p.value)))
-        .collect();
 
     let mut headers = parse_headers(&headers_text);
     // A credential header with an empty value is a blanked placeholder from
@@ -149,13 +157,7 @@ pub fn build_request(state: &PersistedState, bearer_token: &str) -> Result<Outgo
     if url_text.is_empty() {
         return Err("Enter a URL.".to_string());
     }
-    let mut url = reqwest::Url::parse(&url_text).map_err(|e| format!("Invalid URL \"{url_text}\": {e}"))?;
-    if !params.is_empty() {
-        let mut query = url.query_pairs_mut();
-        for (k, v) in &params {
-            query.append_pair(k, v);
-        }
-    }
+    let url = reqwest::Url::parse(&url_text).map_err(|e| format!("Invalid URL \"{url_text}\": {e}"))?;
 
     Ok(OutgoingRequest {
         method: state.method.clone(),
@@ -331,26 +333,30 @@ mod tests {
     }
 
     #[test]
-    fn query_params_are_appended_encoded_and_respect_the_enabled_flag() {
+    fn the_query_comes_from_the_url_not_the_param_rows() {
         let mut s = state();
-        s.url = "http://h/x?a=1".into();
-        s.params = vec![
-            kv("q", "a b&c", true),
-            kv("skip", "me", false),
-            kv("", "no key", true),
-            kv("é", "ü", true),
-        ];
+        s.url = "http://h/x?a=1&q=a%20b%26c&é=ü".into();
+        // Rows mirror the URL; sending must not append them a second time.
+        s.params = vec![kv("a", "1", true), kv("skip", "me", false)];
         let r = build(&s, "");
-        assert_eq!(r.url, "http://h/x?a=1&q=a+b%26c&%C3%A9=%C3%BC");
+        assert_eq!(r.url, "http://h/x?a=1&q=a%20b%26c&%C3%A9=%C3%BC");
+    }
+
+    #[test]
+    fn variables_in_the_query_are_encoded_but_not_in_the_path() {
+        let mut s = state();
+        s.variables = vec![var("seg", "a/b"), var("tok", "x&y=1+2#z")];
+        s.url = "http://h/{{seg}}?t={{tok}}&n=1#{{seg}}".into();
+        let r = build(&s, "");
+        assert_eq!(r.url, "http://h/a/b?t=x%26y=1%2B2%23z&n=1#a/b");
     }
 
     #[test]
     fn variables_are_substituted_everywhere() {
         let mut s = state();
         s.variables = vec![var("host", "localhost:3000"), var("id", "42"), var("tok", "T0K"), var("name", "Ann")];
-        s.url = "{{host}}/users/{{id}}".into();
+        s.url = "{{host}}/users/{{id}}?who={{name}}".into();
         s.headers_text = "X-Trace: {{id}}".into();
-        s.params = vec![kv("who", "{{name}}", true)];
         s.body_mode = BodyMode::Json;
         s.json_body = "{\"name\":\"{{name}}\",\"nested\":{\"a\":{\"b\":1}}}".into();
         let r = build(&s, "{{tok}}");
