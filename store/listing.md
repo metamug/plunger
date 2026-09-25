@@ -37,7 +37,7 @@ WHAT YOU CAN DO
 
 PRIVATE BY DESIGN
 - No account, no analytics, no telemetry.
-- Requests go only where you point them.
+- Requests go only to the addresses you, or an agent you connect, choose.
 - Tokens and other credentials are never written to files. If you choose "remember", they are kept in the Windows Credential Manager.
 
 OPEN SOURCE

@@ -73,7 +73,7 @@ Tools: `send_request`, `import_curl`, `list_saved_requests`, `get_history`, `lis
 
 Built in Rust with [egui](https://github.com/emilk/egui) because we wanted a small, fast, native application. No webview, no bundled browser: one exe of about 7 MB, which is also a command-line client and an MCP server for AI agents.
 
-No account to create. No cloud to sync to. The only network traffic is the requests you send: no analytics, no telemetry, no update checks. History and saved requests live in one local folder, `%APPDATA%\Plunger\data`. Bearer tokens and secret variables are never written to a file unless you tick "remember", which keeps them in Windows Credential Manager. Credential-looking headers are blanked before history is saved. Details are in the [privacy policy](store/privacy-policy.md).
+No account to create. No cloud to sync to. The only network traffic is the requests that get sent, by you or by an agent you've connected: no analytics, no telemetry, no update checks. History and saved requests live in one local folder, `%APPDATA%\Plunger\data`. Bearer tokens and secret variables are never written to a file unless you tick "remember", which keeps them in Windows Credential Manager. Credential-looking headers are blanked before history is saved. Details are in the [privacy policy](store/privacy-policy.md).
 
 ## Open source
 
@@ -110,7 +110,7 @@ A few promises, so you know what you're picking up:
 1. [Download `plunger-windows.zip`](https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip) and unzip it anywhere.
 2. Run `plunger.exe`.
 
-Windows 10 (1809) or 11, 64-bit. Plunger isn't code-signed yet, so Windows may say "Windows protected your PC": click **More info**, then **Run anyway**. Or [build it yourself](#build-from-source).
+Windows 10 or 11, 64-bit. Plunger isn't code-signed yet, so Windows may say "Windows protected your PC": click **More info**, then **Run anyway**. Or [build it yourself](#build-from-source).
 
 To update, replace the exe. To remove it, delete the exe and `%APPDATA%\Plunger`.
 
