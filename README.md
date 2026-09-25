@@ -1,12 +1,14 @@
-# Metamug API Tester (desktop)
+# Plunger
 
-A tiny, fast, native desktop companion to [metamug.com/util/api-tester/](https://metamug.com/util/api-tester/).
+A small native desktop app for checking one API endpoint. Open it, paste a URL or a curl command, send, read the answer. No account, no cloud, no CORS limits. Windows 10 (1809) or 11, 64-bit.
+
+**Download:** [metamug.com/util/api-tester-desktop/](https://metamug.com/util/api-tester-desktop/) (zip, no installer). It's the desktop companion to the browser-based [online API tester](https://metamug.com/util/api-tester/), for the APIs a web page can't reach.
 
 Built with [egui](https://github.com/emilk/egui) — no webview, no bundled browser, just native rendering — because it's meant to be a quick, throwaway tool: open it, fire a request, close it. The reason it exists at all: a browser page (even with a CORS workaround) can never reliably reach `localhost` or an intranet API, and that's exactly where most APIs live while they're being developed. This app is a real native process, so it has no CORS, no mixed-content, and no Private Network Access restriction — it reaches whatever the machine it's running on can reach, the same way `curl` or Postman's desktop app do.
 
 ## What it is not
 
-Not a Postman replacement. No collections, no environments, no scripting. If you need those, use Postman. This is for the thirty-second "let me just check this one endpoint" moment.
+Not a Postman replacement. No collections, no environments, no scripting, no team features. If you need those, use Postman or Bruno. This is for the thirty-second "let me just check this one endpoint" moment.
 
 What it does have, because it earns its place in that thirty seconds: a request history sidebar (local SQLite), curl and HAR import, and `localhost:3000/api`-style URLs (a missing scheme is filled in: `http://` for local/private hosts, `https://` otherwise).
 
@@ -29,7 +31,8 @@ Per-session settings, kept when you load a request from history: timeout (1-600 
 - Request bodies are stored as typed. Don't paste secrets into a body you don't want in the local history; **Clear** deletes it. History keeps the newest 1000 requests.
 - Responses over 10 MB are cut off, with a notice showing the real size; large JSON opens collapsed one level deep instead of fully expanded.
 - HTTPS uses the operating system's certificate store, so corporate CAs work.
-- A crash writes `crash.log` next to the history database (`%APPDATA%\Metamug API Tester\data\` on Windows).
+- Everything the app stores (history database, last request form, `crash.log` if it crashes) is in one folder: `%APPDATA%\Plunger\data\` on Windows.
+- The app makes no network connections other than the requests you send: no analytics, no telemetry, no update checks. See the [privacy policy](store/privacy-policy.md).
 
 ### Known limits
 
@@ -59,14 +62,22 @@ rustup default stable-x86_64-pc-windows-gnu
 cargo build --release
 ```
 
-The binary is at `target/x86_64-pc-windows-gnu/release/metamug-api-tester.exe` (or `target/release/...` if built on the default host toolchain instead).
+The binary is at `target/x86_64-pc-windows-gnu/release/plunger.exe` (or `target/release/...` if built on the default host toolchain instead).
 
-## Releasing
+## Contributing
+
+Bug reports and pull requests are welcome. Please keep the scope in mind (see "What it is not" above): fixes, polish and things that help the thirty-second check are the best fit; collections, scripting or sync are out of scope. Run `cargo test` and `cargo clippy --all-targets` before opening a PR.
+
+## License
+
+[MIT](LICENSE)
+
+## Releasing (maintainers)
 
 1. `cargo build --release`
-2. Zip the `.exe` as `metamug-api-tester-windows.zip`
-3. Upload to `s3://metamug-static-site/downloads/metamug-api-tester-windows.zip`
-4. Invalidate CloudFront for `/downloads/metamug-api-tester-windows.zip`
+2. Zip the `.exe` as `plunger-windows.zip`
+3. Upload to `s3://metamug-static-site/downloads/plunger-windows.zip`
+4. Invalidate CloudFront for `/downloads/plunger-windows.zip`
 
 Size: the exe is about 5.7 MB and the zip about 3.0 MB.
 

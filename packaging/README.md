@@ -1,6 +1,6 @@
 # Packaging and Store submission
 
-Everything needed to ship Metamug API Tester in the Microsoft Store (where Microsoft signs the package, so no code-signing certificate is needed) lives here and in `store/`.
+Everything needed to ship Plunger in the Microsoft Store (where Microsoft signs the package, so no code-signing certificate is needed) lives here and in `store/`.
 
 ## What is in the repo
 
@@ -20,7 +20,7 @@ Everything needed to ship Metamug API Tester in the Microsoft Store (where Micro
 ### 1. One time: Partner Center
 
 1. Create a developer account at Partner Center (free) and complete identity verification.
-2. Reserve the app name **Metamug API Tester**.
+2. Reserve the app name **Plunger** (or **Plunger API Tester** if "Plunger" is taken).
 3. Open the app's **Product identity** page and note three values: *Package/Identity/Name*, *Package/Identity/Publisher* (starts with `CN=`) and *Package/Properties/PublisherDisplayName*.
 
 ### 2. Build the package
@@ -34,7 +34,7 @@ powershell -File packaging\msix\build-msix.ps1 `
     -PublisherDisplayName "<PublisherDisplayName>"
 ```
 
-The result is `target\msix\MetamugApiTester_<version>_x64.msix`. Do not sign it; the Store signs it.
+The result is `target\msix\Plunger_<version>_x64.msix`. Do not sign it; the Store signs it.
 
 `-Dev` builds with placeholder identity values for a local dry run. That package cannot be submitted.
 

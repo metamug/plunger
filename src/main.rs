@@ -41,11 +41,14 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([980.0, 680.0])
-            .with_min_inner_size([620.0, 420.0]),
+            .with_min_inner_size([620.0, 420.0])
+            // Fixed id so eframe's state file lives in %APPDATA%\Plunger\data next to
+            // the history database, instead of a folder named after the versioned title.
+            .with_app_id("Plunger"),
         ..Default::default()
     };
     eframe::run_native(
-        &format!("Metamug API Tester {}", env!("CARGO_PKG_VERSION")),
+        &format!("Plunger {}", env!("CARGO_PKG_VERSION")),
         options,
         Box::new(|cc| {
             theme::apply_theme(&cc.egui_ctx);

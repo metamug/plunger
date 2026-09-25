@@ -9,7 +9,7 @@ const MAX_ROWS: i64 = 1000;
 
 /// Per-user application data directory (history database, crash log).
 pub fn app_data_dir() -> PathBuf {
-    directories::ProjectDirs::from("", "", "Metamug API Tester")
+    directories::ProjectDirs::from("", "", "Plunger")
         .map(|dirs| dirs.data_dir().to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."))
 }

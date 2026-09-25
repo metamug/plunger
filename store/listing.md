@@ -1,4 +1,4 @@
-# Microsoft Store listing: Metamug API Tester
+# Microsoft Store listing: Plunger
 
 Copy these into Partner Center. Limits noted are the Store's; check them at submission time.
 
@@ -6,7 +6,7 @@ Copy these into Partner Center. Limits noted are the Store's; check them at subm
 
 | Field | Value |
 |---|---|
-| Product name | Metamug API Tester |
+| Product name | Plunger |
 | Category | Developer tools |
 | Price | Free |
 | Support email | support@metamug.com |
@@ -21,7 +21,7 @@ A fast, native tool for sending HTTP requests. No account, no cloud, no CORS lim
 
 ## Description
 
-Metamug API Tester is the quick way to check one endpoint. Open it, type a URL, press Send. There is no sign-in, no workspace to set up and no cloud: it is a small native Windows app that talks straight to your API from your own machine.
+Plunger is the quick way to check one endpoint. Open it, type a URL, press Send. There is no sign-in, no workspace to set up and no cloud: it is a small native Windows app that talks straight to your API from your own machine.
 
 Because it is a real desktop program and not a web page, it has none of the browser's limits. It reaches localhost, private-network and intranet APIs, and it is not blocked by CORS.
 
@@ -40,7 +40,10 @@ PRIVATE BY DESIGN
 - Requests go only where you point them.
 - Tokens and other credentials are never written to files. If you choose "remember", they are kept in the Windows Credential Manager.
 
-Metamug API Tester is a focused tool, not a Postman replacement: it has no collections, scripting or team features.
+OPEN SOURCE
+Plunger is open source under the MIT license: https://github.com/metamug/plunger
+
+Plunger is a focused tool, not a Postman replacement: it has no collections, scripting or team features.
 
 ## Features list (up to 20 bullets, each up to 200 characters)
 
@@ -54,6 +57,7 @@ Metamug API Tester is a focused tool, not a Postman replacement: it has no colle
 8. Local request history; credentials are blanked before anything is saved
 9. Optional remember for tokens using the Windows Credential Manager
 10. Self-signed certificate toggle for local HTTPS development servers
+11. Open source under the MIT license; the code is on GitHub
 
 ## Keywords (up to 7)
 

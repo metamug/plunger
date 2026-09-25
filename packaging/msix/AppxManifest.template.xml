@@ -17,7 +17,7 @@
     ProcessorArchitecture="x64" />
 
   <Properties>
-    <DisplayName>Metamug API Tester</DisplayName>
+    <DisplayName>Plunger</DisplayName>
     <PublisherDisplayName>{{PUBLISHER_DISPLAY_NAME}}</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -31,9 +31,9 @@
   </Resources>
 
   <Applications>
-    <Application Id="MetamugApiTester" Executable="metamug-api-tester.exe" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="Plunger" Executable="plunger.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="Metamug API Tester"
+        DisplayName="Plunger"
         Description="A fast, native desktop tool for sending HTTP requests. No account, no cloud, no CORS limits."
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"

@@ -1,8 +1,8 @@
-# Privacy policy: Metamug API Tester (desktop app)
+# Privacy policy: Plunger (desktop app)
 
 Last updated: 2026-09-25
 
-This policy covers the Metamug API Tester desktop application for Windows. It does not cover the metamug.com website; see the [website privacy policy](https://metamug.com/legal/privacy-policy.php) for that.
+This policy covers the Plunger desktop application for Windows. It does not cover the metamug.com website; see the [website privacy policy](https://metamug.com/legal/privacy-policy.php) for that.
 
 ## The short version
 
@@ -33,7 +33,7 @@ The app reads a file only when you choose one, for example to attach it to a mul
 
 - Clear the request history at any time with the Clear button.
 - Remove remembered secrets with "Forget saved secrets".
-- Uninstalling the Microsoft Store version removes its data. If you use the zip download, delete the app data folder (`%APPDATA%\Metamug API Tester`) yourself.
+- Uninstalling the Microsoft Store version removes its data. If you use the zip download, delete the app data folder (`%APPDATA%\Plunger`) yourself.
 
 ## Third parties and children
 

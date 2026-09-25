@@ -1,11 +1,13 @@
 [package]
-name = "metamug-api-tester"
+name = "plunger"
 version = "0.1.0"
 edition = "2021"
-description = "Metamug API Tester — a quick, lightweight desktop tool for sending HTTP requests, with no CORS restrictions."
+description = "Plunger: a quick, lightweight desktop tool for sending HTTP requests, with no CORS restrictions."
+license = "MIT"
+repository = "https://github.com/metamug/plunger"
 
 [[bin]]
-name = "metamug-api-tester"
+name = "plunger"
 path = "src/main.rs"
 
 [dependencies]
