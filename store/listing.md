@@ -10,8 +10,8 @@ Copy these into Partner Center. Limits noted are the Store's; check them at subm
 | Category | Developer tools |
 | Price | Free |
 | Support email | support@metamug.com |
-| Website | https://metamug.com/util/api-tester-desktop/ |
-| Privacy policy URL | https://metamug.com/util/api-tester-desktop/privacy/ |
+| Website | https://metamug.com/util/plunger/ |
+| Privacy policy URL | https://metamug.com/util/plunger/privacy/ |
 | Minimum OS | Windows 10 version 1809 (build 17763) or later, x64 |
 | Languages | English |
 
