@@ -3,9 +3,9 @@
 
 use crate::history::HistoryEntry;
 use crate::http::send_request;
-use crate::model::{BodyMode, Outcome, ParsedRequest, PersistedState, RequestTab, ResponseTab, SendResult};
+use crate::model::{Outcome, ParsedRequest, PersistedState, RequestTab, ResponseTab, SendResult};
 use crate::query::{params_from_url, reconcile};
-use crate::request::{build_request, normalize_url, parse_headers};
+use crate::request::{parse_headers, prepare_to_send};
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Instant;
@@ -161,45 +161,18 @@ impl Tab {
         }
     }
 
+    /// Replaces the request with an imported one, keeping this tab's session
+    /// settings (variables, options).
     pub fn apply_parsed_request(&mut self, parsed: ParsedRequest) {
-        self.state.method = parsed.method;
-        self.state.url = parsed.url;
-        self.state.headers_text = parsed
-            .headers
-            .iter()
-            .map(|(k, v)| format!("{k}: {v}"))
-            .collect::<Vec<_>>()
-            .join("\n");
+        self.state = parsed.into_state().with_session_from(&self.state);
         self.header_rows = parse_headers(&self.state.headers_text);
-
-        match parsed.body {
-            Some(body) if serde_json::from_str::<serde_json::Value>(&body).is_ok() => {
-                self.state.body_mode = BodyMode::Json;
-                self.state.json_body = body;
-            }
-            Some(body) => {
-                self.state.body_mode = BodyMode::Raw;
-                self.state.raw_body = body;
-            }
-            None if !parsed.form_fields.is_empty() => self.state.body_mode = BodyMode::Multipart,
-            None => self.state.body_mode = BodyMode::None,
-        }
-        if !parsed.form_fields.is_empty() {
-            self.state.multipart_fields = parsed.form_fields;
-        }
-        self.state.params.clear();
         self.sync_params_from_url();
         self.outcome = Outcome::Empty;
     }
 
     pub fn send(&mut self, bearer_token: &str) {
-        // Fill in a missing scheme in the field itself. A URL that uses
-        // variables is left alone: the variable may supply the scheme, and the
-        // field must keep the `{{template}}` rather than a resolved secret.
-        if !self.state.url.contains("{{") {
-            self.state.url = normalize_url(&self.state.url);
-        }
-        let req = match build_request(&self.state, bearer_token) {
+        // The scheme is filled in in the field itself, where the user sees it.
+        let req = match prepare_to_send(&mut self.state, bearer_token) {
             Ok(req) => req,
             Err(message) => {
                 self.outcome = Outcome::Failed(message);

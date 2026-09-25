@@ -2,7 +2,7 @@ use super::rows::{edit_rows, remove_button};
 use super::suggest::{chips, variable_chips};
 use crate::app::tab::Tab;
 use crate::icons::{self, Icon};
-use crate::request::parse_headers;
+use crate::request::{headers_to_text, parse_headers};
 use crate::theme::{self, accented_card, palette};
 use eframe::egui;
 
@@ -40,12 +40,11 @@ const COMMON_CONTENT_TYPES: &[&str] = &[
     "text/csv",
 ];
 
+/// The header rows as text, skipping rows left entirely blank.
 fn rows_to_text(rows: &[(String, String)]) -> String {
-    rows.iter()
-        .filter(|(k, v)| !k.trim().is_empty() || !v.trim().is_empty())
-        .map(|(k, v)| format!("{k}: {v}"))
-        .collect::<Vec<_>>()
-        .join("\n")
+    let filled: Vec<(String, String)> =
+        rows.iter().filter(|(k, v)| !k.trim().is_empty() || !v.trim().is_empty()).cloned().collect();
+    headers_to_text(&filled)
 }
 
 impl Tab {

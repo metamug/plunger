@@ -25,6 +25,9 @@ use tab::{CopiedFlash, Tab};
 const HISTORY_LIMIT: i64 = 50;
 const COPIED_FLASH: Duration = Duration::from_millis(1200);
 const NOTICE_FOR: Duration = Duration::from_secs(4);
+/// How often the window checks whether an agent (CLI or MCP) wrote to the
+/// history, so its requests show up without clicking anything.
+const DB_POLL: Duration = Duration::from_millis(1500);
 
 /// eframe storage key for the open tabs (the legacy single-request state stays
 /// under `eframe::APP_KEY`).
@@ -98,6 +101,9 @@ pub struct ApiTesterApp {
     settings: Settings,
 
     history: Option<History>,
+    /// The database's change counter when the lists were last read.
+    db_version: Option<i64>,
+    last_db_poll: Instant,
     history_entries: Vec<HistoryEntry>,
     saved_entries: Vec<HistoryEntry>,
     renaming: Option<Rename>,
@@ -135,6 +141,8 @@ impl ApiTesterApp {
             renaming: None,
             saved_open: true,
             history_open: true,
+            db_version: None,
+            last_db_poll: Instant::now(),
             import: ImportDialog::default(),
             notice: None,
             secrets,
@@ -314,6 +322,7 @@ impl ApiTesterApp {
 
     fn refresh_lists(&mut self) {
         if let Some(h) = &self.history {
+            self.db_version = h.data_version();
             if let Ok(entries) = h.list_recent(HISTORY_LIMIT) {
                 self.history_entries = entries;
             }
@@ -400,6 +409,21 @@ impl ApiTesterApp {
         self.refresh_lists();
     }
 
+    /// Picks up requests an agent sent through the CLI or MCP server. One
+    /// cheap PRAGMA every couple of seconds; the lists are only re-read when
+    /// another process actually changed the database.
+    fn poll_database(&mut self, ctx: &egui::Context) {
+        ctx.request_repaint_after(DB_POLL);
+        if self.last_db_poll.elapsed() < DB_POLL {
+            return;
+        }
+        self.last_db_poll = Instant::now();
+        let current = self.history.as_ref().and_then(History::data_version);
+        if current.is_some() && current != self.db_version {
+            self.refresh_lists();
+        }
+    }
+
     fn set_theme(&mut self, ctx: &egui::Context, choice: ThemeChoice) {
         self.settings.theme = choice;
         theme::apply_theme(ctx, choice);
@@ -445,6 +469,7 @@ impl eframe::App for ApiTesterApp {
             theme::apply_theme(ctx, self.settings.theme);
         }
         self.poll_responses(ctx);
+        self.poll_database(ctx);
         self.handle_shortcuts(ctx);
         self.render_ui(ctx);
     }
@@ -870,6 +895,26 @@ mod tests {
         assert_eq!((b.tabs.len(), b.active), (2, 1));
         assert_eq!(b.tab().title(), "Two");
         assert_eq!(b.tabs[0].state.url, "http://one");
+    }
+
+    #[test]
+    fn requests_an_agent_sends_show_up_in_the_window_on_their_own() {
+        let path = std::env::temp_dir().join(format!("plunger-live-{}.sqlite3", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let mut a = ApiTesterApp::new(PersistedState::default(), Some(History::open_at(&path)), Box::new(MemoryStore::default()));
+        assert!(a.history_entries.is_empty());
+
+        // A separate connection, as `plunger mcp` would have.
+        let agent = History::open_at(&path);
+        agent
+            .insert_from(&PersistedState { url: "http://agent/x".into(), ..Default::default() }, Some(200), Some(3), crate::history::Source::Mcp)
+            .unwrap();
+
+        a.last_db_poll = Instant::now() - DB_POLL * 2;
+        a.poll_database(&egui::Context::default());
+        assert_eq!(a.history_entries.len(), 1);
+        assert_eq!(a.history_entries[0].source, crate::history::Source::Mcp);
+        draw(&mut a); // the agent tag renders
     }
 
     #[test]

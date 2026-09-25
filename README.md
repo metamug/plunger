@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip"><strong>Download for Windows</strong></a> (zip, about 3 MB, no installer)
+  <a href="https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip"><strong>Download for Windows</strong></a> (zip, about 3.5 MB, no installer)
   &nbsp;·&nbsp; <a href="LICENSE">MIT license</a>
 </p>
 
@@ -43,9 +43,35 @@ A small desktop app that sends an HTTP request and shows you what came back.
 
 It's a native program, not a web page, so it reaches whatever your machine can reach: `localhost`, a dev box on your network, an API that sends no CORS headers.
 
+## For AI agents
+
+**See the JSON, even when an AI sent the request.**
+
+Plunger is built to be driven safely by AI agents, not just clicked by people. The same `plunger.exe` is also a command-line API client and an MCP server, so an agent like Claude Code sends requests through Plunger's engine instead of running curl. No account, no cloud, no telemetry: now safe for your agents too.
+
+One exe. Human GUI, agent CLI, agent MCP. The same safety guarantees in every mode.
+
+```json
+{
+  "mcpServers": {
+    "plunger": { "command": "C:\\Tools\\plunger\\plunger.exe", "args": ["mcp"] }
+  }
+}
+```
+
+### Why not just let the agent run curl?
+
+1. **Undefined-variable safety.** Plunger refuses to send a request with an undefined `{{variable}}`. curl will happily send the placeholder text.
+2. **Credential isolation.** The agent writes `{{token}}` and never sees the value. Secrets you've chosen to remember are kept in Windows Credential Manager and filled in by Plunger; if a server echoes one back, it comes back as `[redacted:token]`.
+3. **Shared human and agent history.** You testing in the window and an agent testing from the command line read and write the same saved requests and history.
+4. **Structured, typed output.** Status, timing, size, headers and the parsed JSON body come back as separate fields, not text the agent has to pick apart.
+5. **A local audit trail.** Every agent request lands in the history you see in the window, tagged `MCP` or `CLI`, as it happens. curl leaves no record unless you build the logging yourself.
+
+Tools: `send_request`, `import_curl`, `list_saved_requests`, `get_history`, `list_variables`, `export_curl`. From a terminal: `plunger send "Saved request name"`, `plunger send --url ...`, `plunger history`. Setup, every tool and option, exit codes and the fine print are in [docs/agents.md](docs/agents.md).
+
 ## Small by design
 
-Built in Rust with [egui](https://github.com/emilk/egui) because we wanted a small, fast, native application. No webview, no bundled browser: one exe of about 6 MB.
+Built in Rust with [egui](https://github.com/emilk/egui) because we wanted a small, fast, native application. No webview, no bundled browser: one exe of about 7 MB, which is also a command-line client and an MCP server for AI agents.
 
 No account to create. No cloud to sync to. The only network traffic is the requests you send: no analytics, no telemetry, no update checks. History and saved requests live in one local folder, `%APPDATA%\Plunger\data`. Bearer tokens and secret variables are never written to a file unless you tick "remember", which keeps them in Windows Credential Manager. Credential-looking headers are blanked before history is saved. Details are in the [privacy policy](store/privacy-policy.md).
 

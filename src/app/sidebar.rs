@@ -3,7 +3,7 @@
 //! saves it.
 
 use super::{ApiTesterApp, Rename};
-use crate::history::HistoryEntry;
+use crate::history::{HistoryEntry, Source};
 use crate::icons::{self, Icon};
 use crate::theme::{self, one_line, palette, status_dot_color, ACCENT};
 use eframe::egui;
@@ -190,7 +190,18 @@ fn entry_row(
     let method_pos = egui::pos2(inner.left() + 14.0, line_y - method_galley.size().y / 2.0);
     let method_width = method_galley.size().x;
     ui.painter().galley(method_pos, method_galley, weak);
-    let url_left = method_pos.x + method_width + 6.0;
+    let mut url_left = method_pos.x + method_width + 6.0;
+    // Requests an agent sent get a small tag, so they stand out from your own.
+    if entry.source != Source::Gui {
+        let tag = one_line(ui, &entry.source.as_str().to_ascii_uppercase(), egui::FontId::proportional(9.5), p.accent_text, 40.0);
+        let tag_rect = egui::Rect::from_min_size(
+            egui::pos2(url_left, line_y - tag.size().y / 2.0 - 1.0),
+            tag.size() + egui::vec2(6.0, 2.0),
+        );
+        ui.painter().rect_filled(tag_rect, egui::Rounding::same(3.0), ACCENT.linear_multiply(0.25));
+        ui.painter().galley(tag_rect.min + egui::vec2(3.0, 1.0), tag, p.accent_text);
+        url_left = tag_rect.right() + 6.0;
+    }
     let url_color = if two_lines { weak } else { p.text };
     let url_galley = one_line(ui, &entry.url, small, url_color, inner.left() + text_width - url_left);
     ui.painter().galley(egui::pos2(url_left, line_y - url_galley.size().y / 2.0), url_galley, weak);
@@ -239,7 +250,11 @@ fn entry_row(
     let verb = if entry.name.is_some() { "rename" } else { "name and save" };
     let when = friendly_timestamp(&entry.created_at);
     let timing = entry.elapsed_ms.map(|ms| format!("{ms} ms")).unwrap_or_else(|| "no response".to_string());
-    let response = response.on_hover_text(format!("{}\n{when}  \u{b7}  {timing}\nDouble-click to {verb}", entry.url));
+    let sender = match entry.source {
+        Source::Gui => String::new(),
+        other => format!("  \u{b7}  sent by an agent ({})", other.as_str()),
+    };
+    let response = response.on_hover_text(format!("{}\n{when}  \u{b7}  {timing}{sender}\nDouble-click to {verb}", entry.url));
     if action.is_none() {
         if response.double_clicked() {
             action = Some(RowAction::StartRename);

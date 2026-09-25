@@ -225,6 +225,35 @@ pub struct ParsedRequest {
     pub form_fields: Vec<FormField>,
 }
 
+impl ParsedRequest {
+    /// The form an imported request becomes: a JSON body when the body parses
+    /// as JSON, raw text otherwise, form-data for `-F` fields. Query params are
+    /// left in the URL (the Params table is rebuilt from it).
+    pub fn into_state(self) -> PersistedState {
+        let mut state = PersistedState {
+            method: self.method,
+            url: self.url,
+            params: Vec::new(),
+            headers_text: crate::request::headers_to_text(&self.headers),
+            ..Default::default()
+        };
+        match self.body {
+            Some(body) if serde_json::from_str::<serde_json::Value>(&body).is_ok() => {
+                state.body_mode = BodyMode::Json;
+                state.json_body = body;
+            }
+            Some(body) => {
+                state.body_mode = BodyMode::Raw;
+                state.raw_body = body;
+            }
+            None if !self.form_fields.is_empty() => state.body_mode = BodyMode::Multipart,
+            None => state.body_mode = BodyMode::None,
+        }
+        state.multipart_fields = self.form_fields;
+        state
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

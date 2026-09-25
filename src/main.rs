@@ -1,16 +1,23 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agent;
 mod app;
+mod cli;
+mod curl_export;
 mod curl_import;
+mod engine;
 mod history;
 mod http;
 mod icons;
 mod json_view;
+mod mcp;
 mod model;
 mod query;
 mod redact;
 mod secrets;
 mod request;
+#[cfg(test)]
+mod test_server;
 mod theme;
 mod vars;
 
@@ -49,6 +56,16 @@ fn window_icon() -> egui::IconData {
 
 fn main() -> eframe::Result<()> {
     install_crash_log();
+
+    // `plunger <command>` runs headless (CLI or MCP server); no arguments opens the window.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if !args.is_empty() {
+        // The MCP server talks over the pipes its client gave it; never attach a console to it.
+        if args[0] != "mcp" {
+            cli::attach_parent_console();
+        }
+        std::process::exit(cli::run(args));
+    }
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

@@ -22,6 +22,10 @@ directories = "5"
 shell-words = "1"
 rfd = { version = "0.15", default-features = false }
 time = { version = "0.3", features = ["formatting"] }
+# Headless modes: read the GUI's saved state, and serve MCP over stdio.
+ron = "0.8"
+rmcp = { version = "3.4", default-features = false, features = ["server", "macros", "transport-io"] }
+tokio = { version = "1", features = ["rt", "macros", "io-std"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

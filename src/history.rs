@@ -22,6 +22,34 @@ pub fn app_data_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// Who sent a request: a person in the window, or an agent through the
+/// command line or MCP. Shown in the sidebar so agent activity can be audited.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Source {
+    #[default]
+    Gui,
+    Cli,
+    Mcp,
+}
+
+impl Source {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Source::Gui => "gui",
+            Source::Cli => "cli",
+            Source::Mcp => "mcp",
+        }
+    }
+
+    fn parse(s: &str) -> Self {
+        match s {
+            "cli" => Source::Cli,
+            "mcp" => Source::Mcp,
+            _ => Source::Gui,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct HistoryEntry {
     pub id: i64,
@@ -39,6 +67,7 @@ pub struct HistoryEntry {
     pub multipart_fields: Vec<FormField>,
     pub status: Option<i64>,
     pub elapsed_ms: Option<i64>,
+    pub source: Source,
 }
 
 /// Rows that don't fit the fixed columns, stored as one JSON blob so new
@@ -95,7 +124,7 @@ pub struct History {
 }
 
 const COLUMNS: &str = "id, created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body, \
-                       status, elapsed_ms, extra_json, name";
+                       status, elapsed_ms, extra_json, name, source";
 
 /// A request's columns as written to disk: credentials already blanked.
 struct StoredRequest {
@@ -162,12 +191,23 @@ impl History {
         Ok(())
     }
 
+    /// A database at a specific path (tests: two connections, like the window and an agent).
+    #[cfg(test)]
+    pub fn open_at(path: &std::path::Path) -> Self {
+        Self::with_connection(Connection::open(path).unwrap()).unwrap()
+    }
+
     #[cfg(test)]
     pub fn in_memory() -> Self {
         Self::with_connection(Connection::open_in_memory().unwrap()).unwrap()
     }
 
     fn with_connection(conn: Connection) -> rusqlite::Result<Self> {
+        // The window and an agent (CLI / MCP) can use the database at the same
+        // time: write-ahead logging lets readers and a writer coexist, and the
+        // busy timeout makes a second writer wait instead of failing.
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        conn.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()))?;
         conn.execute(
             "CREATE TABLE IF NOT EXISTS requests (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -194,6 +234,7 @@ impl History {
             ("name", "name TEXT"),
             // 0 once the history is cleared: a saved request outlives that.
             ("in_history", "in_history INTEGER NOT NULL DEFAULT 1"),
+            ("source", "source TEXT NOT NULL DEFAULT 'gui'"),
         ] {
             if !columns.iter().any(|c| c == column) {
                 conn.execute(&format!("ALTER TABLE requests ADD COLUMN {definition}"), [])?;
@@ -202,14 +243,25 @@ impl History {
         Ok(Self { conn })
     }
 
-    /// Records a request that was sent. Returns the new row's id.
+    /// Records a request sent from the window. Returns the new row's id.
     pub fn insert(
         &self,
         state: &PersistedState,
         status: Option<u16>,
         elapsed_ms: Option<u128>,
     ) -> rusqlite::Result<i64> {
-        let id = self.insert_row(state, status, elapsed_ms, None)?;
+        self.insert_from(state, status, elapsed_ms, Source::Gui)
+    }
+
+    /// Records a sent request, noting who sent it. Returns the new row's id.
+    pub fn insert_from(
+        &self,
+        state: &PersistedState,
+        status: Option<u16>,
+        elapsed_ms: Option<u128>,
+        source: Source,
+    ) -> rusqlite::Result<i64> {
+        let id = self.insert_row(state, status, elapsed_ms, None, source)?;
         // Only unnamed history is pruned; saved requests are kept however many there are.
         self.conn.execute(
             "DELETE FROM requests WHERE name IS NULL AND id NOT IN
@@ -221,7 +273,18 @@ impl History {
 
     /// Saves a request under `name` without adding it to the history list.
     pub fn save_new(&self, state: &PersistedState, name: &str) -> rusqlite::Result<i64> {
-        self.insert_row(state, None, None, Some(name))
+        self.insert_row(state, None, None, Some(name), Source::Gui)
+    }
+
+    /// Saves a request under `name`, noting who saved it.
+    pub fn save_new_from(&self, state: &PersistedState, name: &str, source: Source) -> rusqlite::Result<i64> {
+        self.insert_row(state, None, None, Some(name), source)
+    }
+
+    /// Changes whenever any connection (another process included) commits to
+    /// the database, so the window can refresh its lists when an agent sends.
+    pub fn data_version(&self) -> Option<i64> {
+        self.conn.query_row("PRAGMA data_version", [], |r| r.get(0)).ok()
     }
 
     fn insert_row(
@@ -230,6 +293,7 @@ impl History {
         status: Option<u16>,
         elapsed_ms: Option<u128>,
         name: Option<&str>,
+        source: Source,
     ) -> rusqlite::Result<i64> {
         let created_at = time::OffsetDateTime::now_utc()
             .format(&time::format_description::well_known::Rfc3339)
@@ -238,8 +302,8 @@ impl History {
         self.conn.execute(
             "INSERT INTO requests
                 (created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body,
-                 status, elapsed_ms, extra_json, name, in_history)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                 status, elapsed_ms, extra_json, name, in_history, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 created_at,
                 row.method,
@@ -255,6 +319,7 @@ impl History {
                 name,
                 // A request saved directly (not from a send) isn't part of the history.
                 name.is_none(),
+                source.as_str(),
             ],
         )?;
         Ok(self.conn.last_insert_rowid())
@@ -306,6 +371,11 @@ impl History {
         )
     }
 
+    /// One request (history or saved) by id.
+    pub fn get(&self, id: i64) -> rusqlite::Result<Option<HistoryEntry>> {
+        Ok(self.query(&format!("SELECT {COLUMNS} FROM requests WHERE id = ?1"), params![id])?.pop())
+    }
+
     /// Sent requests, newest first. Saved ones appear here too (with their
     /// name) until the history is cleared.
     pub fn list_recent(&self, limit: i64) -> rusqlite::Result<Vec<HistoryEntry>> {
@@ -334,6 +404,7 @@ impl History {
                 status: row.get(9)?,
                 elapsed_ms: row.get(10)?,
                 name: row.get(12)?,
+                source: Source::parse(&row.get::<_, String>(13)?),
             })
         })?;
         rows.collect()
@@ -545,6 +616,38 @@ mod tests {
             h.insert(&state(&format!("http://x/{i}"), BodyMode::None), None, None).unwrap();
         }
         assert_eq!(h.list_saved().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_row_is_found_by_id() {
+        let h = history();
+        let id = h.insert(&state("http://a", BodyMode::None), Some(200), Some(1)).unwrap();
+        assert_eq!(h.get(id).unwrap().unwrap().url, "http://a");
+        assert!(h.get(id + 99).unwrap().is_none());
+    }
+
+    #[test]
+    fn the_sender_is_recorded_and_read_back() {
+        let h = history();
+        h.insert(&state("http://gui", BodyMode::None), Some(200), Some(1)).unwrap();
+        h.insert_from(&state("http://agent", BodyMode::None), Some(200), Some(1), Source::Mcp).unwrap();
+        let rows = h.list_recent(10).unwrap();
+        assert_eq!((rows[0].url.as_str(), rows[0].source), ("http://agent", Source::Mcp));
+        assert_eq!(rows[1].source, Source::Gui);
+    }
+
+    #[test]
+    fn a_write_from_another_connection_changes_the_data_version() {
+        let dir = std::env::temp_dir().join(format!("plunger-dv-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("h.sqlite3");
+        let _ = std::fs::remove_file(&path);
+        let window = History::with_connection(Connection::open(&path).unwrap()).unwrap();
+        let agent = History::with_connection(Connection::open(&path).unwrap()).unwrap();
+        let before = window.data_version();
+        agent.insert_from(&state("http://x", BodyMode::None), Some(200), Some(1), Source::Cli).unwrap();
+        assert_ne!(window.data_version(), before);
+        assert_eq!(window.list_recent(5).unwrap().len(), 1);
     }
 
     #[test]

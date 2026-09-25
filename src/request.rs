@@ -83,6 +83,22 @@ pub fn ensure_header(headers: &mut Vec<(String, String)>, name: &str, value: &st
     }
 }
 
+/// The text form of a header list: one `Name: value` per line.
+pub fn headers_to_text(headers: &[(String, String)]) -> String {
+    headers.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join("\n")
+}
+
+/// What Send does, in one place for the window and for agents: fill in a
+/// missing scheme, then build. A URL that uses variables keeps its scheme-less
+/// form (a variable may supply the scheme, and the field must keep the
+/// `{{template}}` rather than a resolved secret).
+pub fn prepare_to_send(state: &mut PersistedState, bearer_token: &str) -> Result<OutgoingRequest, String> {
+    if !state.url.contains("{{") {
+        state.url = normalize_url(&state.url);
+    }
+    build_request(state, bearer_token)
+}
+
 /// Turns the form state (plus the never-persisted bearer token) into the
 /// request that will actually be sent: variables substituted, body
 /// assembled. Fails, without sending anything, if a

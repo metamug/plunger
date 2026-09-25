@@ -52,7 +52,7 @@ fn multipart_form(fields: Vec<FormField>) -> Result<Form, String> {
     Ok(form)
 }
 
-fn execute(req: OutgoingRequest) -> SendResult {
+pub fn execute(req: OutgoingRequest) -> SendResult {
     let redirect = if req.follow_redirects {
         reqwest::redirect::Policy::limited(MAX_REDIRECTS)
     } else {
