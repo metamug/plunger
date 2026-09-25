@@ -1,4 +1,4 @@
-<h1 align="center">Plunger</h1>
+<h1 align="center">  <img src="docs/images/plunger.svg" alt="A plunger" width="24"> Plunger</h1>
 
 <p align="center"><strong>Unclog your API.</strong></p>
 
