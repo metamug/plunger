@@ -43,16 +43,19 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([980.0, 680.0])
-            .with_min_inner_size([620.0, 420.0]),
-        // Normally eframe picks its own folder; with the override, keep the
-        // window/tab state next to the rest of the app data.
+            .with_min_inner_size([620.0, 420.0])
+            // Fixed id so eframe's state file lives in %APPDATA%\Plunger\data next to
+            // the history database, instead of a folder named after the versioned title.
+            .with_app_id("Plunger"),
+        // With the data-dir override, keep the window/tab state next to the
+        // rest of the app data too.
         persistence_path: std::env::var_os(history::DATA_DIR_ENV)
             .filter(|d| !d.is_empty())
             .map(|_| history::app_data_dir().join("app.ron")),
         ..Default::default()
     };
     eframe::run_native(
-        &format!("Metamug API Tester {}", env!("CARGO_PKG_VERSION")),
+        &format!("Plunger {}", env!("CARGO_PKG_VERSION")),
         options,
         Box::new(|cc| {
             fn load<T: serde::de::DeserializeOwned + Default>(storage: Option<&dyn eframe::Storage>, key: &str) -> T {

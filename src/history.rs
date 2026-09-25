@@ -10,14 +10,14 @@ const MAX_ROWS: i64 = 1000;
 /// Overrides where all app data lives (history, window state, crash log).
 /// For demos and testing: run a copy against a throwaway folder without
 /// touching your real history.
-pub const DATA_DIR_ENV: &str = "METAMUG_DATA_DIR";
+pub const DATA_DIR_ENV: &str = "PLUNGER_DATA_DIR";
 
 /// Per-user application data directory (history database, crash log).
 pub fn app_data_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os(DATA_DIR_ENV).filter(|d| !d.is_empty()) {
         return PathBuf::from(dir);
     }
-    directories::ProjectDirs::from("", "", "Metamug API Tester")
+    directories::ProjectDirs::from("", "", "Plunger")
         .map(|dirs| dirs.data_dir().to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."))
 }

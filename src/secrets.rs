@@ -5,7 +5,7 @@
 use crate::model::PersistedState;
 use std::collections::{HashMap, HashSet};
 
-pub const SERVICE: &str = "Metamug API Tester";
+pub const SERVICE: &str = "Plunger";
 /// Windows Credential Manager caps a credential at 2560 bytes.
 pub const MAX_SECRET_BYTES: usize = 2500;
 const BEARER_KEY: &str = "bearer";
@@ -383,7 +383,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn the_real_windows_credential_manager_round_trips() {
-        let store = OsStore::with_service("Metamug API Tester (unit test)");
+        let store = OsStore::with_service("Plunger (unit test)");
         let key = format!("roundtrip-{}", std::process::id());
 
         assert_eq!(store.get(&key).unwrap(), None);

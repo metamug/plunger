@@ -4,7 +4,7 @@
 
 .EXAMPLE
   # Real submission: use the values from Partner Center > Product identity
-  .\build-msix.ps1 -IdentityName "12345Metamug.MetamugAPITester" `
+  .\build-msix.ps1 -IdentityName "12345Metamug.Plunger" `
                    -Publisher "CN=AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" `
                    -PublisherDisplayName "Metamug"
 
@@ -26,7 +26,7 @@ $ErrorActionPreference = 'Stop'
 
 $here    = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repo    = [System.IO.Path]::GetFullPath((Join-Path $here '..\..'))
-$exe     = Join-Path $repo 'target\release\metamug-api-tester.exe'
+$exe     = Join-Path $repo 'target\release\plunger.exe'
 $assets  = Join-Path $here 'Assets'
 $outDir  = Join-Path $repo 'target\msix'
 $stage   = Join-Path $outDir 'stage'
@@ -35,7 +35,7 @@ if (-not (Test-Path $exe))    { throw "Release exe not found: $exe. Run 'cargo b
 if (-not (Test-Path $assets)) { throw "Assets not found. Run packaging\icons\make-icons.ps1 first." }
 
 if ($Dev) {
-    if (-not $IdentityName)         { $IdentityName = 'Metamug.ApiTester.Dev' }
+    if (-not $IdentityName)         { $IdentityName = 'Metamug.Plunger.Dev' }
     if (-not $Publisher)            { $Publisher = 'CN=Metamug Dev' }
     if (-not $PublisherDisplayName) { $PublisherDisplayName = 'Metamug (dev)' }
 }
@@ -98,7 +98,7 @@ if (-not $makeappx) {
     Write-Warning "Install the Windows SDK, or run packaging\msix\fetch-buildtools.ps1, then re-run this script."
     exit 2
 }
-$msix = Join-Path $outDir "MetamugApiTester_$Version`_x64.msix"
+$msix = Join-Path $outDir "Plunger_$Version`_x64.msix"
 if (Test-Path $msix) { Remove-Item $msix -Force }
 & $makeappx pack /d $stage /p $msix /o | Write-Host
 if ($LASTEXITCODE -ne 0) { throw "makeappx failed with exit code $LASTEXITCODE" }

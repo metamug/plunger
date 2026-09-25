@@ -1,75 +1,118 @@
-# Metamug API Tester (desktop)
+<h1 align="center">Plunger</h1>
 
-A tiny, fast, native desktop companion to [metamug.com/util/api-tester/](https://metamug.com/util/api-tester/).
+<p align="center">
+  <strong>Check one API endpoint in thirty seconds.</strong><br>
+  A small native app for sending HTTP requests. No account, no cloud, no CORS limits.
+</p>
 
-Built with [egui](https://github.com/emilk/egui) — no webview, no bundled browser, just native rendering — because it's meant to be a quick, throwaway tool: open it, fire a request, close it. The reason it exists at all: a browser page (even with a CORS workaround) can never reliably reach `localhost` or an intranet API, and that's exactly where most APIs live while they're being developed. This app is a real native process, so it has no CORS, no mixed-content, and no Private Network Access restriction — it reaches whatever the machine it's running on can reach, the same way `curl` or Postman's desktop app do.
+<p align="center">
+  <a href="https://github.com/metamug/plunger/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/metamug/plunger"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <img alt="Windows 10 and 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-lightgrey">
+  <img alt="Built with Rust and egui" src="https://img.shields.io/badge/built%20with-Rust%20%2B%20egui-orange">
+</p>
 
-## What it is not
+<p align="center">
+  <a href="https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip"><strong>Download for Windows</strong></a> (zip, about 3 MB, no installer)
+  &nbsp;·&nbsp; <a href="https://metamug.com/util/api-tester-desktop/">Website</a>
+  &nbsp;·&nbsp; <a href="store/privacy-policy.md">Privacy</a>
+</p>
 
-Not a Postman replacement. No collections, no environments, no scripting. If you need those, use Postman. This is for the thirty-second "let me just check this one endpoint" moment.
+<!-- TODO: add a short GIF here: paste a curl command, press Send, the JSON tree appears. -->
 
-What it does have, because it earns its place in that thirty seconds: a request history sidebar (local SQLite), curl and HAR import, and `localhost:3000/api`-style URLs (a missing scheme is filled in: `http://` for local/private hosts, `https://` otherwise).
+---
 
-### Params, form-data and variables
+Most of the time you don't need an API platform. You need to hit one endpoint, see the status code and read the JSON. Plunger is built for exactly that: open it, paste a URL or a curl command, press Send, close it.
 
-- **Params tab** - query parameters as rows (with an on/off checkbox each); they are URL-encoded and appended to the URL when you send.
-- **form-data body** - a real `multipart/form-data` upload: text fields and file fields (pick a file, or import `curl -F name=@file`). The boundary and `Content-Type` are generated for you.
-- **JSON body** - syntax highlighting, live validity check, and a Prettify button.
-- **Variables** - define `name = value` in the Variables tab and use `{{name}}` in the URL, params, headers, body, form fields or Bearer token. Built-ins: `{{$uuid}}`, `{{$timestamp}}`, `{{$randomInt}}`. Sending is refused, with the names listed, if a variable is undefined, so a literal `{{token}}` is never transmitted. Variables ticked "secret", or named like `token`/`secret`/`password`/`key`, are never written to a file; tick **remember** to keep one in the system credential store, otherwise it is blank after a restart.
-- History stores the `{{template}}`, not the resolved values, and loading a history entry keeps your current variables and options.
+It's a real native program, not a web page, so it goes wherever your machine can go: `localhost`, a dev server on your LAN, an intranet API, a service that sends no CORS headers. Like `curl`, with a window.
 
-### Options tab
+## Why Plunger
 
-Per-session settings, kept when you load a request from history: timeout (1-600 s, default 20), follow redirects, and **Skip TLS certificate verification** for local APIs behind a self-signed certificate. When that is on, the tab is labelled "Options (TLS check off)" so it can't be forgotten.
+- **Starts clean, stays out of the way.** No sign-in, no workspace, no sync. One window, one request.
+- **Reaches what a browser can't.** No CORS, mixed-content or private-network restrictions. `localhost:3000/api` just works (a missing scheme is filled in for you).
+- **Your secrets stay yours.** Tokens are never written to a file unless you ask, and then only to Windows Credential Manager.
+- **Small.** A single exe of about 6 MB, drawn natively with egui. No webview, no bundled browser.
+- **Open source.** MIT licensed. Read exactly what it does with your requests.
 
-### What is and isn't written to disk
+## Features
 
-- The Bearer field is not saved unless you tick **remember** next to it. Ticked values (and ticked secret variables) go into the operating system credential store (Windows Credential Manager / macOS Keychain), never into a file. **Forget saved secrets** on the Variables tab removes them all. Limits: about 2,500 bytes per secret, and remembering is not available on Linux yet.
-- Credential-looking headers (`Authorization`, `Cookie`, `X-Api-Key`, anything containing `token`/`secret`/`password`), credential-looking params and form fields, and secret variable values are blanked before being written to history or the saved form state; `user:password@` URL parts are blanked in history. A blanked credential header is not sent. Put secrets in a **secret variable** (see Variables above) and they never touch the disk.
-- Request bodies are stored as typed. Don't paste secrets into a body you don't want in the local history; **Clear** deletes it. History keeps the newest 1000 requests.
-- Responses over 10 MB are cut off, with a notice showing the real size; large JSON opens collapsed one level deep instead of fully expanded.
-- HTTPS uses the operating system's certificate store, so corporate CAs work.
-- A crash writes `crash.log` next to the history database (`%APPDATA%\Metamug API Tester\data\` on Windows).
+| | |
+|---|---|
+| **Requests** | GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS. Header name suggestions as you type, and a Bearer token field. |
+| **Bodies** | JSON (highlighting, live validation, Prettify), form-urlencoded, raw text, and real `multipart/form-data` with file uploads. |
+| **Params** | Query parameters as a table, URL-encoded for you, each row switchable on or off. |
+| **Variables** | `{{name}}` in the URL, params, headers, body, form fields or Bearer token. Built-ins `{{$uuid}}`, `{{$timestamp}}`, `{{$randomInt}}`. A request with an undefined variable is refused, so a literal `{{token}}` is never sent. |
+| **Responses** | Collapsible JSON tree with status, time and size. Save the body to a file. |
+| **Import** | Paste a curl command (including `-F` uploads) or open a HAR file. |
+| **History** | The last 1,000 requests, stored locally. |
+| **Local HTTPS** | Skip certificate verification for self-signed dev servers, with a tab label that reminds you it's off. Timeout and redirect controls. |
+| **Certificates** | Uses the Windows certificate store, so corporate CAs work. |
 
-### Known limits
+## Private by design
 
-- **Cancel** stops the app waiting; the underlying request finishes or times out in the background (`reqwest::blocking` can't be interrupted).
-- No cookie jar. Variables are one global set (no per-environment sets yet). `-F` is imported from curl; multipart from HAR files is not.
-- HTTP/1.1 only.
-- Windows is the only platform tested.
+- **No account, no analytics, no telemetry, no update checks.** The only network traffic is the requests you send.
+- **Secrets never touch the disk by accident.** The Bearer token and secret variables live in memory. Tick **remember** to keep one in Windows Credential Manager; **Forget saved secrets** removes them all.
+- **History is scrubbed before it's saved.** Headers, params and form fields that look like credentials (`Authorization`, `Cookie`, `X-Api-Key`, anything with `token`, `secret` or `password`) are blanked, and so are `user:password@` parts of URLs. History stores your `{{template}}`, not the resolved value.
+- **One folder holds everything:** `%APPDATA%\Plunger\data` (history, last request, a crash log if it ever crashes). Delete it, plus **Forget saved secrets** if you used remember, and nothing is left.
 
-## Development
+Request bodies are saved to history as typed, so put secrets in a secret variable rather than pasting them into a body. Full details in the [privacy policy](store/privacy-policy.md).
 
-```bash
-cargo test      # unit tests for parsing, request building, history, JSON highlighting
-cargo clippy --all-targets
-```
+## What Plunger is not
 
-Layout: `src/app/` is the UI (`app/request/` has one file per request tab), `src/request.rs` turns the form into a request (variables, params, body; pure logic), `src/http.rs` sends it, `src/vars.rs` substitutes `{{variables}}`, `src/redact.rs` keeps credentials off disk, `src/history.rs` is the SQLite store, `src/curl_import.rs` parses curl/HAR.
+It is not a Postman replacement, on purpose. There are no collections, environments, scripting or team features. If you need those, [Postman](https://www.postman.com/) and [Bruno](https://www.usebruno.com/) are good at them. Plunger is for the moment before you'd reach for one of those.
 
-## Building
+## Install
 
-Requires the Rust GNU toolchain on Windows (avoids needing the full Visual Studio Build Tools — just `rustup` + a mingw-w64 install):
+1. [Download `plunger-windows.zip`](https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip) and unzip it anywhere.
+2. Run `plunger.exe`.
+
+Requires Windows 10 (1809) or 11, 64-bit.
+
+**"Windows protected your PC"?** Plunger isn't code-signed yet, so SmartScreen may warn on first run. Click **More info**, then **Run anyway**. The source and the release checksums are here if you'd rather verify first, or [build it yourself](#build-from-source).
+
+**Update:** download the new zip and replace the exe. **Uninstall:** delete the exe and `%APPDATA%\Plunger`, and use **Forget saved secrets** first if you ticked remember.
+
+## Known limits
+
+- **Cancel** stops waiting, but the request itself finishes or times out in the background.
+- No cookie jar. Variables are one global set (no per-environment sets yet).
+- Multipart bodies are imported from curl `-F`, not from HAR files.
+- HTTP/1.1 only. Responses over 10 MB are truncated, with a notice showing the real size.
+- Windows is the only platform built and tested so far.
+
+## Build from source
+
+Plunger builds with the Rust GNU toolchain on Windows, so you don't need Visual Studio Build Tools, only `rustup` and mingw-w64:
 
 ```bash
 rustup toolchain install stable-x86_64-pc-windows-gnu
 rustup default stable-x86_64-pc-windows-gnu
-# plus a mingw-w64 gcc/ld on PATH (e.g. WinLibs, MSYS2)
+# plus mingw-w64 (gcc, ld, windres, dlltool) on PATH, e.g. from WinLibs or MSYS2
 
 cargo build --release
 ```
 
-The binary is at `target/x86_64-pc-windows-gnu/release/metamug-api-tester.exe` (or `target/release/...` if built on the default host toolchain instead).
+The exe is at `target/release/plunger.exe` (or `target/x86_64-pc-windows-gnu/release/` when cross-targeting).
 
-## Releasing
+```bash
+cargo test                  # parsing, request building, history, redaction, variables
+cargo clippy --all-targets
+```
 
-1. `cargo build --release`
-2. Zip the `.exe` as `metamug-api-tester-windows.zip`
-3. Upload to `s3://metamug-static-site/downloads/metamug-api-tester-windows.zip`
-4. Invalidate CloudFront for `/downloads/metamug-api-tester-windows.zip`
+**Where things live:** `src/app/` is the UI (`app/request/` has one file per request tab), `src/request.rs` turns the form into a request, `src/http.rs` sends it, `src/vars.rs` substitutes variables, `src/redact.rs` keeps credentials off disk, `src/history.rs` is the SQLite store, and `src/curl_import.rs` parses curl and HAR.
 
-Size: the exe is about 5.7 MB and the zip about 3.0 MB.
+## Contributing
 
-Microsoft Store packaging (MSIX, signed by Microsoft), the app icon, the listing text and the privacy policy are in `packaging/` and `store/`; start with `packaging/README.md`.
+Bug reports, fixes and polish are very welcome: [open an issue](https://github.com/metamug/plunger/issues). Please keep the scope in mind. Anything that makes the thirty-second check faster or safer fits; collections, scripting and sync don't. Run `cargo test` and `cargo clippy --all-targets` before sending a pull request.
 
-It's unsigned, so Windows SmartScreen will show an "Unknown publisher" warning on first run — expected until/unless a code-signing certificate is added. Not blocking, just a known first-run speed bump.
+## Releasing (maintainers)
+
+1. Bump `version` in `Cargo.toml`, then `cargo build --release`.
+2. Zip `plunger.exe` as `plunger-windows.zip` and note its SHA-256.
+3. Create a GitHub release tagged `vX.Y.Z` with the zip attached and the checksum in the notes. Download links on the website use `releases/latest`, so they update automatically.
+
+Microsoft Store packaging (MSIX) and the Store listing are in `packaging/` and `store/`; start with [`packaging/README.md`](packaging/README.md).
+
+## License
+
+[MIT](LICENSE). Made by [Metamug](https://metamug.com).

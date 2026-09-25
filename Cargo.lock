@@ -1406,25 +1406,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "metamug-api-tester"
-version = "0.1.0"
-dependencies = [
- "directories",
- "eframe",
- "egui",
- "egui_json_tree",
- "keyring",
- "reqwest",
- "rfd",
- "rusqlite",
- "serde",
- "serde_json",
- "shell-words",
- "time",
- "winresource",
-]
-
-[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1929,6 +1910,25 @@ name = "plain"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
+
+[[package]]
+name = "plunger"
+version = "0.1.0"
+dependencies = [
+ "directories",
+ "eframe",
+ "egui",
+ "egui_json_tree",
+ "keyring",
+ "reqwest",
+ "rfd",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "shell-words",
+ "time",
+ "winresource",
+]
 
 [[package]]
 name = "png"

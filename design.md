@@ -1,4 +1,4 @@
-# Metamug API Tester — design spec
+# Plunger — design spec
 
 Scope for this round of changes, written up before continuing the implementation so it can be reviewed/redirected first.
 
@@ -29,7 +29,7 @@ src/
 
 ## 3. Request history — SQLite sidebar
 
-**Storage:** `rusqlite` with the `bundled` feature (compiles SQLite from source via the C toolchain already set up — no new system dependency). DB file lives next to the existing eframe persistence data, via the `directories` crate: `%APPDATA%\Metamug API Tester\history.sqlite3` on Windows.
+**Storage:** `rusqlite` with the `bundled` feature (compiles SQLite from source via the C toolchain already set up — no new system dependency). DB file lives next to the existing eframe persistence data, via the `directories` crate: `%APPDATA%\Plunger\data\history.sqlite3` on Windows.
 
 **Schema:**
 ```sql

@@ -7,8 +7,8 @@ fn main() {
         let version = env!("CARGO_PKG_VERSION");
         let mut res = winresource::WindowsResource::new();
         res.set_icon("packaging/icons/app.ico");
-        res.set("ProductName", "Metamug API Tester");
-        res.set("FileDescription", "Metamug API Tester");
+        res.set("ProductName", "Plunger");
+        res.set("FileDescription", "Plunger");
         res.set("CompanyName", "Metamug");
         res.set("LegalCopyright", "Copyright Metamug");
         res.set("ProductVersion", version);
