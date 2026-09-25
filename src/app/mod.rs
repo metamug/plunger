@@ -8,6 +8,7 @@ use crate::history::{History, HistoryEntry};
 use crate::http::send_request;
 use crate::model::{BodyMode, Outcome, ParsedRequest, PersistedState, RequestTab, ResponseTab, SendResult};
 use crate::request::{build_request, normalize_url, parse_headers};
+use crate::secrets::{OsStore, SecretStore, SecretSync};
 use crate::theme::{self, card};
 use eframe::egui;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -64,14 +65,20 @@ pub struct ApiTesterApp {
     history_entries: Vec<HistoryEntry>,
 
     import: ImportState,
+
+    secrets: Box<dyn SecretStore>,
+    secret_sync: SecretSync,
+    secrets_error: Option<String>,
 }
 
 impl ApiTesterApp {
     pub fn from_persisted(state: PersistedState) -> Self {
-        Self::new(state, History::open().ok())
+        let mut app = Self::new(state, History::open().ok(), Box::new(OsStore::new()));
+        app.restore_secrets();
+        app
     }
 
-    fn new(state: PersistedState, history: Option<History>) -> Self {
+    fn new(state: PersistedState, history: Option<History>, secrets: Box<dyn SecretStore>) -> Self {
         let header_rows = parse_headers(&state.headers_text);
         let history_entries = history
             .as_ref()
@@ -91,7 +98,26 @@ impl ApiTesterApp {
             history,
             history_entries,
             import: ImportState::default(),
+            secrets,
+            secret_sync: SecretSync::default(),
+            secrets_error: None,
         }
+    }
+
+    fn restore_secrets(&mut self) {
+        let problems = self.secret_sync.restore(&*self.secrets, &mut self.state, &mut self.bearer_token);
+        self.secrets_error = problems.into_iter().next();
+    }
+
+    /// Called from `save`: writes ticked secrets to the OS store, deletes unticked ones.
+    fn sync_secrets(&mut self) {
+        let problems = self.secret_sync.persist(&*self.secrets, &self.state, &self.bearer_token);
+        self.secrets_error = problems.into_iter().next();
+    }
+
+    fn forget_secrets(&mut self) {
+        let problems = self.secret_sync.forget_all(&*self.secrets, &mut self.state);
+        self.secrets_error = problems.into_iter().next();
     }
 
     fn is_loading(&self) -> bool {
@@ -216,6 +242,7 @@ impl eframe::App for ApiTesterApp {
         // Credentials must not land in the plaintext config file (the Bearer
         // field is never part of `state` at all).
         eframe::set_value(storage, eframe::APP_KEY, &self.state.redacted());
+        self.sync_secrets();
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -277,9 +304,10 @@ impl ApiTesterApp {
 mod tests {
     use super::*;
     use crate::model::{FieldKind, FormField, KeyValue, ResponseData, Variable};
+    use crate::secrets::test_support::MemoryStore;
 
     fn app(state: PersistedState) -> ApiTesterApp {
-        ApiTesterApp::new(state, Some(History::in_memory()))
+        ApiTesterApp::new(state, Some(History::in_memory()), Box::new(MemoryStore::default()))
     }
 
     /// Runs a few real egui frames (layout and all) without a window.
@@ -295,7 +323,7 @@ mod tests {
         PersistedState {
             headers_text: "Accept: */*\nX-Trace: 1".into(),
             params: vec![KeyValue { key: "page".into(), value: "2".into(), enabled: true }],
-            variables: vec![Variable { name: "host".into(), value: "localhost".into(), secret: false }],
+            variables: vec![Variable { name: "host".into(), value: "localhost".into(), secret: false, remember: false }],
             multipart_fields: vec![
                 FormField { key: "title".into(), kind: FieldKind::Text, value: "hi".into(), enabled: true },
                 FormField { key: "doc".into(), kind: FieldKind::File, value: "C:/x/report.pdf".into(), enabled: true },
@@ -416,7 +444,7 @@ mod tests {
         assert!(!a.is_loading());
 
         a.state.url = "{{base}}/x".into();
-        a.state.variables = vec![Variable { name: "base".into(), value: "localhost:1".into(), secret: false }];
+        a.state.variables = vec![Variable { name: "base".into(), value: "localhost:1".into(), secret: false, remember: false }];
         a.trigger_send(&egui::Context::default());
         assert_eq!(a.state.url, "{{base}}/x");
         a.cancel_send();
@@ -425,7 +453,7 @@ mod tests {
     #[test]
     fn loading_history_keeps_session_variables_and_options() {
         let mut a = app(PersistedState {
-            variables: vec![Variable { name: "keep".into(), value: "me".into(), secret: false }],
+            variables: vec![Variable { name: "keep".into(), value: "me".into(), secret: false, remember: false }],
             insecure_tls: true,
             ..Default::default()
         });
@@ -438,5 +466,87 @@ mod tests {
         assert_eq!(a.state.url, "http://old/x");
         assert_eq!(a.state.variables[0].name, "keep");
         assert!(a.state.insecure_tls);
+    }
+
+    fn remembering_app(store: &MemoryStore, state: PersistedState) -> ApiTesterApp {
+        ApiTesterApp::new(state, Some(History::in_memory()), Box::new(store.clone()))
+    }
+
+    #[test]
+    fn remembered_secrets_survive_a_restart_but_never_reach_the_state_file() {
+        let store = MemoryStore::default();
+        let mut first = remembering_app(
+            &store,
+            PersistedState {
+                variables: vec![
+                    Variable { name: "apiKey".into(), value: "SEKRET-VALUE".into(), secret: true, remember: true },
+                    Variable { name: "forgetful".into(), value: "GONE-AFTER-RESTART".into(), secret: true, remember: false },
+                    Variable { name: "host".into(), value: "localhost".into(), secret: false, remember: false },
+                ],
+                remember_bearer: true,
+                ..Default::default()
+            },
+        );
+        first.bearer_token = "BEARER-VALUE".into();
+        first.sync_secrets();
+        assert!(first.secrets_error.is_none());
+
+        // what eframe would write to disk
+        let on_disk = serde_json::to_string(&first.state.redacted()).unwrap();
+        for secret in ["SEKRET-VALUE", "BEARER-VALUE", "GONE-AFTER-RESTART"] {
+            assert!(!on_disk.contains(secret), "{secret} leaked into the state file: {on_disk}");
+        }
+
+        let mut second = remembering_app(&store, serde_json::from_str(&on_disk).unwrap());
+        second.restore_secrets();
+        assert_eq!(second.bearer_token, "BEARER-VALUE");
+        assert_eq!(second.state.variables[0].value, "SEKRET-VALUE");
+        assert_eq!(second.state.variables[1].value, "", "an un-remembered secret is blank after a restart");
+        assert_eq!(second.state.variables[2].value, "localhost");
+    }
+
+    #[test]
+    fn forgetting_secrets_empties_the_store_and_unticks_everything() {
+        let store = MemoryStore::default();
+        let mut a = remembering_app(
+            &store,
+            PersistedState {
+                variables: vec![Variable { name: "tok".into(), value: "v".into(), secret: true, remember: true }],
+                remember_bearer: true,
+                ..Default::default()
+            },
+        );
+        a.bearer_token = "b".into();
+        a.sync_secrets();
+        assert_eq!(store.data.borrow().len(), 2);
+
+        a.forget_secrets();
+        assert!(store.data.borrow().is_empty());
+        assert!(!a.state.remember_bearer && !a.state.variables[0].remember);
+        assert!(a.secrets_error.is_none());
+    }
+
+    #[test]
+    fn an_unreadable_store_shows_an_error_keeps_the_data_and_the_ui_still_draws() {
+        let store = MemoryStore::default();
+        store.data.borrow_mut().insert("var:apiKey".into(), "precious".into());
+        *store.fail_reads.borrow_mut() = true;
+        let mut a = remembering_app(
+            &store,
+            PersistedState {
+                variables: vec![Variable { name: "apiKey".into(), value: String::new(), secret: true, remember: true }],
+                remember_bearer: true,
+                ..Default::default()
+            },
+        );
+        a.restore_secrets();
+        assert!(a.secrets_error.as_deref().is_some_and(|e| e.contains("locked")));
+
+        for tab in [RequestTab::Headers, RequestTab::Variables] {
+            a.request_tab = tab;
+            draw(&mut a);
+        }
+        a.sync_secrets(); // an autosave right now must not wipe the stored value
+        assert_eq!(store.data.borrow()["var:apiKey"], "precious");
     }
 }

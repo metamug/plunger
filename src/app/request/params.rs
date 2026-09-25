@@ -46,11 +46,23 @@ impl ApiTesterApp {
         );
         ui.label(
             egui::RichText::new(
-                "Secret values (ticked, or named like token/secret/password/key) stay in memory only and are blank after a restart.",
+                "Secret values (ticked, or named like token/secret/password/key) are never written to a file. Tick \"remember\" to keep one in the system credential store; otherwise it is blank after a restart.",
             )
             .weak()
             .small(),
         );
+        ui.horizontal(|ui| {
+            if ui
+                .small_button("Forget saved secrets")
+                .on_hover_text("Remove every remembered secret (including the Bearer token) from the system credential store")
+                .clicked()
+            {
+                self.forget_secrets();
+            }
+            if let Some(err) = &self.secrets_error {
+                ui.colored_label(egui::Color32::from_rgb(230, 100, 90), err);
+            }
+        });
         ui.add_space(6.0);
 
         edit_rows(
@@ -64,7 +76,7 @@ impl ApiTesterApp {
                     let mask = v.is_secret();
                     ui.add(
                         egui::TextEdit::singleline(&mut v.value)
-                            .desired_width(ui.available_width() - 100.0)
+                            .desired_width(ui.available_width() - 200.0)
                             .hint_text("value")
                             .password(mask),
                     );
@@ -74,6 +86,8 @@ impl ApiTesterApp {
                     if ui.add_enabled(!forced, egui::Checkbox::new(&mut ticked, "secret")).changed() {
                         v.secret = ticked;
                     }
+                    ui.add_enabled(mask, egui::Checkbox::new(&mut v.remember, "remember"))
+                        .on_hover_text("Keep this secret in the system credential store (only available for secret values)");
                     remove_button(ui)
                 })
                 .inner

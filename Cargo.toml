@@ -21,6 +21,12 @@ shell-words = "1"
 rfd = { version = "0.15", default-features = false }
 time = { version = "0.3", features = ["formatting"] }
 
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["apple-native"] }
+
 [profile.release]
 opt-level = "z"
 lto = true

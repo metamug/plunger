@@ -15,7 +15,7 @@ What it does have, because it earns its place in that thirty seconds: a request 
 - **Params tab** - query parameters as rows (with an on/off checkbox each); they are URL-encoded and appended to the URL when you send.
 - **form-data body** - a real `multipart/form-data` upload: text fields and file fields (pick a file, or import `curl -F name=@file`). The boundary and `Content-Type` are generated for you.
 - **JSON body** - syntax highlighting, live validity check, and a Prettify button.
-- **Variables** - define `name = value` in the Variables tab and use `{{name}}` in the URL, params, headers, body, form fields or Bearer token. Built-ins: `{{$uuid}}`, `{{$timestamp}}`, `{{$randomInt}}`. Sending is refused, with the names listed, if a variable is undefined, so a literal `{{token}}` is never transmitted. Variables ticked "secret", or named like `token`/`secret`/`password`/`key`, are kept in memory only.
+- **Variables** - define `name = value` in the Variables tab and use `{{name}}` in the URL, params, headers, body, form fields or Bearer token. Built-ins: `{{$uuid}}`, `{{$timestamp}}`, `{{$randomInt}}`. Sending is refused, with the names listed, if a variable is undefined, so a literal `{{token}}` is never transmitted. Variables ticked "secret", or named like `token`/`secret`/`password`/`key`, are never written to a file; tick **remember** to keep one in the system credential store, otherwise it is blank after a restart.
 - History stores the `{{template}}`, not the resolved values, and loading a history entry keeps your current variables and options.
 
 ### Options tab
@@ -24,7 +24,7 @@ Per-session settings, kept when you load a request from history: timeout (1-600 
 
 ### What is and isn't written to disk
 
-- The Bearer field is never saved.
+- The Bearer field is not saved unless you tick **remember** next to it. Ticked values (and ticked secret variables) go into the operating system credential store (Windows Credential Manager / macOS Keychain), never into a file. **Forget saved secrets** on the Variables tab removes them all. Limits: about 2,500 bytes per secret, and remembering is not available on Linux yet.
 - Credential-looking headers (`Authorization`, `Cookie`, `X-Api-Key`, anything containing `token`/`secret`/`password`), credential-looking params and form fields, and secret variable values are blanked before being written to history or the saved form state; `user:password@` URL parts are blanked in history. A blanked credential header is not sent. Put secrets in a **secret variable** (see Variables above) and they never touch the disk.
 - Request bodies are stored as typed. Don't paste secrets into a body you don't want in the local history; **Clear** deletes it. History keeps the newest 1000 requests.
 - Responses over 10 MB are cut off, with a notice showing the real size; large JSON opens collapsed one level deep instead of fully expanded.

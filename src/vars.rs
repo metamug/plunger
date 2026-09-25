@@ -113,9 +113,9 @@ mod tests {
 
     fn vars() -> Vec<Variable> {
         vec![
-            Variable { name: "host".into(), value: "localhost:3000".into(), secret: false },
-            Variable { name: "token".into(), value: "abc".into(), secret: true },
-            Variable { name: "empty".into(), value: String::new(), secret: false },
+            Variable { name: "host".into(), value: "localhost:3000".into(), secret: false, remember: false },
+            Variable { name: "token".into(), value: "abc".into(), secret: true, remember: false },
+            Variable { name: "empty".into(), value: String::new(), secret: false, remember: false },
         ]
     }
 

@@ -74,13 +74,23 @@ impl ApiTesterApp {
         accented_card(ui, AMBER, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Authorization: Bearer");
+                ui.checkbox(&mut self.state.remember_bearer, "remember")
+                    .on_hover_text("Keep the token in the system credential store (never in a file)");
+                let hint = if self.state.remember_bearer {
+                    "token — kept in the system credential store"
+                } else {
+                    "token — not saved between runs"
+                };
                 ui.add(
                     egui::TextEdit::singleline(&mut self.bearer_token)
                         .desired_width(ui.available_width())
-                        .hint_text("token — not saved between runs")
+                        .hint_text(hint)
                         .password(true),
                 );
             });
+            if let Some(err) = &self.secrets_error {
+                ui.colored_label(egui::Color32::from_rgb(230, 100, 90), err);
+            }
         });
         ui.add_space(8.0);
 

@@ -197,6 +197,7 @@ mod tests {
             name: name.into(),
             value: value.into(),
             secret: false,
+            remember: false,
         }
     }
 

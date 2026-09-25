@@ -85,13 +85,17 @@ impl FormField {
     }
 }
 
-/// A `{{name}}` variable. Secret values are kept in memory only.
+/// A `{{name}}` variable. Secret values never go into the saved state file;
+/// with `remember` they are kept in the OS credential store instead.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Default, Debug)]
 pub struct Variable {
     pub name: String,
     pub value: String,
     #[serde(default)]
     pub secret: bool,
+    /// Keep the (secret) value in the OS credential store between runs.
+    #[serde(default)]
+    pub remember: bool,
 }
 
 impl Variable {
@@ -120,6 +124,7 @@ pub struct PersistedState {
     pub multipart_fields: Vec<FormField>,
     pub raw_body: String,
     pub variables: Vec<Variable>,
+    pub remember_bearer: bool,
     pub timeout_secs: u64,
     pub follow_redirects: bool,
     pub insecure_tls: bool,
@@ -138,6 +143,7 @@ impl Default for PersistedState {
             multipart_fields: Vec::new(),
             raw_body: String::new(),
             variables: Vec::new(),
+            remember_bearer: false,
             timeout_secs: 20,
             follow_redirects: true,
             insecure_tls: false,
@@ -153,6 +159,7 @@ impl PersistedState {
         self.follow_redirects = current.follow_redirects;
         self.insecure_tls = current.insecure_tls;
         self.variables = current.variables.clone();
+        self.remember_bearer = current.remember_bearer;
         self
     }
 
@@ -233,9 +240,9 @@ mod tests {
                 FormField { key: "avatar".into(), kind: FieldKind::File, value: "C:/a.png".into(), enabled: true },
             ],
             variables: vec![
-                Variable { name: "host".into(), value: "localhost".into(), secret: false },
-                Variable { name: "authToken".into(), value: "T".into(), secret: false },
-                Variable { name: "custom".into(), value: "V".into(), secret: true },
+                Variable { name: "host".into(), value: "localhost".into(), secret: false, remember: false },
+                Variable { name: "authToken".into(), value: "T".into(), secret: false, remember: false },
+                Variable { name: "custom".into(), value: "V".into(), secret: true, remember: false },
             ],
             ..Default::default()
         };
@@ -266,7 +273,7 @@ mod tests {
         let current = PersistedState {
             insecure_tls: true,
             timeout_secs: 99,
-            variables: vec![Variable { name: "a".into(), value: "1".into(), secret: false }],
+            variables: vec![Variable { name: "a".into(), value: "1".into(), secret: false, remember: false }],
             ..Default::default()
         };
         let loaded = PersistedState { url: "http://other".into(), ..Default::default() }.with_session_from(&current);
