@@ -63,9 +63,9 @@ Plunger is a focused tool, not a Postman replacement: it has no collections, scr
 
 api tester, http client, rest client, postman alternative, curl, json, developer tools
 
-## What's new (version 0.1.0)
+## What's new (version 0.2.0)
 
-First release: requests, query params, JSON / form / multipart bodies with file upload, variables, curl and HAR import, history, self-signed certificate option, and optional remembered secrets.
+Request tabs and named saved requests, a plunger icon, clickable suggestions for header names and {{variables}}, and a command-line mode and MCP server so an AI agent can send requests through Plunger. Builds on the first release: requests, query params, JSON / form / multipart bodies with file upload, variables, curl and HAR import, history, self-signed certificate option, and optional remembered secrets.
 
 ## Notes for certification
 
