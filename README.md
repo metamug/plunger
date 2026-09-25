@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip"><strong>Download for Windows</strong></a> (zip, about 3.5 MB, no installer)
+  <a href="https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip"><strong>Download for Windows</strong></a> (zip, about 3.6 MB, no installer)
   &nbsp;·&nbsp; <a href="LICENSE">MIT license</a>
 </p>
 
