@@ -5,6 +5,7 @@ mod headers;
 mod options;
 mod params;
 mod rows;
+mod suggest;
 
 use crate::app::ApiTesterApp;
 use crate::model::RequestTab;

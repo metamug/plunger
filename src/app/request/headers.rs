@@ -1,4 +1,5 @@
 use super::rows::{edit_rows, remove_button};
+use super::suggest::{chips, variable_chips};
 use crate::app::tab::Tab;
 use crate::icons::{self, Icon};
 use crate::request::parse_headers;
@@ -38,29 +39,6 @@ const COMMON_CONTENT_TYPES: &[&str] = &[
     "text/html",
     "text/csv",
 ];
-
-/// Renders a row of small clickable suggestion buttons filtered by prefix
-/// match against `target`'s current text; picking one overwrites `target`.
-fn suggestion_chips(ui: &mut egui::Ui, target: &mut String, candidates: &[&str]) {
-    let typed_lower = target.to_lowercase();
-    let matches: Vec<&str> = candidates
-        .iter()
-        .filter(|c| c.to_lowercase().starts_with(&typed_lower) && c.to_lowercase() != typed_lower)
-        .take(6)
-        .copied()
-        .collect();
-    if matches.is_empty() {
-        return;
-    }
-    ui.horizontal_wrapped(|ui| {
-        ui.label(egui::RichText::new("suggestions:").weak().small());
-        for m in matches {
-            if ui.small_button(m).clicked() {
-                *target = m.to_string();
-            }
-        }
-    });
-}
 
 fn rows_to_text(rows: &[(String, String)]) -> String {
     rows.iter()
@@ -130,12 +108,13 @@ impl Tab {
             return;
         }
 
+        let variables = &self.state.variables;
         edit_rows(
             ui,
             &mut self.header_rows,
             || (String::new(), String::new()),
             |(k, v)| k.is_empty() && v.is_empty(),
-            |ui, (key, value)| {
+            |ui, (key, value), spare| {
                 let (key_resp, val_resp, remove) = ui
                     .horizontal(|ui| {
                         let key_resp = ui.add(
@@ -145,14 +124,15 @@ impl Tab {
                         );
                         let width = ui.available_width() - icons::trailing_room(ui, 1);
                         let val_resp = ui.add(theme::field(value).desired_width(width).hint_text("Value"));
-                        (key_resp, val_resp, remove_button(ui, "header"))
+                        (key_resp, val_resp, remove_button(ui, "header", spare))
                     })
                     .inner;
 
-                if key_resp.has_focus() {
-                    suggestion_chips(ui, key, COMMON_HEADERS);
-                } else if val_resp.has_focus() && key.eq_ignore_ascii_case("content-type") {
-                    suggestion_chips(ui, value, COMMON_CONTENT_TYPES);
+                chips(ui, &key_resp, key, COMMON_HEADERS);
+                if key.eq_ignore_ascii_case("content-type") {
+                    chips(ui, &val_resp, value, COMMON_CONTENT_TYPES);
+                } else {
+                    variable_chips(ui, &val_resp, value, variables);
                 }
                 remove
             },

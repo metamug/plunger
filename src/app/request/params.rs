@@ -1,6 +1,7 @@
 //! The Params and Variables tabs: both are plain lists of name/value rows.
 
 use super::rows::{edit_rows, enabled_checkbox, remove_button};
+use super::suggest::variable_chips;
 use crate::app::tab::Tab;
 use crate::icons::{self, Icon};
 use crate::model::{KeyValue, Variable};
@@ -19,20 +20,25 @@ impl Tab {
         ui.add_space(6.0);
 
         let before = self.state.params.clone();
+        let variables = &self.state.variables;
         edit_rows(
             ui,
             &mut self.state.params,
             KeyValue::blank,
             KeyValue::is_blank,
-            |ui, p| {
-                ui.horizontal(|ui| {
-                    enabled_checkbox(ui, &mut p.enabled);
-                    ui.add(theme::field(&mut p.key).desired_width(200.0).hint_text("name"));
-                    let width = ui.available_width() - icons::trailing_room(ui, 1);
-                    ui.add(theme::field(&mut p.value).desired_width(width).hint_text("value  (or {{variable}})"));
-                    remove_button(ui, "parameter")
-                })
-                .inner
+            |ui, p, spare| {
+                let (value_resp, remove) = ui
+                    .horizontal(|ui| {
+                        enabled_checkbox(ui, &mut p.enabled);
+                        ui.add(theme::field(&mut p.key).desired_width(200.0).hint_text("name"));
+                        let width = ui.available_width() - icons::trailing_room(ui, 1);
+                        let value_resp =
+                            ui.add(theme::field(&mut p.value).desired_width(width).hint_text("value  (or {{variable}})"));
+                        (value_resp, remove_button(ui, "parameter", spare))
+                    })
+                    .inner;
+                variable_chips(ui, &value_resp, &mut p.value, variables);
+                remove
             },
         );
         if self.state.params != before {
@@ -97,7 +103,7 @@ impl Tab {
             &mut self.state.variables,
             Variable::default,
             Variable::is_blank,
-            |ui, v| {
+            |ui, v, spare| {
                 ui.horizontal(|ui| {
                     ui.add(theme::field(&mut v.name).desired_width(160.0).hint_text("name"));
                     let mask = v.is_secret();
@@ -135,7 +141,7 @@ impl Tab {
                             },
                         )
                     });
-                    remove_button(ui, "variable")
+                    remove_button(ui, "variable", spare)
                 })
                 .inner
             },

@@ -1,4 +1,5 @@
 use super::rows::{edit_rows, enabled_checkbox, remove_button};
+use super::suggest::variable_chips;
 use crate::app::tab::Tab;
 use crate::icons::{self, Icon};
 use crate::json_view::highlight_json;
@@ -94,15 +95,17 @@ impl Tab {
         ui.add_space(4.0);
 
         let mut next_id = 0;
+        let variables = &self.state.variables;
         edit_rows(
             ui,
             &mut self.state.multipart_fields,
             FormField::blank,
             // A file row with nothing chosen yet still counts as "in use", so a fresh blank row follows it.
             |f| f.is_blank() && f.kind == FieldKind::Text,
-            |ui, f| {
+            |ui, f, spare| {
                 next_id += 1;
-                ui.horizontal(|ui| {
+                let (value_resp, remove) = ui.horizontal(|ui| {
+                    let mut value_resp = None;
                     enabled_checkbox(ui, &mut f.enabled);
                     ui.add(theme::field(&mut f.key).desired_width(140.0).hint_text("field name"));
                     egui::ComboBox::from_id_salt(("field-kind", next_id))
@@ -115,7 +118,9 @@ impl Tab {
                     let width = ui.available_width() - icons::trailing_room(ui, 1);
                     match f.kind {
                         FieldKind::Text => {
-                            ui.add(theme::field(&mut f.value).desired_width(width).hint_text("value  (or {{variable}})"));
+                            value_resp = Some(
+                                ui.add(theme::field(&mut f.value).desired_width(width).hint_text("value  (or {{variable}})")),
+                            );
                         }
                         FieldKind::File => {
                             // Same width as a text value, so the remove icon lines up across rows.
@@ -139,9 +144,13 @@ impl Tab {
                             });
                         }
                     }
-                    remove_button(ui, "field")
+                    (value_resp, remove_button(ui, "field", spare))
                 })
-                .inner
+                .inner;
+                if let Some(resp) = value_resp {
+                    variable_chips(ui, &resp, &mut f.value, variables);
+                }
+                remove
             },
         );
     }

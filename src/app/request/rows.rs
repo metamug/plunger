@@ -22,25 +22,39 @@ pub(super) fn tidy_rows<T>(
     }
 }
 
-/// Draws each row with `row_ui` (which returns true when that row's remove
-/// button was clicked), then tidies the list.
+/// True for the spare blank row at the end of the list: it exists only to be
+/// typed into, so there is nothing to remove.
+pub(super) fn is_spare<T>(rows: &[T], i: usize, is_blank: impl Fn(&T) -> bool) -> bool {
+    i + 1 == rows.len() && is_blank(&rows[i])
+}
+
+/// Draws each row with `row_ui`, then tidies the list. `row_ui` gets `spare`
+/// (true for the trailing blank row, which must not offer a remove button) and
+/// returns true when that row's remove button was clicked.
 pub(super) fn edit_rows<T>(
     ui: &mut egui::Ui,
     rows: &mut Vec<T>,
     blank: impl Fn() -> T,
     is_blank: impl Fn(&T) -> bool,
-    mut row_ui: impl FnMut(&mut egui::Ui, &mut T) -> bool,
+    mut row_ui: impl FnMut(&mut egui::Ui, &mut T, bool) -> bool,
 ) {
     let mut remove = None;
-    for (i, row) in rows.iter_mut().enumerate() {
-        if row_ui(ui, row) {
+    for i in 0..rows.len() {
+        let spare = is_spare(rows, i, &is_blank);
+        if row_ui(ui, &mut rows[i], spare) {
             remove = Some(i);
         }
     }
     tidy_rows(rows, remove, blank, is_blank);
 }
 
-pub(super) fn remove_button(ui: &mut egui::Ui, what: &str) -> bool {
+/// The trash button that ends a row. On the spare row it leaves an empty slot
+/// of the same size instead, so the columns still line up.
+pub(super) fn remove_button(ui: &mut egui::Ui, what: &str, spare: bool) -> bool {
+    if spare {
+        ui.allocate_space(egui::vec2(icons::SIZE, icons::SIZE));
+        return false;
+    }
     icons::button(ui, Icon::Trash, &format!("Remove this {what}")).clicked()
 }
 
@@ -52,7 +66,7 @@ pub(super) fn enabled_checkbox(ui: &mut egui::Ui, enabled: &mut bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::tidy_rows;
+    use super::{is_spare, tidy_rows};
 
     fn tidy(rows: &mut Vec<String>, remove: Option<usize>) {
         tidy_rows(rows, remove, String::new, |s| s.is_empty());
@@ -110,5 +124,21 @@ mod tests {
         let mut rows = v(&["a", ""]);
         tidy(&mut rows, Some(9));
         assert_eq!(rows, v(&["a", ""]));
+    }
+
+    #[test]
+    fn only_the_trailing_blank_row_is_spare() {
+        let rows = v(&["a", "", "b", ""]);
+        let blank = |s: &String| s.is_empty();
+        assert!(!is_spare(&rows, 0, blank), "a filled row can be removed");
+        assert!(!is_spare(&rows, 1, blank), "a blank row in the middle can still be removed");
+        assert!(!is_spare(&rows, 2, blank));
+        assert!(is_spare(&rows, 3, blank), "the blank row at the end is the one to type into");
+    }
+
+    #[test]
+    fn a_filled_last_row_is_not_spare() {
+        let rows = v(&["a", "b"]);
+        assert!(!is_spare(&rows, 1, |s: &String| s.is_empty()));
     }
 }
