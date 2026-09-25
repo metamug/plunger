@@ -1,0 +1,68 @@
+name: Release
+
+# Push a tag like v0.1.1 to publish. Running it by hand (Actions tab > Release >
+# Run workflow) does a dry run: it builds and uploads the zip as a build
+# artifact, but does not touch any GitHub release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    name: Build and publish (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag must match the version in Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'.TrimStart('v')
+          $line = Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
+          $version = $line.Matches[0].Groups[1].Value
+          if ($tag -ne $version) { throw "Tag v$tag does not match Cargo.toml version $version. Bump the version, or retag." }
+
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --locked
+      - name: Build release
+        run: cargo build --release --locked
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path target/release/plunger.exe -DestinationPath dist/plunger-windows.zip -CompressionLevel Optimal
+          $hash = (Get-FileHash dist/plunger-windows.zip -Algorithm SHA256).Hash
+          "$hash  plunger-windows.zip" | Set-Content dist/plunger-windows.zip.sha256
+          "SHA-256 $hash"
+
+      - name: Keep the zip as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plunger-windows-zip
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Publish to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            # The release was already drafted by hand: just attach the files.
+            gh release upload $tag dist/plunger-windows.zip dist/plunger-windows.zip.sha256 --clobber
+          } else {
+            gh release create $tag dist/plunger-windows.zip dist/plunger-windows.zip.sha256 --title "Plunger $($tag.TrimStart('v'))" --generate-notes --latest
+          }

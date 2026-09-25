@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    name: Windows (test, lint, build)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --locked
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Build release
+        run: cargo build --release --locked
+      - name: Upload the exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: plunger-windows
+          path: target/release/plunger.exe
+          if-no-files-found: error
+
+  # Windows is the only platform Plunger is built and tested on today. These jobs
+  # just report whether the code compiles elsewhere; a failure here does not fail CI.
+  other-platforms:
+    name: Compile check (${{ matrix.os }}, not supported yet)
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --locked --all-targets
