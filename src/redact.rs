@@ -20,7 +20,7 @@ pub fn is_sensitive_header(name: &str) -> bool {
     SENSITIVE_HEADERS.contains(&n.as_str()) || SENSITIVE_FRAGMENTS.iter().any(|f| n.contains(f))
 }
 
-fn is_sensitive_param(name: &str) -> bool {
+pub fn is_sensitive_param(name: &str) -> bool {
     let n = name.trim().to_ascii_lowercase();
     SENSITIVE_PARAMS.contains(&n.as_str()) || SENSITIVE_FRAGMENTS.iter().any(|f| n.contains(f))
 }

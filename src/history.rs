@@ -1,6 +1,7 @@
-use crate::model::{BodyMode, PersistedState};
+use crate::model::{BodyMode, FormField, KeyValue, PersistedState};
 use crate::redact::{redact_headers_text, redact_url};
 use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Oldest rows beyond this are pruned on insert so the database can't grow forever.
@@ -24,8 +25,19 @@ pub struct HistoryEntry {
     pub json_body: String,
     pub urlencoded_body: String,
     pub raw_body: String,
+    pub params: Vec<KeyValue>,
+    pub multipart_fields: Vec<FormField>,
     pub status: Option<i64>,
     pub elapsed_ms: Option<i64>,
+}
+
+/// Rows that don't fit the fixed columns, stored as one JSON blob so new
+/// request features don't each need a schema change.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+struct Extra {
+    params: Vec<KeyValue>,
+    multipart: Vec<FormField>,
 }
 
 impl HistoryEntry {
@@ -40,7 +52,9 @@ impl HistoryEntry {
             json_body: self.json_body.clone(),
             urlencoded_body: self.urlencoded_body.clone(),
             raw_body: self.raw_body.clone(),
-            // Options are session-wide; callers overlay them with `with_options_from`.
+            params: self.params.clone(),
+            multipart_fields: self.multipart_fields.clone(),
+            // Session-wide settings are overlaid by callers with `with_session_from`.
             ..PersistedState::default()
         }
     }
@@ -51,6 +65,7 @@ fn body_mode_to_str(mode: BodyMode) -> &'static str {
         BodyMode::None => "None",
         BodyMode::Json => "Json",
         BodyMode::UrlEncoded => "UrlEncoded",
+        BodyMode::Multipart => "Multipart",
         BodyMode::Raw => "Raw",
     }
 }
@@ -59,6 +74,7 @@ fn body_mode_from_str(s: &str) -> BodyMode {
     match s {
         "Json" => BodyMode::Json,
         "UrlEncoded" => BodyMode::UrlEncoded,
+        "Multipart" => BodyMode::Multipart,
         "Raw" => BodyMode::Raw,
         _ => BodyMode::None,
     }
@@ -116,6 +132,13 @@ impl History {
             )",
             [],
         )?;
+        let has_extra = conn
+            .prepare("PRAGMA table_info(requests)")?
+            .query_map([], |r| r.get::<_, String>(1))?
+            .any(|name| name.is_ok_and(|n| n == "extra_json"));
+        if !has_extra {
+            conn.execute("ALTER TABLE requests ADD COLUMN extra_json TEXT NOT NULL DEFAULT ''", [])?;
+        }
         Ok(Self { conn })
     }
 
@@ -128,21 +151,29 @@ impl History {
         let created_at = time::OffsetDateTime::now_utc()
             .format(&time::format_description::well_known::Rfc3339)
             .unwrap_or_default();
+        // Same credential rules as the saved form state: blank secrets before they hit disk.
+        let safe = state.redacted();
+        let extra = serde_json::to_string(&Extra {
+            params: safe.params,
+            multipart: safe.multipart_fields,
+        })
+        .unwrap_or_default();
         self.conn.execute(
             "INSERT INTO requests
-                (created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body, status, elapsed_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                (created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body, status, elapsed_ms, extra_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 created_at,
                 state.method,
                 redact_url(&state.url),
-                redact_headers_text(&state.headers_text),
+                safe.headers_text,
                 body_mode_to_str(state.body_mode),
                 state.json_body,
                 state.urlencoded_body,
                 state.raw_body,
                 status.map(|s| s as i64),
                 elapsed_ms.map(|e| e as i64),
+                extra,
             ],
         )?;
         self.conn.execute(
@@ -154,11 +185,14 @@ impl History {
 
     pub fn list_recent(&self, limit: i64) -> rusqlite::Result<Vec<HistoryEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body, status, elapsed_ms
+            "SELECT id, created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body, status, elapsed_ms, extra_json
              FROM requests ORDER BY id DESC LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit], |row| {
+            let extra: Extra = serde_json::from_str(&row.get::<_, String>(11)?).unwrap_or_default();
             Ok(HistoryEntry {
+                params: extra.params,
+                multipart_fields: extra.multipart,
                 id: row.get(0)?,
                 created_at: row.get(1)?,
                 method: row.get(2)?,
@@ -257,6 +291,60 @@ mod tests {
         let row = &h.list_recent(1).unwrap()[0];
         assert_eq!(row.url, "https://a.com/?api_key=");
         assert_eq!(row.headers_text, "Authorization:");
+    }
+
+    #[test]
+    fn params_and_multipart_round_trip_with_secrets_blanked() {
+        use crate::model::FieldKind;
+        let h = history();
+        let mut s = state("http://a", BodyMode::Multipart);
+        s.params = vec![
+            KeyValue { key: "page".into(), value: "2".into(), enabled: true },
+            KeyValue { key: "api_key".into(), value: "SECRET".into(), enabled: false },
+        ];
+        s.multipart_fields = vec![
+            FormField { key: "title".into(), kind: FieldKind::Text, value: "hi".into(), enabled: true },
+            FormField { key: "password".into(), kind: FieldKind::Text, value: "pw".into(), enabled: true },
+            FormField { key: "doc".into(), kind: FieldKind::File, value: "C:/x/a.pdf".into(), enabled: true },
+        ];
+        h.insert(&s, Some(200), Some(1)).unwrap();
+
+        let restored = h.list_recent(1).unwrap()[0].to_persisted_state();
+        assert!(restored.body_mode == BodyMode::Multipart);
+        assert_eq!(restored.params[0].value, "2");
+        assert_eq!(restored.params[1].value, "");
+        assert!(!restored.params[1].enabled);
+        assert_eq!(restored.multipart_fields[0].value, "hi");
+        assert_eq!(restored.multipart_fields[1].value, "");
+        assert_eq!(restored.multipart_fields[2].value, "C:/x/a.pdf");
+    }
+
+    #[test]
+    fn a_database_created_before_extra_json_is_migrated_in_place() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, method TEXT NOT NULL,
+                url TEXT NOT NULL, headers_text TEXT NOT NULL, body_mode TEXT NOT NULL,
+                json_body TEXT NOT NULL, urlencoded_body TEXT NOT NULL, raw_body TEXT NOT NULL,
+                status INTEGER, elapsed_ms INTEGER)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO requests (created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body)
+             VALUES ('t', 'GET', 'http://legacy', '', 'None', '', '', '')",
+            [],
+        )
+        .unwrap();
+
+        let h = History::with_connection(conn).unwrap();
+        let rows = h.list_recent(10).unwrap();
+        assert_eq!(rows[0].url, "http://legacy");
+        assert!(rows[0].params.is_empty() && rows[0].multipart_fields.is_empty());
+        // opening again must not try to add the column twice
+        let h2 = History::with_connection(h.conn).unwrap();
+        h2.insert(&state("http://new", BodyMode::None), None, None).unwrap();
     }
 
     #[test]

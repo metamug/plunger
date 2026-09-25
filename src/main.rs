@@ -8,6 +8,7 @@ mod json_view;
 mod model;
 mod redact;
 mod theme;
+mod vars;
 
 use app::ApiTesterApp;
 use eframe::egui;

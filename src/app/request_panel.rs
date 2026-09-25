@@ -1,6 +1,6 @@
 use super::ApiTesterApp;
 use crate::json_view::highlight_json;
-use crate::model::BodyMode;
+use crate::model::{BodyMode, FieldKind, FormField, KeyValue, Variable};
 use crate::theme::{accented_card, AMBER};
 use eframe::egui;
 
@@ -167,6 +167,143 @@ impl ApiTesterApp {
         }
     }
 
+    pub(super) fn render_params_tab(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new("Appended to the URL's query string when you send. Values are URL-encoded for you.")
+                .weak()
+                .small(),
+        );
+        ui.add_space(6.0);
+
+        let rows = &mut self.state.params;
+        let mut remove: Option<usize> = None;
+        for (i, p) in rows.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut p.enabled, "");
+                ui.add(egui::TextEdit::singleline(&mut p.key).desired_width(200.0).hint_text("name"));
+                ui.add(
+                    egui::TextEdit::singleline(&mut p.value)
+                        .desired_width(ui.available_width() - 34.0)
+                        .hint_text("value  (or {{variable}})"),
+                );
+                if ui.small_button("x").on_hover_text("Remove").clicked() {
+                    remove = Some(i);
+                }
+            });
+        }
+        if let Some(i) = remove {
+            rows.remove(i);
+        }
+        if rows.last().is_none_or(|r| !r.is_blank()) {
+            rows.push(KeyValue::blank());
+        }
+    }
+
+    pub(super) fn render_variables_tab(&mut self, ui: &mut egui::Ui) {
+        ui.label(egui::RichText::new(
+            "Use {{name}} in the URL, params, headers, body, form fields or Bearer token. Built-ins: {{$uuid}}, {{$timestamp}}, {{$randomInt}}.",
+        )
+        .weak()
+        .small());
+        ui.label(
+            egui::RichText::new(
+                "Secret values (ticked, or named like token/secret/password/key) stay in memory only and are blank after a restart.",
+            )
+            .weak()
+            .small(),
+        );
+        ui.add_space(6.0);
+
+        let rows = &mut self.state.variables;
+        let mut remove: Option<usize> = None;
+        for (i, v) in rows.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                ui.add(egui::TextEdit::singleline(&mut v.name).desired_width(160.0).hint_text("name"));
+                let secret = v.is_secret();
+                ui.add(
+                    egui::TextEdit::singleline(&mut v.value)
+                        .desired_width(ui.available_width() - 100.0)
+                        .hint_text("value")
+                        .password(secret),
+                );
+                let auto = crate::redact::is_sensitive_header(&v.name);
+                let mut ticked = v.secret || auto;
+                let tick = ui.add_enabled(!auto, egui::Checkbox::new(&mut ticked, "secret"));
+                if tick.changed() {
+                    v.secret = ticked;
+                }
+                if ui.small_button("x").on_hover_text("Remove").clicked() {
+                    remove = Some(i);
+                }
+            });
+        }
+        if let Some(i) = remove {
+            rows.remove(i);
+        }
+        if rows.last().is_none_or(|r| !r.is_blank()) {
+            rows.push(Variable::default());
+        }
+    }
+
+    fn render_multipart_editor(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new("Sent as multipart/form-data; the Content-Type and boundary are set automatically.")
+                .weak()
+                .small(),
+        );
+        ui.add_space(4.0);
+
+        let rows = &mut self.state.multipart_fields;
+        let mut remove: Option<usize> = None;
+        for (i, f) in rows.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut f.enabled, "");
+                ui.add(egui::TextEdit::singleline(&mut f.key).desired_width(140.0).hint_text("field name"));
+                egui::ComboBox::from_id_salt(("field-kind", i))
+                    .selected_text(if f.kind == FieldKind::Text { "Text" } else { "File" })
+                    .width(60.0)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut f.kind, FieldKind::Text, "Text");
+                        ui.selectable_value(&mut f.kind, FieldKind::File, "File");
+                    });
+                match f.kind {
+                    FieldKind::Text => {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut f.value)
+                                .desired_width(ui.available_width() - 34.0)
+                                .hint_text("value  (or {{variable}})"),
+                        );
+                    }
+                    FieldKind::File => {
+                        if ui.button("Choose file…").clicked() {
+                            if let Some(path) = rfd::FileDialog::new().pick_file() {
+                                f.value = path.to_string_lossy().into_owned();
+                            }
+                        }
+                        let shown = std::path::Path::new(&f.value)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        if shown.is_empty() {
+                            ui.label(egui::RichText::new("no file chosen").weak());
+                        } else {
+                            ui.label(shown).on_hover_text(&f.value);
+                        }
+                    }
+                }
+                if ui.small_button("x").on_hover_text("Remove").clicked() {
+                    remove = Some(i);
+                }
+            });
+        }
+        if let Some(i) = remove {
+            rows.remove(i);
+        }
+        if rows.last().is_none_or(|r| !r.is_blank() || r.kind == FieldKind::File) {
+            rows.push(FormField::blank());
+        }
+    }
+
     pub(super) fn render_options_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Timeout");
@@ -188,6 +325,7 @@ impl ApiTesterApp {
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.state.body_mode, BodyMode::None, "None");
             ui.selectable_value(&mut self.state.body_mode, BodyMode::Json, "JSON");
+            ui.selectable_value(&mut self.state.body_mode, BodyMode::Multipart, "form-data");
             ui.selectable_value(&mut self.state.body_mode, BodyMode::UrlEncoded, "x-www-form-urlencoded");
             ui.selectable_value(&mut self.state.body_mode, BodyMode::Raw, "Raw");
         });
@@ -210,12 +348,27 @@ impl ApiTesterApp {
                 );
                 let trimmed = self.state.json_body.trim();
                 if !trimmed.is_empty() {
-                    match serde_json::from_str::<serde_json::Value>(trimmed) {
-                        Ok(_) => ui.colored_label(OK_COLOR, "Valid JSON"),
-                        Err(e) => ui.colored_label(ERROR_COLOR, format!("Invalid JSON: {e}")),
-                    };
+                    let has_variable = trimmed.contains("{{");
+                    let checked = serde_json::from_str::<serde_json::Value>(trimmed)
+                        .map(|v| serde_json::to_string_pretty(&v).unwrap_or_default())
+                        .map_err(|e| e.to_string());
+                    ui.horizontal(|ui| match checked {
+                        Ok(pretty) => {
+                            ui.colored_label(OK_COLOR, "Valid JSON");
+                            if ui.small_button("Prettify").clicked() {
+                                self.state.json_body = pretty;
+                            }
+                        }
+                        Err(e) => {
+                            // An unquoted {{variable}} isn't valid JSON as typed, but is
+                            // substituted before sending, so don't leave it as a bare error.
+                            let hint = if has_variable { " (an unquoted {{variable}} is filled in when sent)" } else { "" };
+                            ui.colored_label(ERROR_COLOR, format!("Invalid JSON: {e}{hint}"));
+                        }
+                    });
                 }
             }
+            BodyMode::Multipart => self.render_multipart_editor(ui),
             BodyMode::UrlEncoded => {
                 ui.label(egui::RichText::new("One key=value per line").weak());
                 ui.add(

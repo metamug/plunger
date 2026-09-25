@@ -1,6 +1,8 @@
 use crate::json_view::pretty_json_if_possible;
-use crate::model::{BodyMode, PersistedState, ResponseData, SendResult};
+use crate::model::{BodyMode, FieldKind, FormField, PersistedState, ResponseData, SendResult};
 use crate::redact::is_sensitive_header;
+use crate::vars::Resolver;
+use reqwest::blocking::multipart::Form;
 use std::io::Read;
 use std::net::IpAddr;
 use std::sync::mpsc::Sender;
@@ -13,12 +15,18 @@ const MAX_REDIRECTS: usize = 10;
 const MIN_TIMEOUT_SECS: u64 = 1;
 const MAX_TIMEOUT_SECS: u64 = 600;
 
-/// A fully-resolved request, ready to hand to the network thread.
+pub enum OutgoingBody {
+    None,
+    Text(String),
+    Multipart(Vec<FormField>),
+}
+
+/// A fully-resolved request (variables substituted), ready for the network thread.
 pub struct OutgoingRequest {
     pub method: String,
     pub url: String,
     pub headers: Vec<(String, String)>,
-    pub body: Option<String>,
+    pub body: OutgoingBody,
     pub timeout: Duration,
     pub follow_redirects: bool,
     pub insecure_tls: bool,
@@ -90,47 +98,89 @@ pub fn ensure_header(headers: &mut Vec<(String, String)>, name: &str, value: &st
 }
 
 /// Turns the form state (plus the never-persisted bearer token) into the
-/// request that will actually be sent.
-pub fn build_request(state: &PersistedState, bearer_token: &str) -> OutgoingRequest {
-    let mut headers = parse_headers(&state.headers_text);
+/// request that will actually be sent: variables substituted, query
+/// parameters appended, body assembled. Fails, without sending anything, if a
+/// `{{variable}}` is undefined or the URL is invalid.
+pub fn build_request(state: &PersistedState, bearer_token: &str) -> Result<OutgoingRequest, String> {
+    let mut r = Resolver::new(&state.variables);
+
+    let url_text = normalize_url(&r.apply(&state.url));
+    let headers_text = r.apply(&state.headers_text);
+    let bearer = r.apply(bearer_token.trim());
+    let params: Vec<(String, String)> = state
+        .params
+        .iter()
+        .filter(|p| p.enabled && !p.key.trim().is_empty())
+        .map(|p| (r.apply(p.key.trim()), r.apply(&p.value)))
+        .collect();
+
+    let mut headers = parse_headers(&headers_text);
     // A credential header with an empty value is a blanked placeholder from
     // disk (see redact.rs), not something the user meant to send.
     headers.retain(|(k, v)| !(v.is_empty() && is_sensitive_header(k)));
-    let bearer = bearer_token.trim();
+    let bearer = bearer.trim();
     if !bearer.is_empty() {
         ensure_header(&mut headers, "Authorization", &format!("Bearer {bearer}"));
     }
 
     let body = match state.body_mode {
-        BodyMode::None => None,
+        BodyMode::None => OutgoingBody::None,
         BodyMode::Json => {
             ensure_header(&mut headers, "Content-Type", "application/json");
-            Some(state.json_body.clone())
+            OutgoingBody::Text(r.apply(&state.json_body))
         }
         BodyMode::UrlEncoded => {
             ensure_header(&mut headers, "Content-Type", "application/x-www-form-urlencoded");
-            Some(
-                state
-                    .urlencoded_body
-                    .lines()
-                    .map(str::trim)
-                    .filter(|l| !l.is_empty())
-                    .collect::<Vec<_>>()
-                    .join("&"),
-            )
+            let lines: Vec<String> = state
+                .urlencoded_body
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(|l| r.apply(l))
+                .collect();
+            OutgoingBody::Text(lines.join("&"))
         }
-        BodyMode::Raw => Some(state.raw_body.clone()),
+        BodyMode::Raw => OutgoingBody::Text(r.apply(&state.raw_body)),
+        BodyMode::Multipart => {
+            // reqwest sets the header itself, with the generated boundary.
+            headers.retain(|(k, _)| !k.eq_ignore_ascii_case("content-type"));
+            let fields = state
+                .multipart_fields
+                .iter()
+                .filter(|f| f.enabled && !f.key.trim().is_empty())
+                .map(|f| FormField {
+                    key: r.apply(f.key.trim()),
+                    kind: f.kind,
+                    value: r.apply(&f.value),
+                    enabled: true,
+                })
+                .collect();
+            OutgoingBody::Multipart(fields)
+        }
     };
 
-    OutgoingRequest {
+    r.finish()?;
+
+    if url_text.is_empty() {
+        return Err("Enter a URL.".to_string());
+    }
+    let mut url = reqwest::Url::parse(&url_text).map_err(|e| format!("Invalid URL \"{url_text}\": {e}"))?;
+    if !params.is_empty() {
+        let mut query = url.query_pairs_mut();
+        for (k, v) in &params {
+            query.append_pair(k, v);
+        }
+    }
+
+    Ok(OutgoingRequest {
         method: state.method.clone(),
-        url: normalize_url(&state.url),
+        url: url.into(),
         headers,
         body,
         timeout: Duration::from_secs(state.timeout_secs.clamp(MIN_TIMEOUT_SECS, MAX_TIMEOUT_SECS)),
         follow_redirects: state.follow_redirects,
         insecure_tls: state.insecure_tls,
-    }
+    })
 }
 
 pub fn send_request(req: OutgoingRequest, tx: Sender<SendResult>) {
@@ -155,6 +205,23 @@ fn describe_error(err: &(dyn std::error::Error + 'static)) -> String {
     parts.join(": ")
 }
 
+fn multipart_form(fields: Vec<FormField>) -> Result<Form, String> {
+    let mut form = Form::new();
+    for f in fields {
+        form = match f.kind {
+            FieldKind::Text => form.text(f.key, f.value),
+            FieldKind::File => {
+                if f.value.trim().is_empty() {
+                    return Err(format!("Field \"{}\" is a file field but no file is chosen.", f.key));
+                }
+                form.file(f.key, &f.value)
+                    .map_err(|e| format!("Could not read file \"{}\": {e}", f.value))?
+            }
+        };
+    }
+    Ok(form)
+}
+
 fn execute(req: OutgoingRequest) -> SendResult {
     let redirect = if req.follow_redirects {
         reqwest::redirect::Policy::limited(MAX_REDIRECTS)
@@ -174,9 +241,11 @@ fn execute(req: OutgoingRequest) -> SendResult {
     for (k, v) in &req.headers {
         builder = builder.header(k, v);
     }
-    if let Some(b) = req.body {
-        builder = builder.body(b);
-    }
+    builder = match req.body {
+        OutgoingBody::None => builder,
+        OutgoingBody::Text(text) => builder.body(text),
+        OutgoingBody::Multipart(fields) => builder.multipart(multipart_form(fields)?),
+    };
 
     let start = Instant::now();
     let res = builder.send().map_err(|e| describe_error(&e))?;
@@ -234,12 +303,43 @@ fn execute(req: OutgoingRequest) -> SendResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{KeyValue, Variable};
+    use std::io::Write;
+    use std::net::TcpListener;
+    use std::sync::mpsc;
 
     fn state() -> PersistedState {
         PersistedState {
             method: "POST".into(),
             url: "api.example.com/x".into(),
             ..Default::default()
+        }
+    }
+
+    fn build(s: &PersistedState, bearer: &str) -> OutgoingRequest {
+        build_request(s, bearer).unwrap()
+    }
+
+    fn text_body(r: &OutgoingRequest) -> Option<&str> {
+        match &r.body {
+            OutgoingBody::Text(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    fn var(name: &str, value: &str) -> Variable {
+        Variable {
+            name: name.into(),
+            value: value.into(),
+            secret: false,
+        }
+    }
+
+    fn kv(key: &str, value: &str, enabled: bool) -> KeyValue {
+        KeyValue {
+            key: key.into(),
+            value: value.into(),
+            enabled,
         }
     }
 
@@ -309,9 +409,9 @@ mod tests {
         let mut s = state();
         s.body_mode = BodyMode::Json;
         s.json_body = "{\"a\":1}".into();
-        let r = build_request(&s, "  tok  ");
+        let r = build(&s, "  tok  ");
         assert_eq!(r.url, "https://api.example.com/x");
-        assert_eq!(r.body.as_deref(), Some("{\"a\":1}"));
+        assert_eq!(text_body(&r), Some("{\"a\":1}"));
         assert!(r.headers.contains(&("Authorization".into(), "Bearer tok".into())));
         assert!(r.headers.contains(&("Content-Type".into(), "application/json".into())));
     }
@@ -321,7 +421,7 @@ mod tests {
         let mut s = state();
         s.body_mode = BodyMode::Json;
         s.headers_text = "authorization: Basic abc\nContent-Type: application/vnd.api+json".into();
-        let r = build_request(&s, "tok");
+        let r = build(&s, "tok");
         assert_eq!(r.headers.len(), 2);
         assert!(r.headers.iter().all(|(_, v)| !v.contains("Bearer")));
     }
@@ -331,8 +431,8 @@ mod tests {
         let mut s = state();
         s.body_mode = BodyMode::UrlEncoded;
         s.urlencoded_body = "a=1\n\n  b=2  \n".into();
-        let r = build_request(&s, "");
-        assert_eq!(r.body.as_deref(), Some("a=1&b=2"));
+        let r = build(&s, "");
+        assert_eq!(text_body(&r), Some("a=1&b=2"));
         assert!(r
             .headers
             .contains(&("Content-Type".into(), "application/x-www-form-urlencoded".into())));
@@ -340,8 +440,8 @@ mod tests {
 
     #[test]
     fn build_request_none_has_no_body_or_content_type() {
-        let r = build_request(&state(), "");
-        assert!(r.body.is_none());
+        let r = build(&state(), "");
+        assert!(matches!(r.body, OutgoingBody::None));
         assert!(r.headers.is_empty());
     }
 
@@ -349,7 +449,7 @@ mod tests {
     fn build_request_skips_blanked_credential_headers_only() {
         let mut s = state();
         s.headers_text = "Authorization:\nX-Api-Key: real\nAccept:".into();
-        let r = build_request(&s, "");
+        let r = build(&s, "");
         assert_eq!(
             r.headers,
             vec![
@@ -365,37 +465,132 @@ mod tests {
         s.timeout_secs = 0;
         s.follow_redirects = false;
         s.insecure_tls = true;
-        let r = build_request(&s, "");
+        let r = build(&s, "");
         assert_eq!(r.timeout, Duration::from_secs(1));
         assert!(!r.follow_redirects && r.insecure_tls);
         s.timeout_secs = 99_999;
-        assert_eq!(build_request(&s, "").timeout, Duration::from_secs(600));
+        assert_eq!(build(&s, "").timeout, Duration::from_secs(600));
+    }
+
+    #[test]
+    fn query_params_are_appended_encoded_and_respect_the_enabled_flag() {
+        let mut s = state();
+        s.url = "http://h/x?a=1".into();
+        s.params = vec![
+            kv("q", "a b&c", true),
+            kv("skip", "me", false),
+            kv("", "no key", true),
+            kv("é", "ü", true),
+        ];
+        let r = build(&s, "");
+        assert_eq!(r.url, "http://h/x?a=1&q=a+b%26c&%C3%A9=%C3%BC");
+    }
+
+    #[test]
+    fn variables_are_substituted_everywhere() {
+        let mut s = state();
+        s.variables = vec![var("host", "localhost:3000"), var("id", "42"), var("tok", "T0K"), var("name", "Ann")];
+        s.url = "{{host}}/users/{{id}}".into();
+        s.headers_text = "X-Trace: {{id}}".into();
+        s.params = vec![kv("who", "{{name}}", true)];
+        s.body_mode = BodyMode::Json;
+        s.json_body = "{\"name\":\"{{name}}\",\"nested\":{\"a\":{\"b\":1}}}".into();
+        let r = build(&s, "{{tok}}");
+        assert_eq!(r.url, "http://localhost:3000/users/42?who=Ann");
+        assert!(r.headers.contains(&("X-Trace".into(), "42".into())));
+        assert!(r.headers.contains(&("Authorization".into(), "Bearer T0K".into())));
+        assert_eq!(text_body(&r), Some("{\"name\":\"Ann\",\"nested\":{\"a\":{\"b\":1}}}"));
+    }
+
+    #[test]
+    fn undefined_variables_block_the_send_and_disabled_rows_are_ignored() {
+        let mut s = state();
+        s.url = "http://h/{{missing}}".into();
+        s.params = vec![kv("k", "{{alsoMissing}}", false)];
+        let err = build_request(&s, "").err().unwrap();
+        assert!(err.contains("{{missing}}") && !err.contains("alsoMissing"), "{err}");
+    }
+
+    #[test]
+    fn invalid_or_empty_urls_give_a_readable_error() {
+        let mut s = state();
+        s.url = "  ".into();
+        assert_eq!(build_request(&s, "").err().unwrap(), "Enter a URL.");
+        s.url = "http://".into();
+        assert!(build_request(&s, "").err().unwrap().starts_with("Invalid URL"));
+    }
+
+    #[test]
+    fn multipart_drops_the_content_type_header_and_keeps_enabled_named_fields() {
+        let mut s = state();
+        s.body_mode = BodyMode::Multipart;
+        s.headers_text = "Content-Type: application/json\nAccept: */*".into();
+        s.variables = vec![var("who", "Ann")];
+        s.multipart_fields = vec![
+            FormField { key: "title".into(), kind: FieldKind::Text, value: "hi {{who}}".into(), enabled: true },
+            FormField { key: "off".into(), kind: FieldKind::Text, value: "x".into(), enabled: false },
+            FormField { key: "".into(), kind: FieldKind::Text, value: "orphan".into(), enabled: true },
+        ];
+        let r = build(&s, "");
+        assert_eq!(r.headers, vec![("Accept".to_string(), "*/*".to_string())]);
+        let OutgoingBody::Multipart(fields) = r.body else { panic!("expected multipart") };
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].value, "hi Ann");
     }
 
     // ---- real requests against a throwaway loopback server -----------------
 
-    use std::io::Write;
-    use std::net::TcpListener;
+    fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+        haystack.windows(needle.len()).position(|w| w == needle)
+    }
 
-    /// Serves exactly one canned response; returns the URL to hit.
-    fn serve_once(head: &'static str, body: Vec<u8>, stall: Option<Duration>) -> String {
+    /// Serves one canned response and reports the raw request it received.
+    fn serve_once(head: String, body: Vec<u8>, stall: Option<Duration>) -> (String, mpsc::Receiver<Vec<u8>>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut buf = [0u8; 4096];
-            let _ = stream.read(&mut buf);
+            let mut data = Vec::new();
+            let mut buf = [0u8; 8192];
+            loop {
+                let n = stream.read(&mut buf).unwrap_or(0);
+                if n == 0 {
+                    break;
+                }
+                data.extend_from_slice(&buf[..n]);
+                if let Some(pos) = find(&data, b"\r\n\r\n") {
+                    let head = String::from_utf8_lossy(&data[..pos]).to_lowercase();
+                    let content_length = head
+                        .lines()
+                        .find_map(|l| l.strip_prefix("content-length:"))
+                        .and_then(|v| v.trim().parse::<usize>().ok());
+                    let done = match content_length {
+                        Some(cl) => data.len() >= pos + 4 + cl,
+                        None if head.contains("transfer-encoding: chunked") => data.ends_with(b"0\r\n\r\n"),
+                        None => true,
+                    };
+                    if done {
+                        break;
+                    }
+                }
+            }
+            let _ = tx.send(data);
             if let Some(d) = stall {
                 std::thread::sleep(d);
             }
             let _ = stream.write_all(head.as_bytes());
             let _ = stream.write_all(&body);
         });
-        format!("http://127.0.0.1:{port}/")
+        (format!("http://127.0.0.1:{port}/"), rx)
+    }
+
+    fn ok_head(len: usize) -> String {
+        format!("HTTP/1.1 200 OK\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n")
     }
 
     fn req(url: String) -> OutgoingRequest {
-        let mut r = build_request(&state(), "");
+        let mut r = build(&state(), "");
         r.method = "GET".into();
         r.url = url;
         r
@@ -403,10 +598,9 @@ mod tests {
 
     #[test]
     fn execute_parses_a_json_response() {
-        let body = br#"{"a":1}"#.to_vec();
-        let url = serve_once(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 7\r\nConnection: close\r\n\r\n",
-            body,
+        let (url, _) = serve_once(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 7\r\nConnection: close\r\n\r\n".into(),
+            br#"{"a":1}"#.to_vec(),
             None,
         );
         let r = execute(req(url)).unwrap();
@@ -417,13 +611,9 @@ mod tests {
 
     #[test]
     fn execute_truncates_oversized_bodies() {
-        let extra = 100usize;
-        let total = MAX_BODY_BYTES as usize + extra;
-        let head: &'static str = Box::leak(
-            format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n")
-                .into_boxed_str(),
-        );
-        let url = serve_once(head, vec![b'a'; total], None);
+        let total = MAX_BODY_BYTES as usize + 100;
+        let head = format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n");
+        let (url, _) = serve_once(head, vec![b'a'; total], None);
         let r = execute(req(url)).unwrap();
         assert!(r.truncated);
         assert_eq!(r.size_bytes as u64, MAX_BODY_BYTES);
@@ -432,8 +622,8 @@ mod tests {
 
     #[test]
     fn execute_can_stop_at_a_redirect() {
-        let url = serve_once(
-            "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/never\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        let (url, _) = serve_once(
+            "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/never\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into(),
             vec![],
             None,
         );
@@ -444,7 +634,7 @@ mod tests {
 
     #[test]
     fn execute_times_out() {
-        let url = serve_once("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n", vec![], Some(Duration::from_secs(4)));
+        let (url, _) = serve_once(ok_head(0), vec![], Some(Duration::from_secs(4)));
         let mut r = req(url);
         r.timeout = Duration::from_secs(1);
         let started = Instant::now();
@@ -457,5 +647,52 @@ mod tests {
         let err = execute(req("http://127.0.0.1:1/".into())).err().unwrap();
         // reqwest alone says only "error sending request for url (...)".
         assert!(err.contains("error sending request") && err.contains("(Connect)"), "{err}");
+    }
+
+    #[test]
+    fn multipart_upload_sends_text_and_file_parts_with_a_boundary() {
+        let path = std::env::temp_dir().join(format!("mat-upload-{}.txt", std::process::id()));
+        std::fs::write(&path, "FILEDATA-123").unwrap();
+
+        let mut s = state();
+        s.body_mode = BodyMode::Multipart;
+        s.headers_text = "Content-Type: application/json".into();
+        s.multipart_fields = vec![
+            FormField { key: "title".into(), kind: FieldKind::Text, value: "hello".into(), enabled: true },
+            FormField { key: "doc".into(), kind: FieldKind::File, value: path.to_string_lossy().into_owned(), enabled: true },
+        ];
+        let (url, rx) = serve_once(ok_head(2), b"ok".to_vec(), None);
+        let mut r = build(&s, "");
+        r.url = url;
+        assert_eq!(execute(r).unwrap().status, 200);
+
+        let raw = String::from_utf8_lossy(&rx.recv().unwrap()).into_owned();
+        let lower = raw.to_lowercase();
+        assert!(lower.contains("content-type: multipart/form-data; boundary="), "{raw}");
+        assert_eq!(lower.matches("content-type: multipart/form-data").count(), 1);
+        assert!(!lower.contains("application/json"), "{raw}");
+        assert!(raw.contains("name=\"title\"") && raw.contains("hello"));
+        let file_name = path.file_name().unwrap().to_string_lossy();
+        assert!(raw.contains(&format!("name=\"doc\"; filename=\"{file_name}\"")), "{raw}");
+        assert!(raw.contains("FILEDATA-123"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn multipart_reports_a_missing_or_unchosen_file() {
+        let mut s = state();
+        s.body_mode = BodyMode::Multipart;
+        s.multipart_fields = vec![FormField {
+            key: "doc".into(),
+            kind: FieldKind::File,
+            value: "Z:/definitely/not/here.bin".into(),
+            enabled: true,
+        }];
+        let err = execute(build(&s, "")).err().unwrap();
+        assert!(err.contains("Could not read file"), "{err}");
+
+        s.multipart_fields[0].value = String::new();
+        let err = execute(build(&s, "")).err().unwrap();
+        assert!(err.contains("no file is chosen"), "{err}");
     }
 }

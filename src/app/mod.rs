@@ -5,9 +5,8 @@ mod request_panel;
 mod response_panel;
 
 use crate::history::{History, HistoryEntry};
-use crate::http::{build_request, parse_headers, send_request};
+use crate::http::{build_request, normalize_url, parse_headers, send_request};
 use crate::model::{BodyMode, Outcome, ParsedRequest, PersistedState, RequestTab, ResponseTab, SendResult};
-use crate::redact::redact_headers_text;
 use crate::theme::{self, card};
 use eframe::egui;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -24,7 +23,7 @@ enum RequestStatus {
         /// Snapshot taken when Send was clicked, so the history row reflects
         /// what was actually sent even if the form is edited before the
         /// response arrives.
-        sent: PersistedState,
+        sent: Box<PersistedState>,
     },
 }
 
@@ -77,7 +76,7 @@ impl ApiTesterApp {
         Self {
             state,
             bearer_token: String::new(),
-            request_tab: RequestTab::Headers,
+            request_tab: RequestTab::Params,
             headers_as_text: false,
             header_rows,
             response_tab: ResponseTab::Body,
@@ -123,29 +122,44 @@ impl ApiTesterApp {
                 self.state.body_mode = BodyMode::Raw;
                 self.state.raw_body = body;
             }
+            None if !parsed.form_fields.is_empty() => self.state.body_mode = BodyMode::Multipart,
             None => self.state.body_mode = BodyMode::None,
         }
+        if !parsed.form_fields.is_empty() {
+            self.state.multipart_fields = parsed.form_fields;
+        }
+        // Query params live in the URL for imports; the Params tab starts clean.
+        self.state.params.clear();
 
         self.import.reset();
         self.outcome = Outcome::Empty;
     }
 
     fn load_history_entry(&mut self, entry: &HistoryEntry) {
-        self.state = entry.to_persisted_state().with_options_from(&self.state);
+        self.state = entry.to_persisted_state().with_session_from(&self.state);
         self.header_rows = parse_headers(&self.state.headers_text);
         self.outcome = Outcome::Empty;
     }
 
     fn trigger_send(&mut self, ctx: &egui::Context) {
-        let req = build_request(&self.state, &self.bearer_token);
-        // Show the URL that is actually being requested (e.g. with the scheme
-        // that was filled in), and record that in history too.
-        self.state.url = req.url.clone();
+        // Fill in a missing scheme in the field itself. A URL that uses
+        // variables is left alone: the variable may supply the scheme, and the
+        // field must keep the `{{template}}` rather than a resolved secret.
+        if !self.state.url.contains("{{") {
+            self.state.url = normalize_url(&self.state.url);
+        }
+        let req = match build_request(&self.state, &self.bearer_token) {
+            Ok(req) => req,
+            Err(message) => {
+                self.outcome = Outcome::Failed(message);
+                return;
+            }
+        };
 
         let (tx, rx) = std::sync::mpsc::channel();
         self.status = RequestStatus::InFlight {
             rx,
-            sent: self.state.clone(),
+            sent: Box::new(self.state.clone()),
         };
         self.outcome = Outcome::Empty;
         self.save_error = None;
@@ -195,11 +209,9 @@ impl ApiTesterApp {
 
 impl eframe::App for ApiTesterApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        // Credentials in the headers table must not land in the plaintext
-        // config file (the Bearer field is never part of `state` at all).
-        let mut state = self.state.clone();
-        state.headers_text = redact_headers_text(&state.headers_text);
-        eframe::set_value(storage, eframe::APP_KEY, &state);
+        // Credentials must not land in the plaintext config file (the Bearer
+        // field is never part of `state` at all).
+        eframe::set_value(storage, eframe::APP_KEY, &self.state.redacted());
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -225,13 +237,20 @@ impl eframe::App for ApiTesterApp {
 
             ui.add_space(12.0);
             ui.horizontal(|ui| {
+                let params = self.state.params.iter().filter(|p| p.enabled && !p.key.is_empty()).count();
+                let vars = self.state.variables.iter().filter(|v| !v.name.is_empty()).count();
+                let count = |label: &str, n: usize| if n > 0 { format!("{label} ({n})") } else { label.to_string() };
+                ui.selectable_value(&mut self.request_tab, RequestTab::Params, count("Params", params));
                 ui.selectable_value(&mut self.request_tab, RequestTab::Headers, "Headers");
                 ui.selectable_value(&mut self.request_tab, RequestTab::Body, "Body");
+                ui.selectable_value(&mut self.request_tab, RequestTab::Variables, count("Variables", vars));
                 let options_label = if self.state.insecure_tls { "Options (TLS check off)" } else { "Options" };
                 ui.selectable_value(&mut self.request_tab, RequestTab::Options, options_label);
             });
             ui.add_space(4.0);
             card(ui, |ui| match self.request_tab {
+                RequestTab::Params => self.render_params_tab(ui),
+                RequestTab::Variables => self.render_variables_tab(ui),
                 RequestTab::Headers => self.render_headers_tab(ui),
                 RequestTab::Body => self.render_body_tab(ui),
                 RequestTab::Options => self.render_options_tab(ui),

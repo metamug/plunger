@@ -1,4 +1,4 @@
-use crate::model::ParsedRequest;
+use crate::model::{FieldKind, FormField, ParsedRequest};
 use serde::Deserialize;
 use std::path::Path;
 
@@ -27,6 +27,7 @@ pub fn parse_curl(input: &str) -> Result<ParsedRequest, String> {
     let mut url: Option<String> = None;
     let mut headers: Vec<(String, String)> = Vec::new();
     let mut body: Option<String> = None;
+    let mut form_fields: Vec<FormField> = Vec::new();
 
     while let Some(tok) = iter.next() {
         match tok.as_str() {
@@ -40,6 +41,11 @@ pub fn parse_curl(input: &str) -> Result<ParsedRequest, String> {
             }
             "-d" | "--data" | "--data-raw" | "--data-binary" | "--data-ascii" => {
                 body = iter.next();
+            }
+            "-F" | "--form" | "--form-string" => {
+                if let Some(field) = iter.next().and_then(|f| parse_form_field(&f)) {
+                    form_fields.push(field);
+                }
             }
             _ if tok.starts_with("--header=") => {
                 let h = &tok["--header=".len()..];
@@ -71,13 +77,31 @@ pub fn parse_curl(input: &str) -> Result<ParsedRequest, String> {
     }
 
     let url = url.ok_or_else(|| "Could not find a URL in that curl command.".to_string())?;
-    let method = method.unwrap_or_else(|| if body.is_some() { "POST".to_string() } else { "GET".to_string() });
+    let has_payload = body.is_some() || !form_fields.is_empty();
+    let method = method.unwrap_or_else(|| if has_payload { "POST".to_string() } else { "GET".to_string() });
 
     Ok(ParsedRequest {
         method: method.to_uppercase(),
         url,
         headers,
         body,
+        form_fields,
+    })
+}
+
+/// `-F name=value` is a text part; `-F name=@path` (optionally followed by
+/// `;type=...`) is a file part.
+fn parse_form_field(spec: &str) -> Option<FormField> {
+    let (key, value) = spec.split_once('=')?;
+    let (kind, value) = match value.strip_prefix('@') {
+        Some(path) => (FieldKind::File, path.split(";type=").next().unwrap_or(path)),
+        None => (FieldKind::Text, value),
+    };
+    Some(FormField {
+        key: key.trim().to_string(),
+        kind,
+        value: value.to_string(),
+        enabled: true,
     })
 }
 
@@ -146,6 +170,7 @@ fn parse_har_str(content: &str) -> Result<Vec<ParsedRequest>, String> {
                 url: req.url,
                 headers,
                 body,
+                form_fields: Vec::new(),
             }
         })
         .collect())
@@ -180,6 +205,23 @@ mod tests {
         assert_eq!(r.method, "DELETE");
         assert_eq!(r.headers, vec![("X-A".to_string(), "1".to_string())]);
         assert_eq!(r.body.as_deref(), Some("raw"));
+    }
+
+    #[test]
+    fn form_flags_become_multipart_fields_and_imply_post() {
+        let r = parse_curl(
+            "curl https://a.com/upload -F 'title=My Doc' -F doc=@/tmp/a.pdf;type=application/pdf --form note=@\"C:/x y/n.txt\"",
+        )
+        .unwrap();
+        assert_eq!(r.method, "POST");
+        assert!(r.body.is_none());
+        assert_eq!(r.form_fields.len(), 3);
+        assert_eq!(r.form_fields[0].key, "title");
+        assert_eq!(r.form_fields[0].kind, FieldKind::Text);
+        assert_eq!(r.form_fields[0].value, "My Doc");
+        assert_eq!(r.form_fields[1].kind, FieldKind::File);
+        assert_eq!(r.form_fields[1].value, "/tmp/a.pdf");
+        assert_eq!(r.form_fields[2].value, "C:/x y/n.txt");
     }
 
     #[test]
