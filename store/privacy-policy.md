@@ -16,8 +16,9 @@ Only the HTTP requests you create. When you press Send, the app sends that reque
 
 All of the following stays on your device, in the app's local data folder:
 
-- **Your last request form**, so the app reopens where you left off.
+- **Your open tabs and settings**, so the app reopens where you left off.
 - **Request history** (up to 1,000 recent requests): method, URL, headers, parameters and body as you typed them, the status code and the response time. Before saving, the app blanks the values of headers, parameters and form fields that look like credentials (such as Authorization, Cookie, API keys, tokens and passwords), and any password inside a URL.
+- **Saved requests** you name with Save, with the same credential blanking as history. They stay until you delete them, even when you clear the history.
 - **Request bodies are saved as you typed them.** If you paste a secret into a body, it will be in your local history until you clear it.
 - **A local crash log**, written only if the app fails, containing the error message and the app version.
 
