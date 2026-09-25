@@ -24,7 +24,10 @@ AI can write the code. AI can build the pipeline. We still look at the diff befo
 
 Seeing is believing. Plunger is for the moment between "I think it works" and "I can see it works."
 
-We wanted a plunger. So we made one.
+<p align="center">
+  <img src="docs/images/plunger.svg" alt="A plunger" width="110"><br>
+  <em>We wanted a plunger. So we made one.</em>
+</p>
 
 ## What is Plunger?
 
