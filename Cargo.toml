@@ -21,6 +21,9 @@ shell-words = "1"
 rfd = { version = "0.15", default-features = false }
 time = { version = "0.3", features = ["formatting"] }
 
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", default-features = false, features = ["windows-native"] }
 

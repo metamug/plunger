@@ -70,4 +70,6 @@ The binary is at `target/x86_64-pc-windows-gnu/release/metamug-api-tester.exe` (
 
 Size: the exe is about 5.7 MB and the zip about 3.0 MB.
 
+Microsoft Store packaging (MSIX, signed by Microsoft), the app icon, the listing text and the privacy policy are in `packaging/` and `store/`; start with `packaging/README.md`.
+
 It's unsigned, so Windows SmartScreen will show an "Unknown publisher" warning on first run — expected until/unless a code-signing certificate is added. Not blocking, just a known first-run speed bump.
