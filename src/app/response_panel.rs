@@ -44,7 +44,7 @@ impl Tab {
 
         ui.horizontal(|ui| {
             status_badge(ui, resp.status, &resp.status_text);
-            ui.label(egui::RichText::new(format!("{} ms", resp.elapsed_ms)).weak());
+            ui.label(egui::RichText::new(format!("TTFB {} ms · total {} ms", resp.ttfb_ms, resp.elapsed_ms)).weak());
             ui.label(egui::RichText::new(format_bytes(resp.size_bytes)).weak());
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

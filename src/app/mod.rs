@@ -629,6 +629,7 @@ mod tests {
         ResponseData {
             status: 200,
             status_text: "OK".into(),
+            ttfb_ms: 1,
             elapsed_ms: 12,
             size_bytes: body.len(),
             headers: vec![("content-type".into(), "application/json".into())],

@@ -732,6 +732,7 @@ mod tests {
             response: ResponseData {
                 status: 200,
                 status_text: "OK".into(),
+                ttfb_ms: 1,
                 elapsed_ms: 1,
                 size_bytes: 4,
                 headers: vec![("content-type".into(), "image/png".into())],

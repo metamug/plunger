@@ -204,6 +204,9 @@ pub enum Outcome {
 pub struct ResponseData {
     pub status: u16,
     pub status_text: String,
+    /// Time until the response headers arrive.
+    pub ttfb_ms: u128,
+    /// Total time through reading the response body.
     pub elapsed_ms: u128,
     pub size_bytes: usize,
     pub headers: Vec<(String, String)>,
