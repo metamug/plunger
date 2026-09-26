@@ -19,7 +19,7 @@ jobs:
     name: Build and publish (Windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Tag must match the version in Cargo.toml
         if: startsWith(github.ref, 'refs/tags/')
@@ -73,7 +73,7 @@ jobs:
     needs: windows
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: Swatinem/rust-cache@v2
       - name: Test
         run: cargo test --locked
