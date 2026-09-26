@@ -46,7 +46,7 @@ jobs:
           "SHA-256 $hash"
 
       - name: Keep the zip as a build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: plunger-windows-zip
           path: dist/*
@@ -90,7 +90,7 @@ jobs:
           (cd dist && sha256sum plunger-linux-x86_64.tar.gz > plunger-linux-x86_64.tar.gz.sha256 && cat plunger-linux-x86_64.tar.gz.sha256)
 
       - name: Keep the tarball as a build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: plunger-linux-tarball
           path: dist/plunger-linux-x86_64.tar.gz*
