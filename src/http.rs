@@ -5,7 +5,7 @@ use crate::model::{FieldKind, FormField, ResponseData, SendResult};
 use crate::request::{OutgoingBody, OutgoingRequest};
 use reqwest::blocking::multipart::Form;
 use std::io::Read;
-use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex, mpsc::Sender};
 use std::time::Instant;
 
 /// Bodies larger than this are cut off: they'd otherwise be held in memory
@@ -53,8 +53,18 @@ fn multipart_form(fields: Vec<FormField>) -> Result<Form, String> {
 }
 
 pub fn execute(req: OutgoingRequest) -> SendResult {
+    let redirect_chain = Arc::new(Mutex::new(Vec::new()));
     let redirect = if req.follow_redirects {
-        reqwest::redirect::Policy::limited(MAX_REDIRECTS)
+        let chain = Arc::clone(&redirect_chain);
+        reqwest::redirect::Policy::custom(move |attempt| {
+            if attempt.previous().len() >= MAX_REDIRECTS {
+                return attempt.error("too many redirects");
+            }
+            if let Ok(mut chain) = chain.lock() {
+                chain.push((attempt.status().as_u16(), attempt.url().to_string()));
+            }
+            attempt.follow()
+        })
     } else {
         reqwest::redirect::Policy::none()
     };
@@ -125,6 +135,7 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
         elapsed_ms,
         size_bytes,
         headers,
+        redirect_chain: redirect_chain.lock().map(|chain| chain.clone()).unwrap_or_default(),
         body,
         json_value,
         truncated,
