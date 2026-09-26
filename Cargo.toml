@@ -24,7 +24,7 @@ egui_json_tree = "0.8"
 rusqlite = { version = "0.32", features = ["bundled"] }
 directories = "5"
 shell-words = "1"
-rfd = { version = "0.15", default-features = false }
+rfd = { version = "0.17", default-features = false }
 time = { version = "0.3", features = ["formatting"] }
 # Headless modes: read the GUI's saved state, and serve MCP over stdio.
 ron = "0.8"
