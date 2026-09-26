@@ -202,7 +202,7 @@ fn entry_row(
         ui.painter().galley(tag_rect.min + egui::vec2(3.0, 1.0), tag, p.accent_text);
         url_left = tag_rect.right() + 6.0;
     }
-    let url_color = if two_lines { weak } else { p.text };
+    let url_color = p.text;
     let url_galley = one_line(ui, &entry.url, small, url_color, inner.left() + text_width - url_left);
     ui.painter().galley(egui::pos2(url_left, line_y - url_galley.size().y / 2.0), url_galley, weak);
 

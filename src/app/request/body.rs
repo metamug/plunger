@@ -7,6 +7,19 @@ use crate::model::{BodyMode, FieldKind, FormField};
 use crate::theme::{self, palette};
 use eframe::egui;
 
+/// Body boxes start short, grow with their content, and scroll past this height,
+/// so a small body doesn't waste space and a pasted one doesn't push the response away.
+const BODY_MAX_HEIGHT: f32 = 300.0;
+const BODY_MIN_ROWS: usize = 3;
+
+fn body_box(ui: &mut egui::Ui, salt: &str, add: impl FnOnce(&mut egui::Ui)) {
+    egui::ScrollArea::vertical()
+        .id_salt(salt)
+        .max_height(BODY_MAX_HEIGHT)
+        .auto_shrink([false, true])
+        .show(ui, add);
+}
+
 impl Tab {
     pub(in crate::app) fn render_body_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
@@ -25,19 +38,23 @@ impl Tab {
             BodyMode::Multipart => self.render_multipart_editor(ui),
             BodyMode::UrlEncoded => {
                 ui.label(egui::RichText::new("One key=value per line").weak());
-                ui.add(
-                    theme::area(&mut self.state.urlencoded_body)
-                        .desired_rows(5)
-                        .desired_width(f32::INFINITY),
-                );
+                body_box(ui, "body-urlencoded", |ui| {
+                    ui.add(
+                        theme::area(&mut self.state.urlencoded_body)
+                            .desired_rows(BODY_MIN_ROWS)
+                            .desired_width(f32::INFINITY),
+                    );
+                });
             }
             BodyMode::Raw => {
-                ui.add(
-                    theme::area(&mut self.state.raw_body)
-                        .desired_rows(5)
-                        .desired_width(f32::INFINITY)
-                        .font(egui::TextStyle::Monospace),
-                );
+                body_box(ui, "body-raw", |ui| {
+                    ui.add(
+                        theme::area(&mut self.state.raw_body)
+                            .desired_rows(BODY_MIN_ROWS)
+                            .desired_width(f32::INFINITY)
+                            .font(egui::TextStyle::Monospace),
+                    );
+                });
             }
         }
     }
@@ -48,12 +65,14 @@ impl Tab {
             job.wrap.max_width = wrap_width;
             ui.fonts(|f| f.layout_job(job))
         };
-        ui.add(
-            theme::area(&mut self.state.json_body)
-                .desired_rows(5)
-                .desired_width(f32::INFINITY)
-                .layouter(&mut layouter),
-        );
+        body_box(ui, "body-json", |ui| {
+            ui.add(
+                theme::area(&mut self.state.json_body)
+                    .desired_rows(BODY_MIN_ROWS)
+                    .desired_width(f32::INFINITY)
+                    .layouter(&mut layouter),
+            );
+        });
 
         let trimmed = self.state.json_body.trim();
         if trimmed.is_empty() {
