@@ -361,6 +361,9 @@ pub struct AgentResponse {
     pub body_cut_from_chars: Option<usize>,
     /// The response exceeded Plunger's 10 MB read limit; only the first 10 MB were read.
     pub truncated_at_10mb: bool,
+    /// The body isn't text, so it is not included; see `size_bytes` and the Content-Type header.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub binary: bool,
     pub headers: Vec<NameValue>,
     pub request: SentRequest,
     /// Secrets whose values appeared in the response and were replaced with
@@ -391,6 +394,7 @@ impl AgentResponse {
 
         let body_chars = r.body.chars().count();
         let (json, body, body_cut_from_chars) = match &r.json_value {
+            _ if r.binary.is_some() => (None, None, None),
             Some(value) if body_chars <= max_body_chars => (Some(scrubber.json(value)), None, None),
             _ if body_chars <= max_body_chars => (None, Some(scrubber.text(&r.body)), None),
             _ => {
@@ -419,6 +423,7 @@ impl AgentResponse {
             body,
             body_cut_from_chars,
             truncated_at_10mb: r.truncated,
+            binary: r.binary.is_some(),
             headers,
             request: SentRequest {
                 method: sent.state.method.clone(),
@@ -719,5 +724,35 @@ mod tests {
         assert_eq!(encode_keeping_variables("Bearer {{tok}}&x"), "Bearer%20{{tok}}%26x");
         assert_eq!(encode_keeping_variables("{{a}}{{b}}"), "{{a}}{{b}}");
         assert_eq!(encode_keeping_variables("open {{ never closed"), "open%20{{%20never%20closed");
+    }
+
+    #[test]
+    fn a_binary_response_is_flagged_and_its_bytes_are_not_returned() {
+        let sent = Sent {
+            response: ResponseData {
+                status: 200,
+                status_text: "OK".into(),
+                elapsed_ms: 1,
+                size_bytes: 4,
+                headers: vec![("content-type".into(), "image/png".into())],
+                body: String::new(),
+                json_value: None,
+                truncated: false,
+                total_size: Some(4),
+                binary: Some(vec![0x89, 0, 1, 2]),
+            },
+            history_id: None,
+            state: PersistedState { url: "http://h/x.png".into(), ..Default::default() },
+        };
+        let out = AgentResponse::from_sent(&sent, &Scrubber::new(&sent.state, ""), 50_000);
+        assert!(out.binary && out.body.is_none() && out.json.is_none());
+        assert_eq!(out.size_bytes, 4);
+        let json = serde_json::to_value(&out).unwrap();
+        assert_eq!(json["binary"], true);
+        // Text responses don't carry the flag at all.
+        let mut text = sent;
+        text.response.binary = None;
+        text.response.body = "hi".into();
+        assert!(serde_json::to_value(AgentResponse::from_sent(&text, &Scrubber::new(&text.state, ""), 50_000)).unwrap().get("binary").is_none());
     }
 }

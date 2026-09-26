@@ -633,6 +633,7 @@ mod tests {
             json_value: json.then(|| serde_json::from_str(body).unwrap()),
             truncated,
             total_size: truncated.then_some(99_999_999),
+            binary: None,
         }
     }
 
@@ -643,6 +644,7 @@ mod tests {
             Outcome::Empty,
             Outcome::Failed("boom".into()),
             Outcome::Response(response("{\"a\":[1,2,{\"b\":null}]}", true, false)),
+            Outcome::Response(ResponseData { binary: Some(vec![0, 1, 2, 255]), body: String::new(), size_bytes: 4, json_value: None, ..response("", false, false) }),
             Outcome::Response(response("plain text", false, false)),
             Outcome::Response(response("{\"a\":1}", true, true)),
         ] {

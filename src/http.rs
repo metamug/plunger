@@ -107,7 +107,9 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
         bytes.truncate(MAX_BODY_BYTES as usize);
     }
     let size_bytes = bytes.len();
-    let text = String::from_utf8_lossy(&bytes).into_owned();
+    let binary = is_binary(&bytes, &content_type, truncated);
+    let text = if binary { String::new() } else { String::from_utf8_lossy(&bytes).into_owned() };
+    let binary = binary.then_some(bytes);
 
     let trimmed = text.trim_start();
     let looks_json = content_type.contains("json") || trimmed.starts_with('{') || trimmed.starts_with('[');
@@ -127,7 +129,25 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
         json_value,
         truncated,
         total_size,
+        binary,
     })
+}
+
+/// A body is binary when it holds a NUL byte, or isn't valid UTF-8 and the server
+/// didn't say it is text (a Latin-1 page is still text). A body cut at the read
+/// limit may end in half a character; that alone doesn't make it binary.
+fn is_binary(bytes: &[u8], content_type: &str, truncated: bool) -> bool {
+    if bytes.iter().take(8192).any(|b| *b == 0) {
+        return true;
+    }
+    let ct = content_type.to_ascii_lowercase();
+    if ct.starts_with("text/") || ["json", "xml", "javascript", "x-www-form-urlencoded"].iter().any(|t| ct.contains(t)) {
+        return false;
+    }
+    match std::str::from_utf8(bytes) {
+        Ok(_) => false,
+        Err(e) => !(truncated && e.error_len().is_none()),
+    }
 }
 
 #[cfg(test)]
@@ -309,4 +329,18 @@ mod tests {
         assert!(err.contains("no file is chosen"), "{err}");
     }
 
+
+    #[test]
+    fn binary_bodies_are_told_apart_from_text() {
+        assert!(is_binary(&[0x89, b'P', b'N', b'G', 0, 1], "image/png", false));
+        assert!(is_binary(&[0xff, 0xfe, 0xfd], "application/octet-stream", false));
+        assert!(!is_binary(&[], "", false));
+        assert!(!is_binary("héllo".as_bytes(), "", false));
+        // Latin-1 declared as text stays text even though it is not UTF-8.
+        assert!(!is_binary(&[0x63, 0x61, 0x66, 0xe9], "text/html; charset=iso-8859-1", false));
+        // Cut in the middle of a multi-byte character by the read limit: still text.
+        let cut = &"é".as_bytes()[..1];
+        assert!(!is_binary(cut, "", true));
+        assert!(is_binary(cut, "", false));
+    }
 }

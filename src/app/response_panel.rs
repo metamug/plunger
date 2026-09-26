@@ -48,15 +48,21 @@ impl Tab {
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if icons::button(ui, Icon::Download, "Save response body to a file").clicked() {
-                    let name = if resp.json_value.is_some() { "response.json" } else { "response.txt" };
+                    let name = match (&resp.binary, &resp.json_value) {
+                        (Some(_), _) => "response.bin",
+                        (None, Some(_)) => "response.json",
+                        (None, None) => "response.txt",
+                    };
                     if let Some(path) = rfd::FileDialog::new().set_file_name(name).save_file() {
-                        self.save_error = std::fs::write(&path, &resp.body)
+                        let bytes = resp.binary.as_deref().unwrap_or(resp.body.as_bytes());
+                        self.save_error = std::fs::write(&path, bytes)
                             .err()
                             .map(|e| format!("Could not save file: {e}"));
                     }
                 }
                 // Copies whatever tab is showing.
                 match self.response_tab {
+                    ResponseTab::Body if resp.binary.is_some() => {}
                     ResponseTab::Body => {
                         copy_button(ui, &mut self.copied_flash, "body", "Copy response body", &resp.body);
                     }
@@ -90,6 +96,9 @@ impl Tab {
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| match self.response_tab {
+                ResponseTab::Body if resp.binary.is_some() => {
+                    ui.label(egui::RichText::new(format!("Binary response, {}. Not shown as text: use Save to keep it.", format_bytes(resp.size_bytes))).weak());
+                }
                 ResponseTab::Body => {
                     if let Some(value) = &resp.json_value {
                         // Expanding every node of a big document stalls the UI.

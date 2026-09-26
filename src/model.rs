@@ -213,6 +213,8 @@ pub struct ResponseData {
     /// server-reported length when it sent one.
     pub truncated: bool,
     pub total_size: Option<u64>,
+    /// The raw bytes when the body isn't text; `body` is then empty.
+    pub binary: Option<Vec<u8>>,
 }
 
 /// A parsed request — the common output shape for both curl and HAR import,
