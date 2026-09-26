@@ -35,16 +35,31 @@ jobs:
           path: target/release/plunger.exe
           if-no-files-found: error
 
-  # Windows is the only platform Plunger is built and tested on today. These jobs
-  # just report whether the code compiles elsewhere; a failure here does not fail CI.
+  # Linux: tests, lint and a release build, then the real binary is run headlessly
+  # the way it would be on a server (CLI against a local server, and an MCP handshake).
+  linux:
+    name: Build and test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo build --release --locked
+      - name: Headless smoke test
+        run: scripts/smoke-cli.sh target/release/plunger
+      - name: Upload the binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: plunger-linux-x86_64
+          path: target/release/plunger
+          if-no-files-found: error
+
+  # macOS is not built or tested yet; this only reports whether the code compiles.
   other-platforms:
-    name: Compile check (${{ matrix.os }}, not supported yet)
-    runs-on: ${{ matrix.os }}
+    name: Compile check (macOS, not supported yet)
+    runs-on: macos-latest
     continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2

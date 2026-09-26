@@ -37,6 +37,11 @@ winresource = "0.1"
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", default-features = false, features = ["windows-native"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# winit needs a display backend on Linux; they load their libraries at run time,
+# so the headless CLI and MCP modes still start on a server with no desktop.
+eframe = { version = "0.29", default-features = false, features = ["x11", "wayland"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", default-features = false, features = ["apple-native"] }
 
