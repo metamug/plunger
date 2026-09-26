@@ -66,3 +66,38 @@ jobs:
           } else {
             gh release create $tag dist/plunger-windows.zip dist/plunger-windows.zip.sha256 --title "Plunger $($tag.TrimStart('v'))" --generate-notes --latest
           }
+
+  # Runs after the Windows job so the release already exists when this attaches to it.
+  linux:
+    name: Build and publish (Linux)
+    needs: windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --locked
+      - name: Build release
+        run: cargo build --release --locked
+      - name: Headless smoke test
+        run: scripts/smoke-cli.sh target/release/plunger
+
+      - name: Package
+        run: |
+          mkdir -p dist/plunger
+          cp target/release/plunger LICENSE README.md dist/plunger/
+          tar -C dist -czf dist/plunger-linux-x86_64.tar.gz plunger
+          (cd dist && sha256sum plunger-linux-x86_64.tar.gz > plunger-linux-x86_64.tar.gz.sha256 && cat plunger-linux-x86_64.tar.gz.sha256)
+
+      - name: Keep the tarball as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plunger-linux-tarball
+          path: dist/plunger-linux-x86_64.tar.gz*
+          if-no-files-found: error
+
+      - name: Attach to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" dist/plunger-linux-x86_64.tar.gz dist/plunger-linux-x86_64.tar.gz.sha256 --clobber

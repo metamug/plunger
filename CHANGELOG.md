@@ -9,6 +9,7 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 - A filter box in the sidebar searches the whole history and Saved list by URL, method, name or status.
 - `plunger history --search TEXT` and a `search` option on the MCP `get_history` tool.
 - Right-click a value in the response tree to copy its path (`$.items[0].name`) or its value.
+- A Linux build (`plunger-linux-x86_64.tar.gz`) is attached to releases. The command line and MCP server are tested on Linux in CI; the window builds but has not been tried on a desktop yet.
 
 ### Changed
 
