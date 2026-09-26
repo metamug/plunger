@@ -42,6 +42,9 @@ pub struct HistoryParams {
     /// How many recent requests to return, newest first (default 20, at most 200).
     #[serde(default)]
     pub limit: Option<i64>,
+    /// Only requests whose URL, method, name or status contains this text (case-insensitive), e.g. "orders" or "500".
+    #[serde(default)]
+    pub search: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -95,7 +98,7 @@ impl PlungerMcp {
     /// or to check what was sent earlier.
     #[tool(name = "get_history", annotations(title = "Get request history", read_only_hint = true))]
     async fn get_history(&self, Parameters(p): Parameters<HistoryParams>) -> Result<Json<Vec<HistoryItem>>, String> {
-        blocking(move || agent::get_history(p.limit)).await.map(Json)
+        blocking(move || agent::get_history(p.limit, p.search.as_deref())).await.map(Json)
     }
 
     /// List the {{variables}} defined in Plunger. Secret variables are listed by name only (their values are

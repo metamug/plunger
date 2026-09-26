@@ -51,6 +51,15 @@ impl ApiTesterApp {
                 let saved_selected = self.tab().saved_id;
                 let history_selected = self.tab().history_id;
 
+                ui.add_space(8.0);
+                let filter = ui.add(
+                    theme::field(&mut self.sidebar_filter)
+                        .hint_text("Filter requests")
+                        .desired_width(ui.available_width() - theme::FIELD_MARGIN_X),
+                );
+                let filtering = !self.sidebar_filter.trim().is_empty();
+                let filter_changed = filter.changed();
+
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     ui.add_space(6.0);
                     ui.spacing_mut().item_spacing.y = 2.0;
@@ -64,7 +73,9 @@ impl ApiTesterApp {
                                 actions.push((entry.clone(), "saved", action));
                             }
                         }
-                        if self.saved_entries.is_empty() {
+                        if self.saved_entries.is_empty() && filtering {
+                            hint(ui, "No saved request matches.");
+                        } else if self.saved_entries.is_empty() {
                             hint(ui, "Double-click a request in History, or press Ctrl+S, to save it here.");
                         }
                     }
@@ -86,12 +97,17 @@ impl ApiTesterApp {
                                 actions.push((entry.clone(), "history", action));
                             }
                         }
-                        if self.history_entries.is_empty() {
+                        if self.history_entries.is_empty() && filtering {
+                            hint(ui, "No request in the history matches.");
+                        } else if self.history_entries.is_empty() {
                             hint(ui, "Requests you send show up here.");
                         }
                     }
                 });
 
+                if filter_changed {
+                    self.refresh_lists();
+                }
                 if clear || !actions.is_empty() {
                     // Row heights change (a name line appears), so lay out again now.
                     ui.ctx().request_repaint();

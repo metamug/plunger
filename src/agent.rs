@@ -268,9 +268,9 @@ pub fn list_saved_requests() -> Result<Vec<StoredRequestInfo>, String> {
     Ok(saved.iter().map(StoredRequestInfo::from).collect())
 }
 
-pub fn get_history(limit: Option<i64>) -> Result<Vec<HistoryItem>, String> {
+pub fn get_history(limit: Option<i64>, search: Option<&str>) -> Result<Vec<HistoryItem>, String> {
     let limit = limit.unwrap_or(HISTORY_DEFAULT).clamp(1, HISTORY_MAX);
-    let rows = open_history()?.list_recent(limit).map_err(|e| e.to_string())?;
+    let rows = open_history()?.search_recent(search.unwrap_or(""), limit).map_err(|e| e.to_string())?;
     Ok(rows.iter().map(HistoryItem::from).collect())
 }
 

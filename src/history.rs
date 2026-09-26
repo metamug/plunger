@@ -79,6 +79,16 @@ struct Extra {
     multipart: Vec<FormField>,
 }
 
+/// `?1` is a LIKE pattern from `like_pattern`.
+const MATCHES: &str = "url LIKE ?1 ESCAPE '\\' OR method LIKE ?1 ESCAPE '\\' \
+     OR COALESCE(name, '') LIKE ?1 ESCAPE '\\' OR COALESCE(CAST(status AS TEXT), '') LIKE ?1 ESCAPE '\\'";
+
+/// `%term%` with LIKE's own characters escaped, so searching for `100%` or `a_b` finds those.
+fn like_pattern(term: &str) -> String {
+    let escaped = term.trim().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+    format!("%{escaped}%")
+}
+
 impl HistoryEntry {
     /// Rebuild the request-shape part of app state from this history row, so
     /// clicking a sidebar entry can load it straight back into the form.
@@ -365,9 +375,16 @@ impl History {
 
     /// Saved requests, alphabetically.
     pub fn list_saved(&self) -> rusqlite::Result<Vec<HistoryEntry>> {
+        self.search_saved("")
+    }
+
+    /// Saved requests whose name, URL, method or status contains `term` (case-insensitive).
+    pub fn search_saved(&self, term: &str) -> rusqlite::Result<Vec<HistoryEntry>> {
         self.query(
-            &format!("SELECT {COLUMNS} FROM requests WHERE name IS NOT NULL ORDER BY name COLLATE NOCASE, id"),
-            [],
+            &format!(
+                "SELECT {COLUMNS} FROM requests WHERE name IS NOT NULL AND ({MATCHES}) ORDER BY name COLLATE NOCASE, id"
+            ),
+            params![like_pattern(term)],
         )
     }
 
@@ -376,12 +393,13 @@ impl History {
         Ok(self.query(&format!("SELECT {COLUMNS} FROM requests WHERE id = ?1"), params![id])?.pop())
     }
 
-    /// Sent requests, newest first. Saved ones appear here too (with their
-    /// name) until the history is cleared.
-    pub fn list_recent(&self, limit: i64) -> rusqlite::Result<Vec<HistoryEntry>> {
+    /// Sent requests whose name, URL, method or status contains `term` (all of them when it
+    /// is empty), newest first. Saved ones appear here too until the history is cleared. The
+    /// whole table is searched, not just the rows the sidebar shows.
+    pub fn search_recent(&self, term: &str, limit: i64) -> rusqlite::Result<Vec<HistoryEntry>> {
         self.query(
-            &format!("SELECT {COLUMNS} FROM requests WHERE in_history = 1 ORDER BY id DESC LIMIT ?1"),
-            params![limit],
+            &format!("SELECT {COLUMNS} FROM requests WHERE in_history = 1 AND ({MATCHES}) ORDER BY id DESC LIMIT ?2"),
+            params![like_pattern(term), limit],
         )
     }
 
@@ -443,7 +461,7 @@ mod tests {
         h.insert(&state("http://a", BodyMode::Json), Some(200), Some(12)).unwrap();
         h.insert(&state("http://b", BodyMode::Raw), None, None).unwrap();
 
-        let rows = h.list_recent(10).unwrap();
+        let rows = h.search_recent("", 10).unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].url, "http://b");
         assert_eq!(rows[0].status, None);
@@ -457,14 +475,14 @@ mod tests {
     }
 
     #[test]
-    fn list_recent_honours_limit_and_clear_empties() {
+    fn recent_honours_limit_and_clear_empties() {
         let h = history();
         for i in 0..5 {
             h.insert(&state(&format!("http://x/{i}"), BodyMode::None), Some(200), Some(1)).unwrap();
         }
-        assert_eq!(h.list_recent(3).unwrap().len(), 3);
+        assert_eq!(h.search_recent("", 3).unwrap().len(), 3);
         h.clear().unwrap();
-        assert!(h.list_recent(10).unwrap().is_empty());
+        assert!(h.search_recent("", 10).unwrap().is_empty());
     }
 
     #[test]
@@ -474,7 +492,7 @@ mod tests {
         s.headers_text = "Accept: */*\nAuthorization: Bearer SECRET\nCookie: sid=1".into();
         h.insert(&s, Some(200), Some(1)).unwrap();
 
-        let row = &h.list_recent(1).unwrap()[0];
+        let row = &h.search_recent("", 1).unwrap()[0];
         assert_eq!(row.url, "https://bob@a.com/x?token=&page=1");
         assert_eq!(row.headers_text, "Accept: */*\nAuthorization:\nCookie:");
         assert!(!format!("{} {}", row.url, row.headers_text).contains("SECRET"));
@@ -492,7 +510,7 @@ mod tests {
             .unwrap();
         h.scrub_credentials().unwrap();
         h.scrub_credentials().unwrap(); // idempotent
-        let row = &h.list_recent(1).unwrap()[0];
+        let row = &h.search_recent("", 1).unwrap()[0];
         assert_eq!(row.url, "https://a.com/?api_key=");
         assert_eq!(row.headers_text, "Authorization:");
     }
@@ -513,7 +531,7 @@ mod tests {
         ];
         h.insert(&s, Some(200), Some(1)).unwrap();
 
-        let restored = h.list_recent(1).unwrap()[0].to_persisted_state();
+        let restored = h.search_recent("", 1).unwrap()[0].to_persisted_state();
         assert!(restored.body_mode == BodyMode::Multipart);
         assert_eq!(restored.params[0].value, "2");
         assert_eq!(restored.params[1].value, "");
@@ -543,7 +561,7 @@ mod tests {
         .unwrap();
 
         let h = History::with_connection(conn).unwrap();
-        let rows = h.list_recent(10).unwrap();
+        let rows = h.search_recent("", 10).unwrap();
         assert_eq!(rows[0].url, "http://legacy");
         assert!(rows[0].params.is_empty() && rows[0].multipart_fields.is_empty());
         // opening again must not try to add the column twice
@@ -557,7 +575,7 @@ mod tests {
         for i in 0..(MAX_ROWS + 25) {
             h.insert(&state(&format!("http://x/{i}"), BodyMode::None), Some(200), Some(1)).unwrap();
         }
-        let rows = h.list_recent(MAX_ROWS + 100).unwrap();
+        let rows = h.search_recent("", MAX_ROWS + 100).unwrap();
         assert_eq!(rows.len() as i64, MAX_ROWS);
         assert_eq!(rows[0].url, format!("http://x/{}", MAX_ROWS + 24));
         assert_eq!(rows.last().unwrap().url, "http://x/25");
@@ -573,10 +591,10 @@ mod tests {
         let saved = h.list_saved().unwrap();
         assert_eq!((saved.len(), saved[0].name.as_deref()), (1, Some("Get A")));
         // Still in the history list, now carrying its name.
-        assert_eq!(h.list_recent(10).unwrap().iter().filter(|r| r.name.is_some()).count(), 1);
+        assert_eq!(h.search_recent("", 10).unwrap().iter().filter(|r| r.name.is_some()).count(), 1);
 
         h.clear().unwrap();
-        assert!(h.list_recent(10).unwrap().is_empty());
+        assert!(h.search_recent("", 10).unwrap().is_empty());
         assert_eq!(h.list_saved().unwrap()[0].url, "http://a");
 
         // Un-saving something no longer in the history deletes it for good.
@@ -590,7 +608,7 @@ mod tests {
         let a = h.insert(&state("http://a", BodyMode::None), Some(200), Some(1)).unwrap();
         h.set_name(a, Some("A")).unwrap();
         h.set_name(a, None).unwrap();
-        let rows = h.list_recent(10).unwrap();
+        let rows = h.search_recent("", 10).unwrap();
         assert_eq!((rows.len(), rows[0].name.clone()), (1, None));
     }
 
@@ -598,7 +616,7 @@ mod tests {
     fn a_saved_request_is_updated_in_place_and_not_listed_as_history() {
         let h = history();
         let id = h.save_new(&state("http://v1", BodyMode::None), "Mine").unwrap();
-        assert!(h.list_recent(10).unwrap().is_empty());
+        assert!(h.search_recent("", 10).unwrap().is_empty());
         let mut s = state("http://v2?token=T", BodyMode::Json);
         s.headers_text = "Authorization: Bearer X".into();
         assert!(h.update_request(id, &s).unwrap());
@@ -631,7 +649,7 @@ mod tests {
         let h = history();
         h.insert(&state("http://gui", BodyMode::None), Some(200), Some(1)).unwrap();
         h.insert_from(&state("http://agent", BodyMode::None), Some(200), Some(1), Source::Mcp).unwrap();
-        let rows = h.list_recent(10).unwrap();
+        let rows = h.search_recent("", 10).unwrap();
         assert_eq!((rows[0].url.as_str(), rows[0].source), ("http://agent", Source::Mcp));
         assert_eq!(rows[1].source, Source::Gui);
     }
@@ -647,7 +665,7 @@ mod tests {
         let before = window.data_version();
         agent.insert_from(&state("http://x", BodyMode::None), Some(200), Some(1), Source::Cli).unwrap();
         assert_ne!(window.data_version(), before);
-        assert_eq!(window.list_recent(5).unwrap().len(), 1);
+        assert_eq!(window.search_recent("", 5).unwrap().len(), 1);
     }
 
     #[test]
@@ -656,5 +674,27 @@ mod tests {
             assert!(body_mode_from_str(body_mode_to_str(m)) == m);
         }
         assert!(body_mode_from_str("garbage") == BodyMode::None);
+    }
+
+    #[test]
+    fn search_matches_url_name_method_and_status_across_the_whole_history() {
+        let h = history();
+        h.insert(&state("http://api/users", BodyMode::None), Some(200), Some(1)).unwrap();
+        h.insert(&state("http://api/orders?x=100%", BodyMode::None), Some(404), Some(1)).unwrap();
+        let named = h.save_new(&state("http://other/a_b", BodyMode::None), "Login flow").unwrap();
+        // Far more rows than a sidebar would show: the match must still be found.
+        for i in 0..80 {
+            h.insert(&state(&format!("http://filler/{i}"), BodyMode::None), Some(200), Some(1)).unwrap();
+        }
+        let urls = |rows: Vec<HistoryEntry>| rows.into_iter().map(|r| r.url).collect::<Vec<_>>();
+        assert_eq!(urls(h.search_recent("USERS", 10).unwrap()), ["http://api/users"]);
+        assert_eq!(urls(h.search_recent("404", 10).unwrap()), ["http://api/orders?x=100%"]);
+        // LIKE's own characters are literal.
+        assert_eq!(urls(h.search_recent("100%", 10).unwrap()), ["http://api/orders?x=100%"]);
+        assert_eq!(urls(h.search_saved("a_b").unwrap()), ["http://other/a_b"]);
+        assert_eq!(urls(h.search_saved("login").unwrap()), ["http://other/a_b"]);
+        assert!(h.search_saved("zzz").unwrap().is_empty());
+        assert_eq!(h.search_recent("", 5).unwrap().len(), 5);
+        assert!(h.search_recent("a_b", 5).unwrap().iter().all(|r| r.id != named + 1000));
     }
 }

@@ -4,6 +4,16 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+
+- A filter box in the sidebar searches the whole history and Saved list by URL, method, name or status.
+- `plunger history --search TEXT` and a `search` option on the MCP `get_history` tool.
+- Right-click a value in the response tree to copy its path (`$.items[0].name`) or its value.
+
+### Changed
+
+- A binary response is shown as binary (size, and Save writes the raw bytes) instead of as garbled text; the command line and MCP output carry `"binary": true` and no body.
+
 ### Fixed
 
 - curl import: `-u`, `-b`, `-A`, `-e`, `--json` and `--data-urlencode` are understood instead of their values being taken as the URL; repeated `-d` are joined, `-G` and `-I` are honoured (#10, #11).

@@ -47,7 +47,7 @@ Any MCP client that can launch a stdio server works the same way: the command is
 | `send_request` | Sends a request and returns `status`, `ok`, `elapsed_ms`, `size_bytes`, `headers`, and the body (`json` when it parses, otherwise `body`). Send a saved request by name with `saved_request`, or describe one with `method`, `url`, `headers`, and one of `json`, `body` or `form`. `variables` adds or overrides `{{variables}}` for this request only. |
 | `import_curl` | Parses a curl command into a request without sending it. With `save_as`, adds it to the Saved list. |
 | `list_saved_requests` | The user's saved requests: name, method, URL, headers, and the `{{variables}}` each one needs. |
-| `get_history` | Recent requests, newest first, with who sent each (`gui`, `cli` or `mcp`). Credentials are blanked. |
+| `get_history` | Recent requests, newest first, with who sent each (`gui`, `cli` or `mcp`). Optional `search` narrows it to a URL, method, name or status (for example `orders` or `500`). Credentials are blanked. |
 | `list_variables` | Variable names; values only for non-secret variables. Also says whether a saved Bearer token is available. |
 | `export_curl` | A saved request or history entry as a curl command, with `{{variables}}` left as placeholders. |
 
@@ -63,6 +63,7 @@ plunger import "curl https://api.example.com/items -d 'a=1'" --send
 plunger import "curl https://api.example.com/items" --save "List items"
 plunger saved
 plunger history --limit 5
+plunger history --search orders      # URL, method, name or status contains the text
 plunger vars
 plunger export "Get user"
 plunger --help

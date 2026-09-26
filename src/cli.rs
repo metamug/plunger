@@ -22,7 +22,9 @@ USAGE
       --save <name>                     ...and add it to the Saved list
       --send [options]                  ...or send it
   plunger saved                         List saved requests
-  plunger history [--limit N]           Recent requests, newest first (default 20)
+  plunger history [--limit N] [--search TEXT]
+                                        Recent requests, newest first (default 20);
+                                        --search matches URL, method, name or status
   plunger vars                          List variables (secret values are never shown)
   plunger export <saved name>           A saved request as a curl command
   plunger export --id <history id>      A history entry as a curl command
@@ -148,8 +150,10 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
         }
         "history" => {
             let mut limit = None;
+            let mut search = None;
             while let Some(arg) = args.next() {
                 match arg.as_str() {
+                    "--search" | "-s" => search = Some(args.value(&arg)?),
                     "--limit" | "-n" => {
                         let n = args.number::<i64>(&arg)?;
                         if n < 1 {
@@ -160,7 +164,7 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
                     _ => return Err(usage_error(format!("Unexpected argument `{arg}`"))),
                 }
             }
-            print_json(&agent::get_history(limit).map_err(error)?);
+            print_json(&agent::get_history(limit, search.as_deref()).map_err(error)?);
             Ok(EXIT_OK)
         }
         "vars" | "variables" => {

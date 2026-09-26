@@ -107,6 +107,8 @@ pub struct ApiTesterApp {
     last_db_poll: Instant,
     history_entries: Vec<HistoryEntry>,
     saved_entries: Vec<HistoryEntry>,
+    /// The sidebar's filter box; empty shows everything.
+    sidebar_filter: String,
     renaming: Option<Rename>,
     saved_open: bool,
     history_open: bool,
@@ -139,6 +141,7 @@ impl ApiTesterApp {
             history,
             history_entries: Vec::new(),
             saved_entries: Vec::new(),
+            sidebar_filter: String::new(),
             renaming: None,
             saved_open: true,
             history_open: true,
@@ -324,10 +327,10 @@ impl ApiTesterApp {
     fn refresh_lists(&mut self) {
         if let Some(h) = &self.history {
             self.db_version = h.data_version();
-            if let Ok(entries) = h.list_recent(HISTORY_LIMIT) {
+            if let Ok(entries) = h.search_recent(&self.sidebar_filter, HISTORY_LIMIT) {
                 self.history_entries = entries;
             }
-            if let Ok(entries) = h.list_saved() {
+            if let Ok(entries) = h.search_saved(&self.sidebar_filter) {
                 self.saved_entries = entries;
             }
         }
@@ -706,7 +709,7 @@ mod tests {
         let entry = {
             let h = a.history.as_ref().unwrap();
             h.insert(&PersistedState { url: "http://old/x".into(), ..Default::default() }, Some(200), Some(1)).unwrap();
-            h.list_recent(1).unwrap().remove(0)
+            h.search_recent("", 1).unwrap().remove(0)
         };
         a.new_tab(); // not pristine any more once it has a URL
         a.tab_mut().state.url = "http://current".into();
@@ -801,7 +804,7 @@ mod tests {
     fn entry(a: &ApiTesterApp, url: &str) -> HistoryEntry {
         let h = a.history.as_ref().unwrap();
         h.insert(&PersistedState { url: url.into(), ..Default::default() }, Some(200), Some(1)).unwrap();
-        h.list_recent(1).unwrap().remove(0)
+        h.search_recent("", 1).unwrap().remove(0)
     }
 
     #[test]
@@ -928,5 +931,29 @@ mod tests {
             theme::apply_theme(&ctx, choice);
             let _ = ctx.run(egui::RawInput::default(), |ctx| a.render_ui(ctx));
         }
+    }
+
+    #[test]
+    fn the_sidebar_filter_narrows_history_and_saved() {
+        let mut a = app(PersistedState::default());
+        let h = a.history.as_ref().unwrap();
+        for url in ["http://api/users", "http://api/orders"] {
+            h.insert(&PersistedState { url: url.into(), ..Default::default() }, Some(200), Some(1)).unwrap();
+        }
+        h.save_new(&PersistedState { url: "http://api/login".into(), ..Default::default() }, "Sign in").unwrap();
+        a.refresh_lists();
+        assert_eq!((a.history_entries.len(), a.saved_entries.len()), (2, 1));
+
+        a.sidebar_filter = "orders".into();
+        a.refresh_lists();
+        assert_eq!((a.history_entries.len(), a.saved_entries.len()), (1, 0));
+
+        a.sidebar_filter = "sign".into();
+        a.refresh_lists();
+        assert_eq!(a.saved_entries.len(), 1);
+
+        a.sidebar_filter.clear();
+        a.refresh_lists();
+        assert_eq!(a.history_entries.len(), 2);
     }
 }

@@ -577,7 +577,7 @@ mod tests {
         let err = send(spec.to_state(&s), "", Some(&history), Source::Mcp).err().unwrap();
         let SendError::Refused(message) = err else { panic!("expected a refusal") };
         assert!(message.contains("{{missing}}"), "{message}");
-        assert!(history.list_recent(5).unwrap().is_empty());
+        assert!(history.search_recent("", 5).unwrap().is_empty());
     }
 
     #[test]
@@ -600,7 +600,7 @@ mod tests {
         assert!(out.headers.iter().any(|h| h.name.eq_ignore_ascii_case("set-cookie") && h.value == "[redacted]"));
 
         // The shared history has it, tagged as sent by an agent, with the token blanked.
-        let rows = history.list_recent(5).unwrap();
+        let rows = history.search_recent("", 5).unwrap();
         assert_eq!(rows[0].source, Source::Mcp);
         assert!(!rows[0].url.contains("SUPER-SECRET-VALUE") && !rows[0].headers_text.contains("SUPER-SECRET-VALUE"));
         assert_eq!(out.request.history_id, Some(rows[0].id));
