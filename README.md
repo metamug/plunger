@@ -8,6 +8,17 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/metamug/plunger/actions/workflows/ci.yml"><img src="https://github.com/metamug/plunger/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <a href="https://github.com/metamug/plunger/releases/latest"><img src="https://img.shields.io/github/v/release/metamug/plunger?color=4a6fdc&label=release" alt="Latest release"></a>
+  <a href="https://github.com/metamug/plunger/releases"><img src="https://img.shields.io/github/downloads/metamug/plunger/total?color=2ea44f&label=downloads" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/metamug/plunger?color=blue" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4" alt="Platform: Windows 10 and 11">
+  <a href="docs/agents.md"><img src="https://img.shields.io/badge/MCP-server-8a5cf6" alt="MCP server"></a>
+  <img src="https://img.shields.io/badge/built%20with-Rust-dea584?logo=rust&logoColor=white" alt="Built with Rust">
+  <a href="https://github.com/metamug/plunger/stargazers"><img src="https://img.shields.io/github/stars/metamug/plunger?style=flat&color=e3b341" alt="GitHub stars"></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip"><strong>Download for Windows</strong></a> (zip, about 3.6 MB, no installer)
   &nbsp;·&nbsp; <a href="LICENSE">MIT license</a>
 </p>
