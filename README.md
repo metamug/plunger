@@ -51,6 +51,8 @@ A small desktop app that sends an HTTP request and shows you what came back.
 - **Import:** paste a curl command (including `-F` uploads) or open a HAR file.
 - **Keep what matters:** local history, named saved requests (Ctrl+S) and tabs (Ctrl+T).
 - **Local HTTPS:** skip certificate checks for a self-signed dev server, with a warning that stays visible while it's on.
+- **Behind a proxy:** Plunger uses your system proxy settings and the `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` environment variables.
+- **Find it again:** the sidebar filter searches your whole history and saved requests by URL, method, name or status; right-click a value in a JSON response to copy its path or value.
 
 It's a native program, not a web page, so it reaches whatever your machine can reach: `localhost`, a dev box on your network, an API that sends no CORS headers.
 
