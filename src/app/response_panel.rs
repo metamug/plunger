@@ -4,6 +4,7 @@ use crate::model::{Outcome, ResponseTab};
 use crate::icons::{self, Icon};
 use crate::theme::{self, palette, status_badge};
 use eframe::egui;
+use egui_json_tree::render::DefaultRender;
 use egui_json_tree::{DefaultExpand, JsonTree};
 const LARGE_JSON_BYTES: usize = 200 * 1024;
 
@@ -107,7 +108,28 @@ impl Tab {
                         } else {
                             DefaultExpand::All
                         };
-                        JsonTree::new("response-json-tree", value).default_expand(expand).show(ui);
+                        JsonTree::new("response-json-tree", value)
+                            .default_expand(expand)
+                            .on_render(|ui, node| {
+                                let response = node.render_default(ui);
+                                let pointer = node.pointer().to_json_pointer_string();
+                                response.context_menu(|ui| {
+                                    if ui.button("Copy path").clicked() {
+                                        ui.ctx().copy_text(crate::json_view::json_path(value, &pointer));
+                                        ui.close_menu();
+                                    }
+                                    if ui.button("Copy value").clicked() {
+                                        let text = match value.pointer(&pointer) {
+                                            Some(serde_json::Value::String(s)) => s.clone(),
+                                            Some(v) => serde_json::to_string_pretty(v).unwrap_or_default(),
+                                            None => String::new(),
+                                        };
+                                        ui.ctx().copy_text(text);
+                                        ui.close_menu();
+                                    }
+                                });
+                            })
+                            .show(ui);
                     } else {
                         // `&str` is a read-only text buffer: selectable and copyable,
                         // but no per-frame clone of the body and no accidental edits.

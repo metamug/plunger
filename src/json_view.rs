@@ -1,5 +1,38 @@
 use eframe::egui;
 
+/// The path to a node as a developer would type it (`$.items[0].name`), from its
+/// RFC 6901 pointer. Walking the document tells an array index from an object key
+/// that happens to be a number.
+pub fn json_path(root: &serde_json::Value, pointer: &str) -> String {
+    let mut path = String::from("$");
+    let mut node = Some(root);
+    for raw in pointer.split('/').skip(1) {
+        let segment = raw.replace("~1", "/").replace("~0", "~");
+        match node {
+            Some(serde_json::Value::Array(items)) => {
+                path.push_str(&format!("[{segment}]"));
+                node = segment.parse::<usize>().ok().and_then(|i| items.get(i));
+            }
+            other => {
+                let plain = !segment.is_empty()
+                    && !segment.starts_with(|c: char| c.is_ascii_digit())
+                    && segment.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+                if plain {
+                    path.push('.');
+                    path.push_str(&segment);
+                } else {
+                    path.push_str(&format!("[{}]", serde_json::Value::String(segment.clone())));
+                }
+                node = match other {
+                    Some(serde_json::Value::Object(map)) => map.get(&segment),
+                    _ => None,
+                };
+            }
+        }
+    }
+    path
+}
+
 pub fn pretty_json_if_possible(text: &str) -> (String, Option<serde_json::Value>) {
     match serde_json::from_str::<serde_json::Value>(text) {
         Ok(value) => {
@@ -163,5 +196,21 @@ mod tests {
         ] {
             assert_eq!(highlight_json(text).text, text, "{text:?}");
         }
+    }
+
+    #[test]
+    fn paths_read_like_code() {
+        let v: serde_json::Value = serde_json::from_str(
+            r#"{"items":[{"name":"a","odd key":1,"7":true}],"a/b":2,"x~y":3}"#,
+        )
+        .unwrap();
+        assert_eq!(json_path(&v, ""), "$");
+        assert_eq!(json_path(&v, "/items"), "$.items");
+        assert_eq!(json_path(&v, "/items/0/name"), "$.items[0].name");
+        assert_eq!(json_path(&v, "/items/0/odd key"), "$.items[0][\"odd key\"]");
+        // A numeric key on an object is a key, not an index.
+        assert_eq!(json_path(&v, "/items/0/7"), "$.items[0][\"7\"]");
+        assert_eq!(json_path(&v, "/a~1b"), "$[\"a/b\"]");
+        assert_eq!(json_path(&v, "/x~0y"), "$[\"x~y\"]");
     }
 }
