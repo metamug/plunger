@@ -1,12 +1,10 @@
-﻿# Generates the app icon (app.ico), the in-app window icon (window-128.rgba) and the
-# Microsoft Store / MSIX tile assets. The artwork is the same plunger as docs/images/plunger.svg.
+﻿# Generates the app icon (app.ico), the in-app window icon (window-128.rgba) and a large PNG.
+# The artwork is the same plunger as docs/images/plunger.svg.
 # Pure System.Drawing, no external tools. Re-run after changing the design:
 #   powershell -ExecutionPolicy Bypass -File packaging\icons\make-icons.ps1
 Add-Type -AssemblyName System.Drawing
 
 $root   = Split-Path -Parent $MyInvocation.MyCommand.Path
-$assets = Join-Path $root '..\msix\Assets' | ForEach-Object { [System.IO.Path]::GetFullPath($_) }
-New-Item -ItemType Directory -Force -Path $assets | Out-Null
 
 # Same palette as the app (src/theme.rs).
 $bg     = [System.Drawing.Color]::FromArgb(255, 21, 23, 28)
@@ -100,39 +98,6 @@ function Save-Png($bmp, [string]$path) {
     $bmp.Dispose()
 }
 
-# --- MSIX / Store tiles ------------------------------------------------------
-$tiles = @{
-    'StoreLogo.png'         = 50
-    'Square44x44Logo.png'   = 44
-    'Square71x71Logo.png'   = 71
-    'Square150x150Logo.png' = 150
-    'Square310x310Logo.png' = 310
-}
-foreach ($name in $tiles.Keys) { Save-Png (New-IconBitmap $tiles[$name]) (Join-Path $assets $name) }
-
-# Taskbar / Start icons at fixed target sizes, with and without the plate.
-foreach ($s in 16, 24, 32, 48, 256) {
-    Save-Png (New-IconBitmap $s) (Join-Path $assets "Square44x44Logo.targetsize-$s.png")
-    Save-Png (New-IconBitmap $s $false $true) (Join-Path $assets "Square44x44Logo.targetsize-${s}_altform-unplated.png")
-}
-
-# Wide 310x150 tile: icon on the left, name on the right.
-$wide = New-Object System.Drawing.Bitmap 310, 150, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-$g = [System.Drawing.Graphics]::FromImage($wide)
-$g.SmoothingMode = 'AntiAlias'
-$g.TextRenderingHint = 'ClearTypeGridFit'
-$g.Clear($bg)
-$icon = New-IconBitmap 110
-$g.DrawImage($icon, 22, 20, 110, 110)
-$icon.Dispose()
-$font1 = New-Object System.Drawing.Font 'Segoe UI Semibold', 17, ([System.Drawing.FontStyle]::Regular), ([System.Drawing.GraphicsUnit]::Pixel)
-$font2 = New-Object System.Drawing.Font 'Segoe UI', 13, ([System.Drawing.FontStyle]::Regular), ([System.Drawing.GraphicsUnit]::Pixel)
-$font1 = New-Object System.Drawing.Font 'Segoe UI Semibold', 26, ([System.Drawing.FontStyle]::Regular), ([System.Drawing.GraphicsUnit]::Pixel)
-$g.DrawString('Plunger', $font1, [System.Drawing.Brushes]::White, 140, 50)
-$g.DrawString('Unclog your API.', $font2, (New-Object System.Drawing.SolidBrush $muted), 142, 88)
-$g.Dispose()
-Save-Png $wide (Join-Path $assets 'Wide310x150Logo.png')
-
 # --- app.ico (PNG-compressed frames, Vista+) --------------------------------
 $sizes = 16, 24, 32, 48, 64, 128, 256
 $frames = foreach ($s in $sizes) {
@@ -158,9 +123,8 @@ foreach ($f in $frames) { $w.Write($f) }
 $w.Flush()
 [System.IO.File]::WriteAllBytes((Join-Path $root 'app.ico'), $ico.ToArray())
 
-# A large PNG for the website / Store listing (1024 px).
+# A large PNG of the icon (1024 px).
 Save-Png (New-IconBitmap 1024) (Join-Path $root 'app-1024.png')
-Save-Png (New-IconBitmap 300) (Join-Path $root 'store-logo-300.png')
 
 # Window / taskbar icon used at runtime: 128x128 raw RGBA (unmultiplied), loaded by src/main.rs.
 $win = New-IconBitmap 128

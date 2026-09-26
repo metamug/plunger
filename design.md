@@ -189,7 +189,7 @@ What is deliberately *not* prevented: an agent can put `{{token}}` into a reques
 - **Toolchain.** Rust stable, `x86_64-pc-windows-gnu` with mingw-w64 (for the bundled SQLite and `windres`). The release profile is size-optimised with LTO, one codegen unit, stripped, `panic = "abort"`.
 - **Tests.** 148 unit and UI tests. HTTP behaviour is tested against a tiny in-process server (`test_server.rs`) that can echo requests back, which is how secret masking is proved end to end. MCP was also checked against the real release exe over stdio with a scripted client.
 - **CI** (GitHub Actions): tests, `clippy -D warnings` and a release build on Windows; a compile check on Linux and macOS that doesn't fail the build, since Windows is the only supported platform.
-- **Release.** Pushing a `v*` tag builds and publishes `plunger-windows.zip`. Microsoft Store packaging (MSIX) is in `packaging/`.
+- **Release.** Pushing a `v*` tag builds and publishes `plunger-windows.zip`.
 
 ## 11. Decisions and trade-offs
 

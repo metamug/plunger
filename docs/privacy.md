@@ -34,7 +34,7 @@ The app reads a file only when you choose one, for example to attach it to a mul
 
 - Clear the request history at any time with the Clear button.
 - Remove remembered secrets with "Forget saved secrets".
-- Uninstalling the Microsoft Store version removes its data. If you use the zip download, delete the app data folder (`%APPDATA%\Plunger`) yourself.
+- Plunger has no installer. To remove it, delete the exe and the app data folder (`%APPDATA%\Plunger`).
 
 ## Third parties and children
 
