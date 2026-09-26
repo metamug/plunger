@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest something that would help you see what an API is doing
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Plunger stays small on purpose. Before you file, please read [what belongs here](https://github.com/metamug/plunger/blob/main/CONTRIBUTING.md#what-belongs-here). Accounts, sync, collaboration and telemetry are out of scope.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: Describe the situation, not the solution. What is hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: How you imagine it working. It's fine to be rough.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today
+      description: Workarounds, or other tools you use for this.
+  - type: checkboxes
+    id: fit
+    attributes:
+      label: Fit
+      options:
+        - label: This helps someone quickly see what an API is doing.
+          required: true
+        - label: I'm willing to help build or test it.

@@ -139,6 +139,11 @@ Set `PLUNGER_DATA_DIR` to run against a throwaway data folder instead of your re
 
 Issues and pull requests are welcome. Before adding a feature, ask: does this help someone quickly see what an API is doing? Would someone open Plunger specifically for it? If yes, it probably belongs. Accounts, sync, collaboration and platform features don't.
 
+- [CONTRIBUTING.md](CONTRIBUTING.md): what fits, how to build, how to send a change.
+- [design.md](design.md): how it's built and why.
+- [SECURITY.md](SECURITY.md): how to report a vulnerability privately.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) and the [CHANGELOG](CHANGELOG.md).
+
 Run `cargo test` and `cargo clippy --all-targets` before sending a PR. Maintainers: releases are GitHub releases with `plunger-windows.zip` attached; Microsoft Store packaging is in [`packaging/`](packaging/README.md).
 
 ---

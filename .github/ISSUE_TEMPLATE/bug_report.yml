@@ -1,0 +1,53 @@
+name: Bug report
+description: Something in Plunger doesn't work the way it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Please remove any tokens, passwords or private URLs** from what you paste. For a security problem, don't file it here: see [SECURITY.md](https://github.com/metamug/plunger/blob/main/SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The request you sent (method, URL, headers, body, with secrets removed) is the most useful thing. A curl command works well.
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How were you using Plunger
+      options:
+        - The window
+        - The command line (plunger send / import / ...)
+        - As an MCP server (plunger mcp)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Plunger version
+      description: Shown in the window's title bar, or run `plunger --version`.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 23H2"
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, or the contents of `crash.log` from `%APPDATA%\Plunger\data` if Plunger crashed.
