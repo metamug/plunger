@@ -207,6 +207,8 @@ pub struct ResponseData {
     pub elapsed_ms: u128,
     pub size_bytes: usize,
     pub headers: Vec<(String, String)>,
+    /// Redirect responses followed before the final response: (status, destination URL).
+    pub redirect_chain: Vec<(u16, String)>,
     pub body: String,
     pub json_value: Option<serde_json::Value>,
     /// True when the body was cut at the read cap; `total_size` is the

@@ -76,6 +76,14 @@ impl Tab {
             });
         });
 
+        if !resp.redirect_chain.is_empty() {
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new("Redirects").strong());
+            for (status, location) in &resp.redirect_chain {
+                ui.label(format!("{status} → {location}"));
+            }
+        }
+
         if resp.truncated {
             let total = resp.total_size.map(|t| format!(" of {}", format_bytes(t as usize))).unwrap_or_default();
             ui.colored_label(

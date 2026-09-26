@@ -632,6 +632,7 @@ mod tests {
             elapsed_ms: 12,
             size_bytes: body.len(),
             headers: vec![("content-type".into(), "application/json".into())],
+            redirect_chain: vec![],
             body: body.into(),
             json_value: json.then(|| serde_json::from_str(body).unwrap()),
             truncated,

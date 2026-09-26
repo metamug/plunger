@@ -735,6 +735,7 @@ mod tests {
                 elapsed_ms: 1,
                 size_bytes: 4,
                 headers: vec![("content-type".into(), "image/png".into())],
+                redirect_chain: vec![],
                 body: String::new(),
                 json_value: None,
                 truncated: false,
