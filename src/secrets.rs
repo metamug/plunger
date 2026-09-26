@@ -19,6 +19,7 @@ pub trait SecretStore {
 /// The real store: Windows Credential Manager / macOS Keychain. On other
 /// platforms every call fails with a clear message rather than pretending to save.
 pub struct OsStore {
+    #[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
     service: String,
 }
 
