@@ -1,5 +1,5 @@
-﻿# Generates the app icon (app.ico), the in-app window icon (window-128.rgba) and a large PNG.
-# The artwork is the same plunger as docs/images/plunger.svg.
+﻿# Generates the app icon (app.ico), the in-app window icon (window-128.rgba), the empty-state
+# silhouette (plunger-mask.rgba). The artwork is the same plunger as docs/images/plunger.svg.
 # Pure System.Drawing, no external tools. Re-run after changing the design:
 #   powershell -ExecutionPolicy Bypass -File packaging\icons\make-icons.ps1
 Add-Type -AssemblyName System.Drawing
@@ -137,6 +137,39 @@ for ($y = 0; $y -lt 128; $y++) {
 }
 $win.Dispose()
 [System.IO.File]::WriteAllBytes((Join-Path $root 'window-128.rgba'), $rgba)
+
+# Plunger silhouette (white on transparent, 144x204 raw RGBA) for the embossed empty state of the
+# response pane. Same geometry as Add-Plunger, cropped to the plunger's bounds; src/app/emboss.rs
+# tints it to get the raised look.
+$k = 2.4
+$maskBmp = New-Object System.Drawing.Bitmap 144, 204, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$mg = [System.Drawing.Graphics]::FromImage($maskBmp)
+$mg.SmoothingMode = 'AntiAlias'
+$mg.Clear([System.Drawing.Color]::Transparent)
+$mg.TranslateTransform([single](-20 * $k), [single](-9 * $k))
+$white = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
+$mg.FillPath($white, (New-RoundedRect (46 * $k) (11 * $k) (8 * $k) (56 * $k) (4 * $k)))
+$mg.FillPolygon($white, [System.Drawing.PointF[]]@(
+    (New-Object System.Drawing.PointF ([single](43 * $k)), ([single](62 * $k))),
+    (New-Object System.Drawing.PointF ([single](57 * $k)), ([single](62 * $k))),
+    (New-Object System.Drawing.PointF ([single](59 * $k)), ([single](71 * $k))),
+    (New-Object System.Drawing.PointF ([single](41 * $k)), ([single](71 * $k)))))
+$cupPath = New-Object System.Drawing.Drawing2D.GraphicsPath
+$cupPath.AddBezier([single](22 * $k), [single](88 * $k), [single](22 * $k), [single](74 * $k), [single](34 * $k), [single](64 * $k), [single](50 * $k), [single](64 * $k))
+$cupPath.AddBezier([single](50 * $k), [single](64 * $k), [single](66 * $k), [single](64 * $k), [single](78 * $k), [single](74 * $k), [single](78 * $k), [single](88 * $k))
+$cupPath.CloseFigure()
+$mg.FillPath($white, $cupPath)
+$mg.FillEllipse($white, [single](22 * $k), [single](84.4 * $k), [single](56 * $k), [single](7.2 * $k))
+$mg.Dispose()
+$maskRgba = New-Object byte[] (144 * 204 * 4)
+for ($y = 0; $y -lt 204; $y++) {
+    for ($x = 0; $x -lt 144; $x++) {
+        $c = $maskBmp.GetPixel($x, $y); $i = ($y * 144 + $x) * 4
+        $maskRgba[$i] = $c.R; $maskRgba[$i + 1] = $c.G; $maskRgba[$i + 2] = $c.B; $maskRgba[$i + 3] = $c.A
+    }
+}
+$maskBmp.Dispose()
+[System.IO.File]::WriteAllBytes((Join-Path $root 'plunger-mask.rgba'), $maskRgba)
 
 Write-Host "Icons written to $root and $assets"
 

@@ -12,8 +12,18 @@ impl Tab {
         let resp = match &self.outcome {
             Outcome::Empty => {
                 if !self.is_loading() {
-                    ui.add_space(24.0);
+                    // Centre the plunger and its two lines of text in the space left below the
+                    // request, not just across it: the pane is mostly empty before the first send.
+                    let gap = ui.spacing().item_spacing.y;
+                    let content = super::emboss::HEIGHT
+                        + 10.0
+                        + ui.text_style_height(&egui::TextStyle::Body)
+                        + ui.text_style_height(&egui::TextStyle::Small)
+                        + 2.0 * gap;
+                    ui.add_space(((ui.available_height() - content) / 2.0).max(16.0));
                     ui.vertical_centered(|ui| {
+                        super::emboss::plunger(ui);
+                        ui.add_space(10.0);
                         ui.label(egui::RichText::new("Send a request to see the response here").weak());
                         ui.label(egui::RichText::new("Ctrl+Enter sends from anywhere").weak().small());
                     });

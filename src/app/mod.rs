@@ -4,6 +4,7 @@
 
 mod chrome;
 mod command_bar;
+mod emboss;
 mod import_window;
 mod request;
 mod response_panel;
