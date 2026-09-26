@@ -41,6 +41,8 @@ keyring = { version = "3", default-features = false, features = ["windows-native
 # winit needs a display backend on Linux; they load their libraries at run time,
 # so the headless CLI and MCP modes still start on a server with no desktop.
 eframe = { version = "0.29", default-features = false, features = ["x11", "wayland"] }
+# File dialogs go through the desktop portal: pure Rust, no GTK to install.
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", default-features = false, features = ["apple-native"] }
