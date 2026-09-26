@@ -88,6 +88,17 @@ pub fn headers_to_text(headers: &[(String, String)]) -> String {
     headers.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join("\n")
 }
 
+/// Headers are stored as text, one per line, so a value containing a line break
+/// would silently become a second header. Refuse it instead.
+pub fn check_header_lines<'a>(headers: impl IntoIterator<Item = (&'a String, &'a String)>) -> Result<(), String> {
+    for (k, v) in headers {
+        if k.contains(['\r', '\n']) || v.contains(['\r', '\n']) {
+            return Err(format!("Header \"{}\" contains a line break, which isn't allowed in a header.", k.trim()));
+        }
+    }
+    Ok(())
+}
+
 /// What Send does, in one place for the window and for agents: fill in a
 /// missing scheme, then build. A URL that uses variables keeps its scheme-less
 /// form (a variable may supply the scheme, and the field must keep the
@@ -174,6 +185,10 @@ pub fn build_request(state: &PersistedState, bearer_token: &str) -> Result<Outgo
         return Err("Enter a URL.".to_string());
     }
     let url = reqwest::Url::parse(&url_text).map_err(|e| format!("Invalid URL \"{url_text}\": {e}"))?;
+
+    if reqwest::Method::from_bytes(state.method.as_bytes()).is_err() {
+        return Err(format!("Invalid HTTP method \"{}\".", state.method));
+    }
 
     Ok(OutgoingRequest {
         method: state.method.clone(),
@@ -418,4 +433,17 @@ mod tests {
         assert_eq!(fields[0].value, "hi Ann");
     }
 
+
+    #[test]
+    fn an_invalid_method_is_refused_before_anything_is_sent() {
+        let s = PersistedState { url: "http://h/x".into(), method: "GE T".into(), ..Default::default() };
+        assert!(build_request(&s, "").err().unwrap().starts_with("Invalid HTTP method"));
+    }
+
+    #[test]
+    fn a_header_with_a_line_break_is_refused() {
+        let (k, evil, fine) = ("X-A".to_string(), "b\r\nX-Evil: 1".to_string(), "b".to_string());
+        assert!(check_header_lines([(&k, &evil)]).unwrap_err().contains("line break"));
+        assert!(check_header_lines([(&k, &fine)]).is_ok());
+    }
 }

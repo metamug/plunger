@@ -150,7 +150,13 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
             let mut limit = None;
             while let Some(arg) = args.next() {
                 match arg.as_str() {
-                    "--limit" | "-n" => limit = Some(args.number::<i64>(&arg)?),
+                    "--limit" | "-n" => {
+                        let n = args.number::<i64>(&arg)?;
+                        if n < 1 {
+                            return Err(usage_error(format!("{arg} needs a number of 1 or more, not `{n}`")));
+                        }
+                        limit = Some(n);
+                    }
                     _ => return Err(usage_error(format!("Unexpected argument `{arg}`"))),
                 }
             }
@@ -215,7 +221,9 @@ impl SendOptions {
             "-d" | "--data" => p.body = Some(args.value(arg)?),
             "--form" => {
                 let (k, v) = args.pair(arg)?;
-                p.form.get_or_insert_with(BTreeMap::new).insert(k, v);
+                if p.form.get_or_insert_with(BTreeMap::new).insert(k.clone(), v).is_some() {
+                    return Err(usage_error(format!("--form `{k}` was given twice; repeated form fields aren't supported")));
+                }
             }
             "--var" => {
                 let (k, v) = args.pair(arg)?;
@@ -342,6 +350,9 @@ mod tests {
             vec!["send", "-H", "NoColon"],
             vec!["send", "a", "b"],
             vec!["history", "--limit"],
+            vec!["history", "--limit", "0"],
+            vec!["history", "--limit", "-1"],
+            vec!["send", "--url", "http://h", "--form", "a=1", "--form", "a=2"],
             vec!["saved", "extra"],
             vec!["import"],
             vec!["import", "curl x", "--save", "n", "--send"],

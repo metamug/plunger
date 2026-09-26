@@ -4,6 +4,17 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed
+
+- curl import: `-u`, `-b`, `-A`, `-e`, `--json` and `--data-urlencode` are understood instead of their values being taken as the URL; repeated `-d` are joined, `-G` and `-I` are honoured (#10, #11).
+- A header value containing a line break is refused instead of becoming a second header (#12).
+- An invalid HTTP method is refused before sending and no longer recorded in history (#13).
+- `plunger history --limit` rejects 0 and negative numbers (#14).
+- `--form` values are percent-encoded, and a repeated key is an error instead of silently dropped (#15).
+- The text selection highlight uses conventional blue instead of an odd cyan (#16).
+- Body boxes grow with their content and scroll, with no blank rows below short bodies (#17).
+- Saved and history rows in the sidebar draw URLs in the same colour (#8).
+
 ## [0.2.0] - 2026-09-25
 
 ### Added

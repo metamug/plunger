@@ -134,12 +134,31 @@ impl RequestSpec {
             }
             Body::Form(pairs) => {
                 state.body_mode = BodyMode::UrlEncoded;
-                state.urlencoded_body = pairs.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("\n");
+                state.urlencoded_body = pairs
+                    .iter()
+                    .map(|(k, v)| format!("{}={}", encode_keeping_variables(k), encode_keeping_variables(v)))
+                    .collect::<Vec<_>>()
+                    .join("\n");
             }
         }
         apply_overrides(&mut state, &self.variables, self.timeout_secs, self.follow_redirects, self.insecure_tls);
         state
     }
+}
+
+/// Percent-encodes a form key or value, leaving `{{variables}}` for the send
+/// step to fill in, so a value like `a&b` can't split the field.
+fn encode_keeping_variables(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("{{") {
+        let Some(len) = rest[start..].find("}}") else { break };
+        out.push_str(&crate::query::encode_value(&rest[..start]));
+        out.push_str(&rest[start..start + len + 2]);
+        rest = &rest[start + len + 2..];
+    }
+    out.push_str(&crate::query::encode_value(rest));
+    out
 }
 
 /// Adds or replaces variables and options for one request.
@@ -692,5 +711,13 @@ mod tests {
         assert!(err.contains("Get user"), "{err}");
         let info = StoredRequestInfo::from(&find_saved(&h, "Get user").unwrap());
         assert_eq!(info.variables_used, vec!["base", "id"]);
+    }
+
+    #[test]
+    fn form_values_are_encoded_but_variables_are_left_for_the_send_step() {
+        assert_eq!(encode_keeping_variables("a&b c=d"), "a%26b%20c=d");
+        assert_eq!(encode_keeping_variables("Bearer {{tok}}&x"), "Bearer%20{{tok}}%26x");
+        assert_eq!(encode_keeping_variables("{{a}}{{b}}"), "{{a}}{{b}}");
+        assert_eq!(encode_keeping_variables("open {{ never closed"), "open%20{{%20never%20closed");
     }
 }

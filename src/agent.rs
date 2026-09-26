@@ -95,6 +95,9 @@ impl SendParams {
     /// The form state to send: a saved request with overrides, or a new one.
     fn to_state(&self, session: &Session, history: &History) -> Result<PersistedState, String> {
         let body = self.body()?;
+        if let Some(h) = &self.headers {
+            crate::request::check_header_lines(h.iter())?;
+        }
         let Some(name) = &self.saved_request else {
             let url = self.url.clone().filter(|u| !u.trim().is_empty()).ok_or("Give a `url`, or a `saved_request` name.")?;
             let spec = RequestSpec {
