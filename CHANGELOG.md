@@ -10,6 +10,7 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- Saving or renaming a request now refuses an exact name already used by another saved request (#38).
 - Two saved requests with the exact same name: sending or exporting by name now refuses with a clear error instead of always silently picking the first one (#33).
 
 ## [0.2.1] - 2026-09-27

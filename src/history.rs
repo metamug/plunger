@@ -250,6 +250,25 @@ impl History {
                 conn.execute(&format!("ALTER TABLE requests ADD COLUMN {definition}"), [])?;
             }
         }
+        // Triggers enforce exact-name uniqueness without rejecting databases
+        // that already contain duplicate names from older versions.
+        conn.execute_batch(
+            "CREATE TRIGGER IF NOT EXISTS unique_saved_name_on_insert
+             BEFORE INSERT ON requests
+             WHEN NEW.name IS NOT NULL
+                  AND EXISTS (SELECT 1 FROM requests WHERE name = NEW.name)
+             BEGIN
+                 SELECT RAISE(ABORT, 'a saved request with this exact name already exists');
+             END;
+
+             CREATE TRIGGER IF NOT EXISTS unique_saved_name_on_update
+             BEFORE UPDATE OF name ON requests
+             WHEN NEW.name IS NOT NULL
+                  AND EXISTS (SELECT 1 FROM requests WHERE name = NEW.name AND id != NEW.id)
+             BEGIN
+                 SELECT RAISE(ABORT, 'a saved request with this exact name already exists');
+             END;",
+        )?;
         Ok(Self { conn })
     }
 
@@ -623,6 +642,26 @@ mod tests {
         let row = &h.list_saved().unwrap()[0];
         assert_eq!((row.url.as_str(), row.headers_text.as_str()), ("http://v2?token=", "Authorization:"));
         assert!(!h.update_request(9999, &s).unwrap());
+    }
+
+    #[test]
+    fn exact_saved_names_are_rejected_on_save_and_rename() {
+        let h = history();
+        let first = h.save_new(&state("http://a", BodyMode::None), "Duplicate").unwrap();
+
+        let error = h
+            .save_new_from(&state("http://b", BodyMode::None), "Duplicate", Source::Mcp)
+            .unwrap_err();
+        assert!(error.to_string().contains("exact name already exists"));
+
+        let second = h.save_new(&state("http://c", BodyMode::None), "Other").unwrap();
+        let error = h.set_name(second, Some("Duplicate")).unwrap_err();
+        assert!(error.to_string().contains("exact name already exists"));
+        assert_eq!(h.get(second).unwrap().unwrap().name.as_deref(), Some("Other"));
+
+        // Updating a row without changing its name must remain valid.
+        h.set_name(first, Some("Duplicate")).unwrap();
+        assert_eq!(h.list_saved().unwrap().len(), 2);
     }
 
     #[test]
