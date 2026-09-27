@@ -19,7 +19,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip"><strong>Download for Windows</strong></a> (zip, about 3.6 MB, no installer)
+  <a href="https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip"><strong>Download for Windows</strong></a> (zip, about 3.4 MB, no installer)
+  &nbsp;·&nbsp; <a href="https://github.com/metamug/plunger/releases/latest/download/plunger-linux-x86_64.tar.gz">Linux</a> (command line and MCP server tested; the window is not yet)
   &nbsp;·&nbsp; <a href="LICENSE">MIT license</a>
 </p>
 
