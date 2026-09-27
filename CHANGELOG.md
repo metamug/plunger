@@ -6,11 +6,11 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ### Added
 
+- A demo GIF of real Claude Code using Plunger over MCP (`docs/images/mcp-claude-code-demo.gif`), plus a raw-protocol version (`docs/images/mcp-demo.gif`) from a minimal reference MCP client (`scripts/mcp-demo-client.py`) included for anyone building their own client.
+
 ### Fixed
 
 - Two saved requests with the exact same name: sending or exporting by name now refuses with a clear error instead of always silently picking the first one (#33).
-
-- A demo GIF of real Claude Code using Plunger over MCP (`docs/images/mcp-claude-code-demo.gif`), plus a raw-protocol version (`docs/images/mcp-demo.gif`) from a minimal reference MCP client (`scripts/mcp-demo-client.py`) included for anyone building their own client.
 
 ## [0.2.1] - 2026-09-27
 
