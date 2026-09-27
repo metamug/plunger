@@ -6,6 +6,7 @@ mod cli;
 mod curl_export;
 mod curl_import;
 mod engine;
+mod fallback_fonts;
 mod history;
 mod http;
 mod icons;

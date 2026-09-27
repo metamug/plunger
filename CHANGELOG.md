@@ -22,6 +22,7 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 - Text declared as ISO-8859-1 or windows-1252 is decoded correctly instead of showing replacement characters (#27).
 - The method dropdown showed only five of its seven methods; HEAD and OPTIONS were hidden below the fold (#29).
 - An empty response body says so instead of showing a blank box (#30).
+- Text in scripts the bundled fonts lack (Chinese, Japanese, Korean, Hindi, Arabic, symbols such as a check mark) shows instead of empty boxes: a matching system font is loaded the first time such text appears (#28). Right-to-left text is drawn without reordering.
 - curl import: `-u`, `-b`, `-A`, `-e`, `--json` and `--data-urlencode` are understood instead of their values being taken as the URL; repeated `-d` are joined, `-G` and `-I` are honoured (#10, #11).
 - A header value containing a line break is refused instead of becoming a second header (#12).
 - An invalid HTTP method is refused before sending and no longer recorded in history (#13).

@@ -109,6 +109,8 @@ pub struct ApiTesterApp {
     saved_entries: Vec<HistoryEntry>,
     /// The sidebar's filter box; empty shows everything.
     sidebar_filter: String,
+    /// What was last scanned for scripts the bundled fonts can't draw (see `fallback_fonts`).
+    font_sig: (u64, [usize; 7]),
     renaming: Option<Rename>,
     saved_open: bool,
     history_open: bool,
@@ -142,6 +144,7 @@ impl ApiTesterApp {
             history_entries: Vec::new(),
             saved_entries: Vec::new(),
             sidebar_filter: String::new(),
+            font_sig: (u64::MAX, [0; 7]),
             renaming: None,
             saved_open: true,
             history_open: true,
@@ -475,11 +478,43 @@ impl eframe::App for ApiTesterApp {
         self.poll_responses(ctx);
         self.poll_database(ctx);
         self.handle_shortcuts(ctx);
+        self.scan_fonts(ctx);
         self.render_ui(ctx);
     }
 }
 
 impl ApiTesterApp {
+    /// Loads a system font when the active request or the sidebar holds text the bundled fonts
+    /// can't draw. Comparing a few lengths each frame tells whether anything changed; the
+    /// text itself is only looked at then.
+    fn scan_fonts(&mut self, ctx: &egui::Context) {
+        let t = self.tab();
+        let s = &t.state;
+        let sig = (
+            t.id,
+            [
+                s.url.len(),
+                s.headers_text.len(),
+                s.json_body.len(),
+                s.raw_body.len(),
+                s.urlencoded_body.len(),
+                self.history_entries.len(),
+                self.saved_entries.len(),
+            ],
+        );
+        if sig == self.font_sig {
+            return;
+        }
+        let mut text = format!("{}\n{}\n{}\n{}\n{}", s.url, s.headers_text, s.json_body, s.raw_body, s.urlencoded_body);
+        for e in self.history_entries.iter().chain(&self.saved_entries).take(120) {
+            text.push('\n');
+            text.push_str(&e.url);
+            text.push_str(e.name.as_deref().unwrap_or(""));
+        }
+        self.font_sig = sig;
+        crate::fallback_fonts::ensure(ctx, &text);
+    }
+
     /// Everything drawn each frame, separate from `update` so it can run headless in tests.
     fn render_ui(&mut self, ctx: &egui::Context) {
         self.render_menu_bar(ctx);

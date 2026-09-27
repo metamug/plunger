@@ -41,6 +41,14 @@ impl Tab {
             Outcome::Response(resp) => resp,
         };
 
+        // Once per response: load a system font if the body has a script the bundled ones lack.
+        let scan_id = egui::Id::new(("font-scan", self.id));
+        let signature = (resp.size_bytes, resp.status);
+        if ui.ctx().data(|d| d.get_temp::<(usize, u16)>(scan_id)) != Some(signature) {
+            crate::fallback_fonts::ensure(ui.ctx(), &resp.body);
+            ui.ctx().data_mut(|d| d.insert_temp(scan_id, signature));
+        }
+
         ui.add_space(6.0);
         ui.label(egui::RichText::new("RESPONSE").weak().small());
         ui.add_space(2.0);
