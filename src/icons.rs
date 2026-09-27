@@ -6,7 +6,7 @@
 //! Icons are painted with lines rather than font glyphs, so they can't turn
 //! into missing-glyph boxes and they follow the widget's hover/active colors.
 
-use crate::theme::{palette, ACCENT};
+use crate::theme::palette;
 use eframe::egui;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,7 +74,7 @@ pub fn toggle(ui: &mut egui::Ui, on: &mut bool, icon: Icon, tooltip_on: &str, to
         let visuals = ui.style().interact(&response);
         let rounding = egui::Rounding::same(5.0);
         if *on {
-            ui.painter().rect_filled(rect, rounding, ACCENT.linear_multiply(0.3));
+            ui.painter().rect_filled(rect, rounding, palette().accent_soft);
         } else if response.hovered() || response.has_focus() {
             ui.painter().rect_filled(rect, rounding, palette().hover);
         }

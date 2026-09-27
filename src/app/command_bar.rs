@@ -1,7 +1,7 @@
 use super::copy_button;
 use super::ApiTesterApp;
 use crate::icons::{self, Icon};
-use crate::theme::{self, palette, ACCENT};
+use crate::theme::{self, palette};
 use eframe::egui;
 
 const METHODS: [&str; 7] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
@@ -45,7 +45,7 @@ impl ApiTesterApp {
                 send = ui
                     .add_enabled(
                         !loading,
-                        egui::Button::new(if loading { "Sending\u{2026}" } else { "Send" }).fill(ACCENT.linear_multiply(0.35)),
+                        egui::Button::new(if loading { "Sending\u{2026}" } else { "Send" }).fill(palette().accent_soft),
                     )
                     .on_hover_text("Send the request (Ctrl+Enter)")
                     .clicked();

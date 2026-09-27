@@ -5,7 +5,7 @@
 use super::{ApiTesterApp, Rename};
 use crate::history::{HistoryEntry, Source};
 use crate::icons::{self, Icon};
-use crate::theme::{self, one_line, palette, status_dot_color, ACCENT};
+use crate::theme::{self, one_line, palette, status_dot_color};
 use eframe::egui;
 
 const ONE_LINE: f32 = 30.0;
@@ -183,7 +183,7 @@ fn entry_row(
     let hovered = ui.rect_contains_pointer(rect);
 
     let fill = if selected {
-        ACCENT.linear_multiply(0.22)
+        p.accent_soft
     } else if hovered {
         p.hover
     } else {
@@ -214,7 +214,7 @@ fn entry_row(
             egui::pos2(url_left, line_y - tag.size().y / 2.0 - 1.0),
             tag.size() + egui::vec2(6.0, 2.0),
         );
-        ui.painter().rect_filled(tag_rect, egui::Rounding::same(3.0), ACCENT.linear_multiply(0.25));
+        ui.painter().rect_filled(tag_rect, egui::Rounding::same(3.0), p.accent_soft);
         ui.painter().galley(tag_rect.min + egui::vec2(3.0, 1.0), tag, p.accent_text);
         url_left = tag_rect.right() + 6.0;
     }

@@ -31,6 +31,9 @@ pub struct Palette {
     pub button: egui::Color32,
     pub checkbox: egui::Color32,
     pub hover: egui::Color32,
+    /// A soft accent fill (selected row, Send button, pressed widgets). Explicit rather than a
+    /// translucent accent, which blended into cyan on the light theme.
+    pub accent_soft: egui::Color32,
     pub border: egui::Color32,
     pub text: egui::Color32,
     pub text_widget: egui::Color32,
@@ -60,6 +63,7 @@ const DARK: Palette = Palette {
     button: rgb(40, 44, 53),
     checkbox: rgb(66, 72, 87),
     hover: rgb(46, 51, 62),
+    accent_soft: rgb(58, 79, 139),
     border: rgb(48, 53, 63),
     text: rgb(222, 222, 222),
     text_widget: rgb(205, 205, 205),
@@ -100,6 +104,7 @@ const LIGHT: Palette = Palette {
     button: rgb(234, 236, 241),
     checkbox: rgb(255, 255, 255),
     hover: rgb(225, 229, 236),
+    accent_soft: rgb(200, 216, 247),
     border: rgb(203, 208, 217),
     text: rgb(33, 36, 43),
     text_widget: rgb(48, 52, 60),
@@ -217,8 +222,8 @@ pub fn apply_theme(ctx: &egui::Context, choice: ThemeChoice) {
     visuals.widgets.hovered.rounding = rounding;
     visuals.widgets.hovered.expansion = 0.0;
 
-    visuals.widgets.active.bg_fill = ACCENT.linear_multiply(0.25);
-    visuals.widgets.active.weak_bg_fill = ACCENT.linear_multiply(0.25);
+    visuals.widgets.active.bg_fill = p.accent_soft;
+    visuals.widgets.active.weak_bg_fill = p.accent_soft;
     visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, ACCENT);
     visuals.widgets.active.rounding = rounding;
     visuals.widgets.active.expansion = 0.0;

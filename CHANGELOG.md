@@ -31,6 +31,7 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 - The text selection highlight uses conventional blue instead of an odd cyan (#16).
 - Body boxes grow with their content and scroll, with no blank rows below short bodies (#17).
 - Saved and history rows in the sidebar draw URLs in the same colour (#8).
+- On the light theme, the selected sidebar row and the Send button are blue instead of a washed-out cyan (#31).
 
 ## [0.2.0] - 2026-09-25
 
