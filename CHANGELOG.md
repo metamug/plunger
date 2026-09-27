@@ -32,6 +32,7 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 - Body boxes grow with their content and scroll, with no blank rows below short bodies (#17).
 - Saved and history rows in the sidebar draw URLs in the same colour (#8).
 - On the light theme, the selected sidebar row and the Send button are blue instead of a washed-out cyan (#31).
+- The Variables tab's help text wraps instead of running off the panel and pushing the Forget-secrets button out of view (#32).
 
 ## [0.2.0] - 2026-09-25
 

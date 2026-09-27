@@ -73,14 +73,23 @@ impl Tab {
             .weak()
             .small(),
         );
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(
-                    "Secret values (lock on, or named like token/secret/password/key) are never written to a file. Turn on the key to keep one in the system credential store; otherwise it is blank after a restart.",
-                )
-                .weak()
-                .small(),
-            );
+        ui.horizontal_top(|ui| {
+            // A label in a horizontal row doesn't wrap: it ran past the panel and pushed the
+            // button off the edge. Give the text the room left beside the button and wrap it.
+            let room = ui.available_width() - icons::trailing_room(ui, 1);
+            ui.scope(|ui| {
+                ui.set_max_width(room);
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(
+                            "Secret values (lock on, or named like token/secret/password/key) are never written to a file. Turn on the key to keep one in the system credential store; otherwise it is blank after a restart.",
+                        )
+                        .weak()
+                        .small(),
+                    )
+                    .wrap(),
+                );
+            });
             // Next to the text it explains, not in the per-row column, so it
             // can't be mistaken for "remove this variable".
             if icons::button(
