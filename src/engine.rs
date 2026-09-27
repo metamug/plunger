@@ -203,8 +203,15 @@ pub fn saved_request_state(history: &History, name: &str, session: &Session) -> 
 pub fn find_saved(history: &History, name: &str) -> Result<HistoryEntry, String> {
     let saved = history.list_saved().map_err(|e| format!("Couldn't read saved requests: {e}"))?;
     let wanted = name.trim();
-    if let Some(e) = saved.iter().find(|e| e.name.as_deref() == Some(wanted)) {
-        return Ok(e.clone());
+    // An exact match still has to check for more than one: nothing stops two
+    // saved requests sharing the exact same name (a duplicate save, or the
+    // GUI's rename), and picking the first one silently would send whichever
+    // is oldest instead of the one the caller meant.
+    let exact: Vec<&HistoryEntry> = saved.iter().filter(|e| e.name.as_deref() == Some(wanted)).collect();
+    match exact.as_slice() {
+        [one] => return Ok((*one).clone()),
+        [] => {}
+        _ => return Err(format!("More than one saved request is named \"{wanted}\". Rename one of them to tell them apart.")),
     }
     let matches: Vec<&HistoryEntry> = saved
         .iter()
@@ -700,6 +707,15 @@ mod tests {
     fn a_missing_state_file_is_just_an_empty_session() {
         let s = Session::load_with(Path::new("Z:/nope/app.ron"), &MemoryStore::default());
         assert!(s.state.variables.is_empty());
+    }
+
+    #[test]
+    fn two_saved_requests_with_the_exact_same_name_are_reported_as_ambiguous_not_silently_picked() {
+        let h = History::in_memory();
+        h.save_new(&PersistedState { url: "http://a/1".into(), ..Default::default() }, "Dup").unwrap();
+        h.save_new(&PersistedState { url: "http://a/2".into(), ..Default::default() }, "Dup").unwrap();
+        let Err(err) = find_saved(&h, "Dup") else { panic!("expected an ambiguity error") };
+        assert!(err.contains("More than one"), "{err}");
     }
 
     #[test]
