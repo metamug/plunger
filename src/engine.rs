@@ -710,12 +710,47 @@ mod tests {
     }
 
     #[test]
-    fn two_saved_requests_with_the_exact_same_name_are_reported_as_ambiguous_not_silently_picked() {
-        let h = History::in_memory();
-        h.save_new(&PersistedState { url: "http://a/1".into(), ..Default::default() }, "Dup").unwrap();
-        h.save_new(&PersistedState { url: "http://a/2".into(), ..Default::default() }, "Dup").unwrap();
+    fn existing_exact_name_duplicates_are_reported_as_ambiguous() {
+        let path = std::env::temp_dir().join(format!(
+            "plunger-legacy-duplicates-{}-{}.sqlite3",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE requests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    method TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    headers_text TEXT NOT NULL,
+                    body_mode TEXT NOT NULL,
+                    json_body TEXT NOT NULL,
+                    urlencoded_body TEXT NOT NULL,
+                    raw_body TEXT NOT NULL,
+                    status INTEGER,
+                    elapsed_ms INTEGER,
+                    name TEXT
+                );
+                INSERT INTO requests
+                    (created_at, method, url, headers_text, body_mode, json_body,
+                     urlencoded_body, raw_body, name)
+                VALUES
+                    ('t', 'GET', 'http://a/1', '', 'None', '', '', '', 'Dup'),
+                    ('t', 'GET', 'http://a/2', '', 'None', '', '', '', 'Dup');",
+            )
+            .unwrap();
+        }
+
+        let h = History::open_at(&path);
         let Err(err) = find_saved(&h, "Dup") else { panic!("expected an ambiguity error") };
         assert!(err.contains("More than one"), "{err}");
+        drop(h);
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

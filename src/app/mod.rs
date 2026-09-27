@@ -381,8 +381,8 @@ impl ApiTesterApp {
             return;
         }
         if let Some(h) = &self.history {
-            if h.set_name(id, Some(name)).is_err() {
-                self.notify("Could not save the name.");
+            if let Err(error) = h.set_name(id, Some(name)) {
+                self.notify(format!("Could not save the name: {error}"));
                 return;
             }
         }
@@ -894,6 +894,31 @@ mod tests {
         a.unsave(e.id);
         assert!(a.saved_entries.is_empty());
         assert_eq!(a.tab().title(), "1");
+    }
+
+    #[test]
+    fn renaming_to_an_existing_saved_name_shows_the_conflict() {
+        let mut a = app(PersistedState::default());
+        let (first, second) = {
+            let h = a.history.as_ref().unwrap();
+            (
+                h.save_new(&PersistedState { url: "http://a".into(), ..Default::default() }, "First").unwrap(),
+                h.save_new(&PersistedState { url: "http://b".into(), ..Default::default() }, "Second").unwrap(),
+            )
+        };
+
+        a.commit_rename(second, "First");
+
+        assert!(
+            a.notice.as_ref().unwrap().0.contains("exact name already exists"),
+            "{:?}",
+            a.notice
+        );
+        assert_eq!(
+            a.history.as_ref().unwrap().get(second).unwrap().unwrap().name.as_deref(),
+            Some("Second")
+        );
+        assert_eq!(a.history.as_ref().unwrap().get(first).unwrap().unwrap().name.as_deref(), Some("First"));
     }
 
     #[test]
