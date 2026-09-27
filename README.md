@@ -168,4 +168,4 @@ Run `cargo test` and `cargo clippy --all-targets` before sending a PR. Maintaine
 
 ---
 
-<p align="center">We didn't want another ecosystem. We wanted a plunger.<br><strong>Unclog your API.</strong></p>
+<p align="center">We didn't want another ecosystem. We wanted a plunger. <img src="docs/images/plunger.svg" alt="A plunger" width="14"><br><strong>Unclog your API.</strong></p>
