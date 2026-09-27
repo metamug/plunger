@@ -4,6 +4,10 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+
+- A demo GIF of the MCP protocol in action (`docs/images/mcp-demo.gif`), and a minimal reference MCP client (`scripts/mcp-demo-client.py`) that produced it.
+
 ## [0.2.1] - 2026-09-27
 
 ### Added

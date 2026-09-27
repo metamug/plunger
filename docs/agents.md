@@ -40,6 +40,18 @@ claude mcp add plunger -- "C:\Tools\plunger\plunger.exe" mcp
 
 Any MCP client that can launch a stdio server works the same way: the command is `plunger.exe` and the only argument is `mcp`.
 
+Once it's added, an agent's calls show up in Plunger's own history live, tagged `MCP`:
+
+<p align="center">
+  <img src="images/mcp-demo.gif" alt="A terminal running a minimal MCP client against plunger.exe mcp, next to the Plunger window. It calls send_request for a random joke; the response prints in the terminal, and the request appears live in Plunger's history tagged MCP. Opening that row and pressing Send renders the same response in the window." width="900">
+</p>
+
+That recording uses [`scripts/mcp-demo-client.py`](../scripts/mcp-demo-client.py), a minimal script that speaks the same MCP protocol Claude Code does — it's not a recording of an actual Claude Desktop chat, just the real wire traffic to `plunger.exe mcp`, so you can see exactly what a client sends. Run it yourself:
+
+```bash
+python scripts/mcp-demo-client.py path\to\plunger.exe
+```
+
 ## MCP tools
 
 | Tool | What it does |
