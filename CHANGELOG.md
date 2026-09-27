@@ -17,6 +17,11 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- A large JSON response no longer freezes the window or uses gigabytes of memory: the tree shows the start of each long list, with a note; Copy and Save keep everything (#25).
+- An 11 MB text response shows a 256 KB preview instead of using over 1 GB (#26).
+- Text declared as ISO-8859-1 or windows-1252 is decoded correctly instead of showing replacement characters (#27).
+- The method dropdown showed only five of its seven methods; HEAD and OPTIONS were hidden below the fold (#29).
+- An empty response body says so instead of showing a blank box (#30).
 - curl import: `-u`, `-b`, `-A`, `-e`, `--json` and `--data-urlencode` are understood instead of their values being taken as the URL; repeated `-d` are joined, `-G` and `-I` are honoured (#10, #11).
 - A header value containing a line break is refused instead of becoming a second header (#12).
 - An invalid HTTP method is refused before sending and no longer recorded in history (#13).

@@ -637,6 +637,8 @@ mod tests {
             truncated,
             total_size: truncated.then_some(99_999_999),
             binary: None,
+            json_display: None,
+            json_nodes: 0,
         }
     }
 

@@ -740,6 +740,8 @@ mod tests {
                 truncated: false,
                 total_size: Some(4),
                 binary: Some(vec![0x89, 0, 1, 2]),
+                json_display: None,
+                json_nodes: 0,
             },
             history_id: None,
             state: PersistedState { url: "http://h/x.png".into(), ..Default::default() },

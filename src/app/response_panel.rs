@@ -7,6 +7,9 @@ use eframe::egui;
 use egui_json_tree::render::DefaultRender;
 use egui_json_tree::{DefaultExpand, JsonTree};
 const LARGE_JSON_BYTES: usize = 200 * 1024;
+/// A text box lays out every character it holds, every frame it changes; 11 MB of text cost
+/// over a gigabyte. Copy and Save always use the whole body.
+const TEXT_PREVIEW_BYTES: usize = 256 * 1024;
 
 impl Tab {
     pub(super) fn render_response_section(&mut self, ui: &mut egui::Ui) {
@@ -102,13 +105,23 @@ impl Tab {
                 }
                 ResponseTab::Body => {
                     if let Some(value) = &resp.json_value {
+                        let shown = resp.json_display.as_ref().unwrap_or(value);
+                        if resp.json_display.is_some() {
+                            ui.colored_label(
+                                palette().amber,
+                                format!(
+                                    "Large response ({} values): the tree shows the start of each long list. Copy or Save keeps everything.",
+                                    resp.json_nodes
+                                ),
+                            );
+                        }
                         // Expanding every node of a big document stalls the UI.
                         let expand = if resp.body.len() > LARGE_JSON_BYTES {
                             DefaultExpand::ToLevel(1)
                         } else {
                             DefaultExpand::All
                         };
-                        JsonTree::new("response-json-tree", value)
+                        JsonTree::new("response-json-tree", shown)
                             .default_expand(expand)
                             .on_render(|ui, node| {
                                 let response = node.render_default(ui);
@@ -130,10 +143,26 @@ impl Tab {
                                 });
                             })
                             .show(ui);
+                    } else if resp.body.is_empty() {
+                        ui.label(egui::RichText::new("Empty body").weak());
                     } else {
                         // `&str` is a read-only text buffer: selectable and copyable,
                         // but no per-frame clone of the body and no accidental edits.
-                        let mut text: &str = &resp.body;
+                        let mut cut = resp.body.len().min(TEXT_PREVIEW_BYTES);
+                        while !resp.body.is_char_boundary(cut) {
+                            cut -= 1;
+                        }
+                        if cut < resp.body.len() {
+                            ui.colored_label(
+                                palette().amber,
+                                format!(
+                                    "Showing the first {} of {}. Copy or Save keeps everything.",
+                                    format_bytes(cut),
+                                    format_bytes(resp.body.len())
+                                ),
+                            );
+                        }
+                        let mut text: &str = &resp.body[..cut];
                         ui.add(
                             theme::area(&mut text)
                                 .font(egui::TextStyle::Monospace)

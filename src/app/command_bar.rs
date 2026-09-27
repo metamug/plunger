@@ -97,6 +97,8 @@ impl ApiTesterApp {
                                 egui::RichText::new(&tab.state.method).strong().color(theme::method_color(&tab.state.method)),
                             )
                             .width(72.0)
+                            // The default popup height (200 px) fits five methods and hid HEAD and OPTIONS.
+                            .height(300.0)
                             .show_ui(ui, |ui| {
                                 for m in METHODS {
                                     ui.selectable_value(&mut tab.state.method, m.to_string(), m);

@@ -215,6 +215,10 @@ pub struct ResponseData {
     pub total_size: Option<u64>,
     /// The raw bytes when the body isn't text; `body` is then empty.
     pub binary: Option<Vec<u8>>,
+    /// A trimmed copy of `json_value` for the tree when the document is too big to draw whole,
+    /// and the document's real number of values.
+    pub json_display: Option<serde_json::Value>,
+    pub json_nodes: usize,
 }
 
 /// A parsed request — the common output shape for both curl and HAR import,

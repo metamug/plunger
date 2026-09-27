@@ -1,5 +1,61 @@
 use eframe::egui;
 
+/// The tree is not virtualised: every visible value is laid out every frame, so a
+/// 60,000-object array cost gigabytes and froze the window. Documents with more values
+/// than this are shown as a trimmed copy (see `limit_for_display`).
+pub const TREE_NODE_BUDGET: usize = 4000;
+const TREE_MAX_CHILDREN: usize = 200;
+
+fn count_nodes(v: &serde_json::Value) -> usize {
+    match v {
+        serde_json::Value::Array(items) => 1 + items.iter().map(count_nodes).sum::<usize>(),
+        serde_json::Value::Object(map) => 1 + map.values().map(count_nodes).sum::<usize>(),
+        _ => 1,
+    }
+}
+
+/// `None` when the whole document fits the tree budget. Otherwise a trimmed copy for the
+/// tree (long lists keep their first items, followed by an "… N more" entry), and the
+/// document's real number of values.
+pub fn limit_for_display(v: &serde_json::Value) -> Option<(serde_json::Value, usize)> {
+    let total = count_nodes(v);
+    if total <= TREE_NODE_BUDGET {
+        return None;
+    }
+    let mut budget = TREE_NODE_BUDGET;
+    Some((trim(v, &mut budget), total))
+}
+
+fn trim(v: &serde_json::Value, budget: &mut usize) -> serde_json::Value {
+    use serde_json::Value;
+    *budget = budget.saturating_sub(1);
+    match v {
+        Value::Array(items) => {
+            let mut out = Vec::new();
+            for (i, item) in items.iter().enumerate() {
+                if i >= TREE_MAX_CHILDREN || *budget == 0 {
+                    out.push(Value::String(format!("… {} more items", items.len() - i)));
+                    break;
+                }
+                out.push(trim(item, budget));
+            }
+            Value::Array(out)
+        }
+        Value::Object(map) => {
+            let mut out = serde_json::Map::new();
+            for (i, (k, item)) in map.iter().enumerate() {
+                if i >= TREE_MAX_CHILDREN || *budget == 0 {
+                    out.insert("…".to_string(), Value::String(format!("{} more properties", map.len() - i)));
+                    break;
+                }
+                out.insert(k.clone(), trim(item, budget));
+            }
+            Value::Object(out)
+        }
+        other => other.clone(),
+    }
+}
+
 /// The path to a node as a developer would type it (`$.items[0].name`), from its
 /// RFC 6901 pointer. Walking the document tells an array index from an object key
 /// that happens to be a number.
@@ -212,5 +268,42 @@ mod tests {
         assert_eq!(json_path(&v, "/items/0/7"), "$.items[0][\"7\"]");
         assert_eq!(json_path(&v, "/a~1b"), "$[\"a/b\"]");
         assert_eq!(json_path(&v, "/x~0y"), "$[\"x~y\"]");
+    }
+
+    #[test]
+    fn a_small_document_is_shown_whole() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"a":[1,2,3],"b":{"c":true}}"#).unwrap();
+        assert!(limit_for_display(&v).is_none());
+    }
+
+    #[test]
+    fn a_huge_list_is_trimmed_to_its_start_with_a_count_of_the_rest() {
+        let rows: Vec<serde_json::Value> = (0..60_000).map(|i| serde_json::json!({"id": i, "name": "x"})).collect();
+        let v = serde_json::Value::Array(rows);
+        let (shown, total) = limit_for_display(&v).unwrap();
+        assert_eq!(total, 1 + 60_000 * 3);
+        let items = shown.as_array().unwrap();
+        assert_eq!(items.len(), TREE_MAX_CHILDREN + 1);
+        assert_eq!(items[0]["id"], 0);
+        assert_eq!(items[TREE_MAX_CHILDREN], serde_json::json!("… 59800 more items"));
+        assert!(count_nodes(&shown) <= TREE_NODE_BUDGET);
+    }
+
+    #[test]
+    fn a_deep_wide_document_stays_within_the_budget() {
+        let inner: Vec<serde_json::Value> = (0..150).map(|i| serde_json::json!({"a": i, "b": [1, 2, 3]})).collect();
+        let outer: Vec<serde_json::Value> = (0..150).map(|_| serde_json::Value::Array(inner.clone())).collect();
+        let (shown, _) = limit_for_display(&serde_json::Value::Array(outer)).unwrap();
+        assert!(count_nodes(&shown) <= TREE_NODE_BUDGET + TREE_MAX_CHILDREN, "{}", count_nodes(&shown));
+    }
+
+    #[test]
+    fn a_huge_object_keeps_its_first_properties() {
+        let map: serde_json::Map<String, serde_json::Value> = (0..6000).map(|i| (format!("k{i:04}"), serde_json::json!(i))).collect();
+        let (shown, total) = limit_for_display(&serde_json::Value::Object(map)).unwrap();
+        assert_eq!(total, 6001);
+        let obj = shown.as_object().unwrap();
+        assert_eq!(obj.len(), TREE_MAX_CHILDREN + 1);
+        assert_eq!(obj["…"], serde_json::json!("5800 more properties"));
     }
 }

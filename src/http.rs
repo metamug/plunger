@@ -108,7 +108,7 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
     }
     let size_bytes = bytes.len();
     let binary = is_binary(&bytes, &content_type, truncated);
-    let text = if binary { String::new() } else { String::from_utf8_lossy(&bytes).into_owned() };
+    let text = if binary { String::new() } else { decode_text(&bytes, &content_type) };
     let binary = binary.then_some(bytes);
 
     let trimmed = text.trim_start();
@@ -117,6 +117,11 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
         pretty_json_if_possible(&text)
     } else {
         (text, None)
+    };
+
+    let (json_display, json_nodes) = match json_value.as_ref().and_then(crate::json_view::limit_for_display) {
+        Some((shown, total)) => (Some(shown), total),
+        None => (None, 0),
     };
 
     Ok(ResponseData {
@@ -130,7 +135,28 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
         truncated,
         total_size,
         binary,
+        json_display,
+        json_nodes,
     })
+}
+
+/// Decodes a text body. UTF-8 unless the server declares a Latin-1 family charset, which
+/// browsers read as windows-1252; without this an old page's accents show as replacement marks.
+fn decode_text(bytes: &[u8], content_type: &str) -> String {
+    let ct = content_type.to_ascii_lowercase();
+    let charset = ct.split(';').skip(1).find_map(|p| p.trim().strip_prefix("charset=")).map(|c| c.trim_matches(|ch| ch == '"' || ch == '\''));
+    if !matches!(charset, Some("iso-8859-1" | "latin1" | "latin-1" | "windows-1252" | "cp1252" | "us-ascii")) {
+        return String::from_utf8_lossy(bytes).into_owned();
+    }
+    const HIGH: [char; 32] = [
+        '\u{20AC}', '\u{81}', '\u{201A}', '\u{192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}', '\u{2C6}', '\u{2030}', '\u{160}',
+        '\u{2039}', '\u{152}', '\u{8D}', '\u{17D}', '\u{8F}', '\u{90}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}',
+        '\u{2013}', '\u{2014}', '\u{2DC}', '\u{2122}', '\u{161}', '\u{203A}', '\u{153}', '\u{9D}', '\u{17E}', '\u{178}',
+    ];
+    bytes
+        .iter()
+        .map(|&b| if (0x80..0xA0).contains(&b) { HIGH[(b - 0x80) as usize] } else { b as char })
+        .collect()
 }
 
 /// A body is binary when it holds a NUL byte, or isn't valid UTF-8 and the server
@@ -342,5 +368,14 @@ mod tests {
         let cut = &"é".as_bytes()[..1];
         assert!(!is_binary(cut, "", true));
         assert!(is_binary(cut, "", false));
+    }
+
+    #[test]
+    fn a_declared_latin1_charset_is_decoded_like_a_browser_would() {
+        assert_eq!(decode_text(&[0x63, 0x61, 0x66, 0xe9, 0x20, 0xf1], "text/html; charset=iso-8859-1"), "café ñ");
+        assert_eq!(decode_text(&[0x80, 0x93, 0x94], "text/plain; charset=\"windows-1252\""), "€\u{201C}\u{201D}");
+        // No charset, or UTF-8: read as UTF-8.
+        assert_eq!(decode_text("café".as_bytes(), "text/html"), "café");
+        assert_eq!(decode_text("café".as_bytes(), "text/html; charset=utf-8"), "café");
     }
 }
