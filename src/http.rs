@@ -89,7 +89,7 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
 
     let start = Instant::now();
     let res = builder.send().map_err(|e| describe_error(&e))?;
-    let elapsed_ms = start.elapsed().as_millis();
+    let ttfb_ms = start.elapsed().as_millis();
 
     let status = res.status().as_u16();
     let status_text = res.status().canonical_reason().unwrap_or("").to_string();
@@ -120,6 +120,7 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
     let binary = is_binary(&bytes, &content_type, truncated);
     let text = if binary { String::new() } else { decode_text(&bytes, &content_type) };
     let binary = binary.then_some(bytes);
+    let elapsed_ms = start.elapsed().as_millis();
 
     let trimmed = text.trim_start();
     let looks_json = content_type.contains("json") || trimmed.starts_with('{') || trimmed.starts_with('[');
@@ -137,6 +138,7 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
     Ok(ResponseData {
         status,
         status_text,
+        ttfb_ms,
         elapsed_ms,
         size_bytes,
         headers,

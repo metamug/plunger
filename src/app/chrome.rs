@@ -76,7 +76,7 @@ impl ApiTesterApp {
                                 _ => 3,
                             }];
                             small(ui, format!("{} {}", r.status, r.status_text), Some(fg));
-                            small(ui, format!("{} ms  \u{b7}  {}", r.elapsed_ms, super::response_panel::format_bytes(r.size_bytes)), None);
+                            small(ui, format!("TTFB {} ms · total {} ms  \u{b7}  {}", r.ttfb_ms, r.elapsed_ms, super::response_panel::format_bytes(r.size_bytes)), None);
                         }
                     }
                 }
