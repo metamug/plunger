@@ -4,6 +4,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-27
+
 ### Added
 
 - A filter box in the sidebar searches the whole history and Saved list by URL, method, name or status.
@@ -57,6 +59,7 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 First public release: send requests with params, headers, JSON, form-urlencoded, raw and multipart bodies; `{{variables}}`; secrets kept in Windows Credential Manager on request; curl and HAR import; local history; TLS-skip for local servers.
 
-[Unreleased]: https://github.com/metamug/plunger/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/metamug/plunger/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/metamug/plunger/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/metamug/plunger/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/metamug/plunger/releases/tag/v0.1.0
