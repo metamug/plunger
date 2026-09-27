@@ -217,7 +217,7 @@ impl Tab {
         self.outcome = match result {
             Ok(data) => {
                 self.response_tab = ResponseTab::Body;
-                Outcome::Response(data)
+                Outcome::Response(Box::new(data))
             }
             Err(err) => Outcome::Failed(err),
         };

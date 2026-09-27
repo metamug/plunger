@@ -197,7 +197,7 @@ pub type SendResult = Result<ResponseData, String>;
 pub enum Outcome {
     #[default]
     Empty,
-    Response(ResponseData),
+    Response(Box<ResponseData>),
     Failed(String),
 }
 
