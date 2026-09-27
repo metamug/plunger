@@ -74,10 +74,10 @@ One exe. Human GUI, agent CLI, agent MCP. The same safety guarantees in every mo
 ```
 
 <p align="center">
-  <img src="docs/images/mcp-demo.gif" alt="An MCP client calls Plunger's send_request tool for a random joke; the response prints in the terminal, and the request shows up live in Plunger's history, tagged MCP." width="900">
+  <img src="docs/images/mcp-claude-code-demo.gif" alt="Claude Code, asked to fetch a joke through Plunger's send_request tool, calling the tool and printing the result; each call shows up live in Plunger's history on the right, tagged MCP." width="900">
 </p>
 
-<p align="center"><sub>The real MCP wire traffic to <code>plunger.exe mcp</code>, via the minimal reference client in <a href="scripts/mcp-demo-client.py">scripts/mcp-demo-client.py</a> — not a recorded chat. See <a href="docs/agents.md">docs/agents.md</a> for the walkthrough.</sub></p>
+<p align="center"><sub>Real Claude Code, using Plunger over MCP, unedited. See <a href="docs/agents.md">docs/agents.md</a> for the setup and a look at the raw protocol traffic.</sub></p>
 
 ### Why not just let the agent run curl?
 

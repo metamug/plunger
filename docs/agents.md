@@ -40,17 +40,23 @@ claude mcp add plunger -- "C:\Tools\plunger\plunger.exe" mcp
 
 Any MCP client that can launch a stdio server works the same way: the command is `plunger.exe` and the only argument is `mcp`.
 
-Once it's added, an agent's calls show up in Plunger's own history live, tagged `MCP`:
+Once it's added, an agent's calls show up in Plunger's own history live, tagged `MCP`. This is real Claude Code, unedited, asked to fetch a joke through Plunger and then asked twice more:
 
 <p align="center">
-  <img src="images/mcp-demo.gif" alt="A terminal running a minimal MCP client against plunger.exe mcp, next to the Plunger window. It calls send_request for a random joke; the response prints in the terminal, and the request appears live in Plunger's history tagged MCP. Opening that row and pressing Send renders the same response in the window." width="900">
+  <img src="images/mcp-claude-code-demo.gif" alt="Claude Code calling Plunger's send_request tool three times for a random joke; each call shows up live in Plunger's history on the right, tagged MCP, while Claude's replies stream on the left." width="900">
 </p>
 
-That recording uses [`scripts/mcp-demo-client.py`](../scripts/mcp-demo-client.py), a minimal script that speaks the same MCP protocol Claude Code does — it's not a recording of an actual Claude Desktop chat, just the real wire traffic to `plunger.exe mcp`, so you can see exactly what a client sends. Run it yourself:
+### Seeing the raw protocol
+
+Claude Code's chat hides the actual bytes on the wire behind "Used plunger: Send an HTTP request." If you're building your own MCP client and want to see the literal JSON-RPC frames, [`scripts/mcp-demo-client.py`](../scripts/mcp-demo-client.py) is a minimal reference client with no SDK — it does the same initialize handshake and one `tools/call`, and prints every frame:
 
 ```bash
 python scripts/mcp-demo-client.py path\to\plunger.exe
 ```
+
+<p align="center">
+  <img src="images/mcp-demo.gif" alt="The reference script's output: the initialize handshake, then a tools/call frame for send_request and its reply, printed as JSON next to the Plunger window, which picks up the request live." width="900">
+</p>
 
 ## MCP tools
 
