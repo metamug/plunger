@@ -614,6 +614,32 @@ mod tests {
     }
 
     #[test]
+    fn overriding_a_secret_variable_sends_and_masks_the_override_not_the_stored_secret() {
+        let base = serve_echo(1);
+        let history = History::in_memory();
+        let s = session(vec![var("apiToken", "STORED-SECRET-VALUE", true)]);
+        let spec = RequestSpec {
+            url: format!("{base}/echo?token={{{{apiToken}}}}"),
+            variables: vec![("apiToken".into(), "OVERRIDE-TOKEN-1234".into())],
+            ..Default::default()
+        };
+        let state = spec.to_state(&s);
+        // The override replaces the value in place and keeps the flag.
+        assert!(state.variables[0].secret, "an override must not un-secret a variable");
+        let scrubber = Scrubber::new(&state, "");
+        let sent = send(state, "", Some(&history), Source::Mcp).unwrap();
+        let out = AgentResponse::from_sent(&sent, &scrubber, DEFAULT_MAX_BODY_CHARS);
+        let json = serde_json::to_string(&out).unwrap();
+        // The override is what went out, and it is what gets masked.
+        let echoed = out.json.as_ref().and_then(|j| j.get("request")).and_then(|v| v.as_str()).unwrap();
+        assert!(echoed.contains("token=[redacted:apiToken]"), "{echoed}");
+        assert!(!json.contains("OVERRIDE-TOKEN-1234"), "{json}");
+        // The stale stored secret is neither sent nor echoed anywhere.
+        assert!(!json.contains("STORED-SECRET-VALUE"), "{json}");
+        assert_eq!(out.redacted, vec!["apiToken".to_string()]);
+    }
+
+    #[test]
     fn url_encoded_echoes_of_a_secret_are_masked_too() {
         let state = PersistedState { variables: vec![var("key", "a/b c+d&e", true)], ..Default::default() };
         let s = Scrubber::new(&state, "");
