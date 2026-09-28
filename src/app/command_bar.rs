@@ -4,6 +4,10 @@ use crate::icons::{self, Icon};
 use crate::theme::{self, palette};
 use eframe::egui;
 
+pub(super) fn url_field_id(tab_id: u64) -> egui::Id {
+    egui::Id::new(("url", tab_id))
+}
+
 const METHODS: [&str; 7] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
 impl ApiTesterApp {
@@ -112,7 +116,7 @@ impl ApiTesterApp {
                         widgets.hovered.bg_stroke = egui::Stroke::NONE;
                         ui.add(
                             theme::field(&mut tab.state.url)
-                                .id_salt(("url", tab.id))
+                                .id(url_field_id(tab.id))
                                 .desired_width(ui.available_width() - icons::SIZE - theme::FIELD_MARGIN_X)
                                 .hint_text("https://api.example.com/resource  or  localhost:3000/api")
                                 .frame(false),
