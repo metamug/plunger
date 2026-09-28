@@ -6,6 +6,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ### Added
 
+- Ctrl+Tab and Ctrl+Shift+Tab cycle through open request tabs, wrapping at
+  either end (#39).
 - A demo GIF of real Claude Code using Plunger over MCP (`docs/images/mcp-claude-code-demo.gif`), plus a raw-protocol version (`docs/images/mcp-demo.gif`) from a minimal reference MCP client (`scripts/mcp-demo-client.py`) included for anyone building their own client.
 
 ### Fixed

@@ -449,6 +449,19 @@ impl ApiTesterApp {
         if pressed(egui::Key::W) {
             self.close_tab(self.active);
         }
+        let previous_tab = ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                egui::Key::Tab,
+            ))
+        });
+        if previous_tab {
+            let previous = (self.active + self.tabs.len() - 1) % self.tabs.len();
+            self.activate(previous);
+        } else if pressed(egui::Key::Tab) {
+            let next = (self.active + 1) % self.tabs.len();
+            self.activate(next);
+        }
         if pressed(egui::Key::S) {
             self.save_active();
         }
@@ -554,6 +567,44 @@ mod tests {
         for _ in 0..3 {
             let _ = ctx.run(egui::RawInput::default(), |ctx| app.render_ui(ctx));
         }
+    }
+
+    fn press_tab(app: &mut ApiTesterApp, modifiers: egui::Modifiers) {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::Tab,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                }],
+                ..Default::default()
+            },
+            |ctx| app.handle_shortcuts(ctx),
+        );
+    }
+
+    #[test]
+    fn command_tab_cycles_forward_and_backward_with_wraparound() {
+        let mut app = app(PersistedState::default());
+        app.new_tab();
+        app.new_tab();
+        app.activate(0);
+
+        press_tab(&mut app, egui::Modifiers::COMMAND);
+        assert_eq!(app.active, 1);
+        press_tab(&mut app, egui::Modifiers::COMMAND);
+        assert_eq!(app.active, 2);
+        press_tab(&mut app, egui::Modifiers::COMMAND);
+        assert_eq!(app.active, 0);
+
+        let previous = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
+        press_tab(&mut app, previous);
+        assert_eq!(app.active, 2);
+        press_tab(&mut app, previous);
+        assert_eq!(app.active, 1);
     }
 
     #[test]

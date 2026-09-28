@@ -140,7 +140,8 @@ To update, replace the exe. To remove it, delete the exe and `%APPDATA%\Plunger`
 2. Press **Ctrl+Enter**.
 3. Read the response.
 
-That's it.
+With multiple request tabs, **Ctrl+Tab** moves to the next tab and
+**Ctrl+Shift+Tab** moves to the previous one. Cycling wraps at either end.
 
 ## Build from source
 
