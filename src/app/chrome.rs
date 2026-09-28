@@ -91,7 +91,11 @@ impl ApiTesterApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     small(ui, format!("v{}", env!("CARGO_PKG_VERSION")), None);
                     ui.separator();
-                    small(ui, "Ctrl+Enter send  \u{b7}  Ctrl+S save  \u{b7}  Ctrl+T new tab".to_string(), None);
+                    small(
+                        ui,
+                        "Ctrl+Enter send  \u{b7}  Ctrl+S save  \u{b7}  Ctrl+T new tab  \u{b7}  Ctrl+Tab cycle tabs".to_string(),
+                        None,
+                    );
                     if tab.state.insecure_tls {
                         ui.separator();
                         small(ui, "TLS certificate check off".to_string(), Some(p.amber));
