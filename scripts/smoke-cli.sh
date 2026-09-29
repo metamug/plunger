@@ -12,6 +12,20 @@ SRV=$!
 trap 'kill $SRV 2>/dev/null || true; rm -rf "$WORK"' EXIT
 for _ in $(seq 1 50); do curl -sf http://127.0.0.1:18080/ok.json >/dev/null && break; sleep 0.1; done
 
+# Keep a deliberately loose startup budget: this is a regression tripwire for
+# order-of-magnitude slowdowns, not a benchmark of shared CI runners.
+best_ms=
+for _ in $(seq 1 3); do
+  start_ns=$(date +%s%N)
+  "$BIN" --version >/dev/null
+  elapsed_ms=$(( ($(date +%s%N) - start_ns) / 1000000 ))
+  if [ -z "$best_ms" ] || [ "$elapsed_ms" -lt "$best_ms" ]; then best_ms=$elapsed_ms; fi
+done
+echo "best startup: $best_ms ms"
+if [ "$best_ms" -gt 2000 ]; then
+  echo "warning: startup regression guard exceeded 2000 ms (best of 3: $best_ms ms)" >&2
+fi
+
 out=$("$BIN" send --url http://127.0.0.1:18080/ok.json --fail)
 echo "$out"
 echo "$out" | grep -q '"ok": *true'   || { echo "send: not ok"; exit 1; }
