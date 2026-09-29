@@ -1,5 +1,5 @@
 //! `{{name}}` variable substitution, plus a few dynamic built-ins
-//! (`{{$uuid}}`, `{{$timestamp}}`, `{{$randomInt}}`).
+//! (`{{$uuid}}`, `{{$timestamp}}`, `{{$randomInt}}`, and `{{$env:NAME}}`).
 
 use crate::model::Variable;
 use std::collections::BTreeSet;
@@ -44,7 +44,7 @@ impl<'a> Resolver<'a> {
             match self.lookup(name) {
                 Some(value) => out.push_str(&encode(&value)),
                 None => {
-                    if is_valid_name(name) {
+                    if is_valid_name(name) || environment_name(name).is_some() {
                         self.undefined.insert(name.to_string());
                     }
                     // Undefined or not a variable at all (e.g. `{{"a":1}}`): leave untouched.
@@ -58,6 +58,9 @@ impl<'a> Resolver<'a> {
     }
 
     fn lookup(&self, name: &str) -> Option<String> {
+        if let Some(env_name) = environment_name(name) {
+            return std::env::var(env_name).ok();
+        }
         if !is_valid_name(name) {
             return None;
         }
@@ -79,6 +82,15 @@ impl<'a> Resolver<'a> {
             if names.len() == 1 { "it" } else { "them" },
         ))
     }
+}
+
+fn environment_name(name: &str) -> Option<&str> {
+    let env_name = name.strip_prefix("$env:")?;
+    (!env_name.is_empty()
+        && env_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-')))
+    .then_some(env_name)
 }
 
 fn is_valid_name(name: &str) -> bool {
@@ -175,6 +187,20 @@ mod tests {
         assert_eq!(&u[14..15], "4");
         assert!(parts[2].parse::<u64>().unwrap() > 1_700_000_000);
         assert!(parts[3].parse::<u32>().unwrap() < 1000);
+    }
+
+    #[test]
+    fn environment_variable_is_resolved_at_apply_time() {
+        let expected = std::env::var("PATH").expect("test process should have PATH");
+        let (out, res) = resolve("{{$env:PATH}}");
+        assert_eq!(out, expected);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn missing_environment_variable_is_undefined() {
+        let (_, res) = resolve("{{$env:PLUNGER_TEST_VARIABLE_THAT_DOES_NOT_EXIST_8F2A}}");
+        assert!(res.unwrap_err().contains("{{$env:PLUNGER_TEST_VARIABLE_THAT_DOES_NOT_EXIST_8F2A}}"));
     }
 
     #[test]
