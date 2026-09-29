@@ -6,6 +6,7 @@ pub enum BodyMode {
     #[default]
     None,
     Json,
+    Xml,
     UrlEncoded,
     Multipart,
     Raw,
@@ -254,7 +255,13 @@ impl ParsedRequest {
                 state.json_body = body;
             }
             Some(body) => {
-                state.body_mode = BodyMode::Raw;
+                let is_xml = self.headers.iter().any(|(name, value)| {
+                    name.eq_ignore_ascii_case("content-type")
+                        && (value.to_ascii_lowercase().contains("application/xml")
+                            || value.to_ascii_lowercase().contains("text/xml")
+                            || value.to_ascii_lowercase().contains("+xml"))
+                });
+                state.body_mode = if is_xml { BodyMode::Xml } else { BodyMode::Raw };
                 state.raw_body = body;
             }
             None if !self.form_fields.is_empty() => state.body_mode = BodyMode::Multipart,

@@ -241,7 +241,7 @@ pub fn import_curl(curl: &str, save_as: Option<&str>, source: Source) -> Result<
     };
     let body = match state.body_mode {
         BodyMode::Json => Some(state.json_body.clone()),
-        BodyMode::Raw => Some(state.raw_body.clone()),
+        BodyMode::Raw | BodyMode::Xml => Some(state.raw_body.clone()),
         _ => None,
     };
     Ok(ImportedRequest {
