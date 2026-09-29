@@ -159,6 +159,15 @@ impl Tab {
                                 });
                             })
                             .show(ui);
+                    } else if is_markup_response(&resp.headers) {
+                        let formatted = pretty_markup(&resp.body);
+                        let mut text: &str = &formatted;
+                        let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                            let mut job = highlight_markup(text);
+                            job.wrap.max_width = wrap_width;
+                            ui.fonts(|fonts| fonts.layout_job(job))
+                        };
+                        ui.add(theme::area(&mut text).font(egui::TextStyle::Monospace).desired_width(f32::INFINITY).layouter(&mut layouter));
                     } else if resp.body.is_empty() {
                         ui.label(egui::RichText::new("Empty body").weak());
                     } else {
@@ -204,6 +213,54 @@ impl Tab {
 
 pub(super) fn format_request_bytes(n: Option<usize>) -> String {
     n.map(format_bytes).unwrap_or_else(|| "?".into())
+}
+
+fn is_markup_response(headers: &[(String, String)]) -> bool {
+    headers.iter().any(|(name, value)| {
+        if !name.eq_ignore_ascii_case("content-type") { return false; }
+        let value = value.to_ascii_lowercase();
+        value.contains("application/xml") || value.contains("text/xml") || value.contains("+xml") || value.contains("text/html")
+    })
+}
+
+fn pretty_markup(input: &str) -> String {
+    let input = input.trim();
+    let mut out = String::new();
+    let mut depth = 0usize;
+    let mut pos = 0usize;
+    while let Some(rel) = input[pos..].find('<') {
+        let start = pos + rel;
+        let text = input[pos..start].trim();
+        if !text.is_empty() { out.push_str(&"  ".repeat(depth)); out.push_str(text); out.push('\n'); }
+        let Some(end_rel) = input[start..].find('>') else { out.push_str(&input[start..]); return out; };
+        let end = start + end_rel + 1;
+        let tag = &input[start..end];
+        let closing = tag.starts_with("</");
+        let standalone = tag.ends_with("/>") || tag.starts_with("<?") || tag.starts_with("<!");
+        if closing { depth = depth.saturating_sub(1); }
+        out.push_str(&"  ".repeat(depth)); out.push_str(tag); out.push('\n');
+        if !closing && !standalone { depth += 1; }
+        pos = end;
+    }
+    let tail = input[pos..].trim();
+    if !tail.is_empty() { out.push_str(&"  ".repeat(depth)); out.push_str(tail); }
+    out.trim_end().to_string()
+}
+
+fn highlight_markup(text: &str) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    let font_id = egui::FontId::monospace(13.0);
+    let colors = palette().json;
+    let mut rest = text;
+    while let Some(start) = rest.find('<') {
+        if start > 0 { job.append(&rest[..start], 0.0, egui::TextFormat { font_id: font_id.clone(), color: colors[2], ..Default::default() }); }
+        let Some(end_rel) = rest[start..].find('>') else { break; };
+        let end = start + end_rel + 1;
+        job.append(&rest[start..end], 0.0, egui::TextFormat { font_id: font_id.clone(), color: colors[1], ..Default::default() });
+        rest = &rest[end..];
+    }
+    if !rest.is_empty() { job.append(rest, 0.0, egui::TextFormat { font_id, color: colors[2], ..Default::default() }); }
+    job
 }
 
 pub(super) fn format_bytes(n: usize) -> String {
