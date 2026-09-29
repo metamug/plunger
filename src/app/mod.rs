@@ -454,6 +454,10 @@ impl ApiTesterApp {
         if pressed(egui::Key::Enter) && !self.tab().is_loading() {
             self.trigger_send(ctx);
         }
+        let escape = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+        if escape && self.renaming.is_none() && self.tab().is_loading() {
+            self.tab_mut().cancel();
+        }
         if pressed(egui::Key::T) {
             self.new_tab();
         }
@@ -580,6 +584,23 @@ mod tests {
         }
     }
 
+    fn press_escape(app: &mut ApiTesterApp) {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::Escape,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                ..Default::default()
+            },
+            |ctx| app.handle_shortcuts(ctx),
+        );
+    }
+
     fn press_tab(app: &mut ApiTesterApp, modifiers: egui::Modifiers) {
         let ctx = egui::Context::default();
         let _ = ctx.run(
@@ -595,6 +616,19 @@ mod tests {
             },
             |ctx| app.handle_shortcuts(ctx),
         );
+    }
+
+    #[test]
+    fn escape_cancels_only_an_in_flight_request() {
+        let mut app = app(PersistedState { url: "http://127.0.0.1:1".into(), ..Default::default() });
+        app.trigger_send(&egui::Context::default());
+        assert!(app.tab().is_loading());
+
+        press_escape(&mut app);
+        assert!(!app.tab().is_loading());
+
+        press_escape(&mut app);
+        assert!(!app.tab().is_loading());
     }
 
     #[test]

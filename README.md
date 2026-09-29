@@ -137,7 +137,7 @@ To update, replace the exe. To remove it, delete the exe and `%APPDATA%\Plunger`
 ## Usage
 
 1. Paste a URL, or import a curl command.
-2. Press **Ctrl+Enter**.
+2. Press **Ctrl+Enter**. While a request is in flight, press **Escape** to cancel waiting for it.
 3. Read the response.
 
 Press **Ctrl+L** to focus the URL field and select its contents.

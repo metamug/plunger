@@ -93,7 +93,7 @@ impl ApiTesterApp {
                     ui.separator();
                     small(
                         ui,
-                        "Ctrl+L edit URL  \u{b7}  Ctrl+Enter send  \u{b7}  Ctrl+S save  \u{b7}  Ctrl+T new tab  \u{b7}  Ctrl+Tab cycle tabs".to_string(),
+                        "Ctrl+L edit URL  \u{b7}  Ctrl+Enter send  \u{b7}  Esc cancel  \u{b7}  Ctrl+S save  \u{b7}  Ctrl+T new tab  \u{b7}  Ctrl+Tab cycle tabs".to_string(),
                         None,
                     );
                     if tab.state.insecure_tls {
