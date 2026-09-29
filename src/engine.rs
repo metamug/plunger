@@ -812,6 +812,7 @@ mod tests {
                 ttfb_ms: 1,
                 elapsed_ms: 1,
                 size_bytes: 4,
+                request_size_bytes: Some(0),
                 headers: vec![("content-type".into(), "image/png".into())],
                 redirect_chain: vec![],
                 body: String::new(),

@@ -53,6 +53,12 @@ fn multipart_form(fields: Vec<FormField>) -> Result<Form, String> {
 }
 
 pub fn execute(req: OutgoingRequest) -> SendResult {
+    let request_size_bytes = match &req.body {
+        OutgoingBody::None => Some(0),
+        OutgoingBody::Text(text) => Some(text.len()),
+        // Multipart is streamed by reqwest; its encoded wire size is not exposed here.
+        OutgoingBody::Multipart(_) => None,
+    };
     let redirect_chain = Arc::new(Mutex::new(Vec::new()));
     let redirect = if req.follow_redirects {
         let chain = Arc::clone(&redirect_chain);
@@ -141,6 +147,7 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
         ttfb_ms,
         elapsed_ms,
         size_bytes,
+        request_size_bytes,
         headers,
         redirect_chain: redirect_chain.lock().map(|chain| chain.clone()).unwrap_or_default(),
         body,
@@ -319,6 +326,29 @@ mod tests {
         let err = execute(req("http://127.0.0.1:1/".into())).err().unwrap();
         // reqwest alone says only "error sending request for url (...)".
         assert!(err.contains("error sending request") && err.contains("(Connect)"), "{err}");
+    }
+
+    #[test]
+    fn execute_reports_text_request_body_size() {
+        let (url, _) = serve_once(ok_head(2), b"ok".to_vec(), None);
+        let mut r = req(url);
+        r.method = "POST".into();
+        r.body = OutgoingBody::Text("hello".into());
+        assert_eq!(execute(r).unwrap().request_size_bytes, Some(5));
+    }
+
+    #[test]
+    fn execute_leaves_streamed_multipart_size_unknown() {
+        let (url, _) = serve_once(ok_head(2), b"ok".to_vec(), None);
+        let mut r = req(url);
+        r.method = "POST".into();
+        r.body = OutgoingBody::Multipart(vec![FormField {
+            key: "title".into(),
+            kind: FieldKind::Text,
+            value: "hello".into(),
+            enabled: true,
+        }]);
+        assert_eq!(execute(r).unwrap().request_size_bytes, None);
     }
 
     #[test]

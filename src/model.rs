@@ -209,6 +209,8 @@ pub struct ResponseData {
     /// Total time through reading the response body.
     pub elapsed_ms: u128,
     pub size_bytes: usize,
+    /// Bytes in the request body, when its encoded size is known.
+    pub request_size_bytes: Option<usize>,
     pub headers: Vec<(String, String)>,
     /// Redirect responses followed before the final response: (status, destination URL).
     pub redirect_chain: Vec<(u16, String)>,
