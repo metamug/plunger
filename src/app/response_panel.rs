@@ -113,6 +113,19 @@ impl Tab {
         });
         ui.add_space(4.0);
 
+        if self.response_tab == ResponseTab::Body && self.response_search_open {
+            let matches = response_match_ranges(&resp.body, &self.response_search_query);
+            if self.response_search_index >= matches.len() { self.response_search_index = 0; }
+            ui.horizontal(|ui| {
+                let response = ui.add(egui::TextEdit::singleline(&mut self.response_search_query).hint_text("Find in response").desired_width(220.0));
+                if response.changed() { self.response_search_index = 0; }
+                if ui.button("Prev").clicked() && !matches.is_empty() { self.response_search_index = (self.response_search_index + matches.len() - 1) % matches.len(); }
+                if ui.button("Next").clicked() && !matches.is_empty() { self.response_search_index = (self.response_search_index + 1) % matches.len(); }
+                ui.label(format!("{}/{}", if matches.is_empty() { 0 } else { self.response_search_index + 1 }, matches.len()));
+                if ui.button("Close").clicked() { self.response_search_open = false; }
+            });
+        }
+
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| match self.response_tab {
@@ -132,7 +145,9 @@ impl Tab {
                             );
                         }
                         // Expanding every node of a big document stalls the UI.
-                        let expand = if resp.body.len() > LARGE_JSON_BYTES {
+                        let expand = if self.response_search_open && !self.response_search_query.is_empty() {
+                            DefaultExpand::SearchResults(&self.response_search_query)
+                        } else if resp.body.len() > LARGE_JSON_BYTES {
                             DefaultExpand::ToLevel(1)
                         } else {
                             DefaultExpand::All
@@ -178,12 +193,13 @@ impl Tab {
                                 ),
                             );
                         }
-                        let mut text: &str = &resp.body[..cut];
-                        ui.add(
-                            theme::area(&mut text)
-                                .font(egui::TextStyle::Monospace)
-                                .desired_width(f32::INFINITY),
-                        );
+                        let preview = &resp.body[..cut];
+                        if self.response_search_open && !self.response_search_query.is_empty() {
+                            ui.label(highlight_response_matches(preview, &self.response_search_query));
+                        } else {
+                            let mut text: &str = preview;
+                            ui.add(theme::area(&mut text).font(egui::TextStyle::Monospace).desired_width(f32::INFINITY));
+                        }
                     }
                 }
                 ResponseTab::Headers => {
@@ -204,6 +220,26 @@ impl Tab {
 
 pub(super) fn format_request_bytes(n: Option<usize>) -> String {
     n.map(format_bytes).unwrap_or_else(|| "?".into())
+}
+
+fn response_match_ranges(text: &str, query: &str) -> Vec<(usize, usize)> {
+    if query.is_empty() { return Vec::new(); }
+    let haystack = text.to_lowercase();
+    let needle = query.to_lowercase();
+    haystack.match_indices(&needle).map(|(start, matched)| (start, start + matched.len())).collect()
+}
+
+fn highlight_response_matches(text: &str, query: &str) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    let font_id = egui::FontId::monospace(13.0);
+    let mut cursor = 0;
+    for (start, end) in response_match_ranges(text, query) {
+        if start > cursor { job.append(&text[cursor..start], 0.0, egui::TextFormat { font_id: font_id.clone(), ..Default::default() }); }
+        job.append(&text[start..end], 0.0, egui::TextFormat { font_id: font_id.clone(), background: palette().amber, color: egui::Color32::BLACK, ..Default::default() });
+        cursor = end;
+    }
+    if cursor < text.len() { job.append(&text[cursor..], 0.0, egui::TextFormat { font_id, ..Default::default() }); }
+    job
 }
 
 pub(super) fn format_bytes(n: usize) -> String {

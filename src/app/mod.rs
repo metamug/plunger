@@ -15,7 +15,7 @@ pub use tab::SavedTab;
 
 use crate::history::{History, HistoryEntry};
 use crate::icons::{self, Icon};
-use crate::model::{ParsedRequest, PersistedState};
+use crate::model::{Outcome, ResponseTab, ParsedRequest, PersistedState};
 use crate::secrets::{OsStore, SecretStore, SecretSync};
 use crate::theme::{self, ThemeChoice};
 use eframe::egui;
@@ -453,6 +453,12 @@ impl ApiTesterApp {
         }
         if pressed(egui::Key::Enter) && !self.tab().is_loading() {
             self.trigger_send(ctx);
+        }
+        if pressed(egui::Key::F) {
+            let tab = self.tab_mut();
+            if tab.response_tab == ResponseTab::Body && matches!(tab.outcome, Outcome::Response(_)) {
+                tab.response_search_open = true;
+            }
         }
         if pressed(egui::Key::T) {
             self.new_tab();
