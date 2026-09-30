@@ -101,6 +101,7 @@ Everything prints JSON, errors included: `{"error": "...", "kind": "not_sent"}`.
 
 ## What an agent can and can't do
 
+- **OS environment variables can enter requests.** `{{$env:NAME}}` reads NAME from Plunger's process environment at send time. Treat those values like other secrets: they can be sent to any request destination even though they are not stored in Plunger's state or history.
 - **Variables come from the window.** The agent sees the variables configured in Plunger. The window saves its state when it closes and about every 30 seconds, so a variable edited a moment ago may take that long to reach an agent.
 - **The saved Bearer token is off by default.** It's only attached when a request sets `use_saved_bearer` (`--use-saved-bearer` on the command line). An agent chooses its URLs, and the token should only go where you intend.
 - **`{{secret}}` can still go anywhere.** The agent never sees a secret's value, but it can put `{{token}}` into a request to any host. Only give an agent Plunger access in projects where you trust where its requests go.
