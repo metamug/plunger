@@ -4,18 +4,28 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-30
+
 ### Added
 
+- `{{$env:NAME}}` reads an OS environment variable at send time, alongside the existing `{{$uuid}}`, `{{$timestamp}}` and `{{$randomInt}}` built-ins (#40).
 - Ctrl+L focuses the URL field and selects its contents (#52).
+- The response shows the followed redirect chain (status and destination for each hop) when redirects are on (#20).
+- The response header and status bar show time to first byte (TTFB) alongside the total time (#21).
 - The response header and status bar show the request body size alongside the response size (#37).
 - Ctrl+Tab and Ctrl+Shift+Tab cycle through open request tabs, wrapping at
   either end (#39).
 - A demo GIF of real Claude Code using Plunger over MCP (`docs/images/mcp-claude-code-demo.gif`), plus a raw-protocol version (`docs/images/mcp-demo.gif`) from a minimal reference MCP client (`scripts/mcp-demo-client.py`) included for anyone building their own client.
 
+### Changed
+
+- Bumped `rusqlite` to 0.40 and `directories` to 6.
+
 ### Fixed
 
 - Saving or renaming a request now refuses an exact name already used by another saved request (#38).
 - Two saved requests with the exact same name: sending or exporting by name now refuses with a clear error instead of always silently picking the first one (#33).
+- Overriding a secret variable's value for one request (MCP/CLI `variables`) now correctly masks the override's value in the response, not the stale stored secret (#49).
 
 ## [0.2.1] - 2026-09-27
 
@@ -72,7 +82,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 First public release: send requests with params, headers, JSON, form-urlencoded, raw and multipart bodies; `{{variables}}`; secrets kept in Windows Credential Manager on request; curl and HAR import; local history; TLS-skip for local servers.
 
-[Unreleased]: https://github.com/metamug/plunger/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/metamug/plunger/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/metamug/plunger/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/metamug/plunger/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/metamug/plunger/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/metamug/plunger/releases/tag/v0.1.0
