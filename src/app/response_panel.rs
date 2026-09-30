@@ -236,7 +236,9 @@ fn pretty_markup(input: &str) -> String {
         let end = start + end_rel + 1;
         let tag = &input[start..end];
         let closing = tag.starts_with("</");
-        let standalone = tag.ends_with("/>") || tag.starts_with("<?") || tag.starts_with("<!");
+        let name = tag[1..].split(|c: char| c.is_ascii_whitespace() || c == '>' || c == '/').next().unwrap_or_default();
+        let html_void = matches!(name.to_ascii_lowercase().as_str(), "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" | "link" | "meta" | "param" | "source" | "track" | "wbr");
+        let standalone = tag.ends_with("/>") || tag.starts_with("<?") || tag.starts_with("<!") || html_void;
         if closing { depth = depth.saturating_sub(1); }
         out.push_str(&"  ".repeat(depth)); out.push_str(tag); out.push('\n');
         if !closing && !standalone { depth += 1; }
@@ -275,7 +277,12 @@ pub(super) fn format_bytes(n: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_bytes, format_request_bytes};
+    use super::{format_bytes, format_request_bytes, pretty_markup};
+
+    #[test]
+    fn pretty_markup_keeps_html_void_elements_at_the_current_depth() {
+        assert_eq!(pretty_markup("<div><img src=\"x\"><br><span>text</span></div>"), "<div>\n  <img src=\"x\">\n  <br>\n  <span>\n    text\n  </span>\n</div>");
+    }
 
     #[test]
     fn format_bytes_picks_unit() {
