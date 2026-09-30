@@ -223,10 +223,14 @@ pub(super) fn format_request_bytes(n: Option<usize>) -> String {
 }
 
 fn response_match_ranges(text: &str, query: &str) -> Vec<(usize, usize)> {
-    if query.is_empty() { return Vec::new(); }
-    let haystack = text.to_lowercase();
-    let needle = query.to_lowercase();
-    haystack.match_indices(&needle).map(|(start, matched)| (start, start + matched.len())).collect()
+    if query.is_empty() || query.len() > text.len() { return Vec::new(); }
+    text.char_indices()
+        .filter_map(|(start, _)| {
+            let end = start + query.len();
+            (end <= text.len() && text.is_char_boundary(end) && text.as_bytes()[start..end].eq_ignore_ascii_case(query.as_bytes()))
+                .then_some((start, end))
+        })
+        .collect()
 }
 
 fn highlight_response_matches(text: &str, query: &str) -> egui::text::LayoutJob {
@@ -254,7 +258,15 @@ pub(super) fn format_bytes(n: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_bytes, format_request_bytes};
+    use super::{format_bytes, format_request_bytes, response_match_ranges};
+
+    #[test]
+    fn response_search_offsets_stay_on_original_unicode_boundaries() {
+        assert_eq!(response_match_ranges("İx TEST", "test"), vec![(4, 8)]);
+        assert_eq!(response_match_ranges("ẞx test", "test"), vec![(5, 9)]);
+        assert_eq!(response_match_ranges("café", "CAFÉ"), Vec::<(usize, usize)>::new());
+        assert_eq!(response_match_ranges("café", "café"), vec![(0, 5)]);
+    }
 
     #[test]
     fn format_bytes_picks_unit() {
