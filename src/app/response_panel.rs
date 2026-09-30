@@ -56,7 +56,7 @@ impl Tab {
         ui.horizontal(|ui| {
             status_badge(ui, resp.status, &resp.status_text);
             ui.label(egui::RichText::new(format!("TTFB {} ms · total {} ms", resp.ttfb_ms, resp.elapsed_ms)).weak());
-            ui.label(egui::RichText::new(format_bytes(resp.size_bytes)).weak());
+            ui.label(egui::RichText::new(format!("out {} · in {}", format_request_bytes(resp.request_size_bytes), format_bytes(resp.size_bytes))).weak());
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if icons::button(ui, Icon::Download, "Save response body to a file").clicked() {
@@ -202,6 +202,10 @@ impl Tab {
     }
 }
 
+pub(super) fn format_request_bytes(n: Option<usize>) -> String {
+    n.map(format_bytes).unwrap_or_else(|| "?".into())
+}
+
 pub(super) fn format_bytes(n: usize) -> String {
     if n < 1024 {
         format!("{n} B")
@@ -214,7 +218,7 @@ pub(super) fn format_bytes(n: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::format_bytes;
+    use super::{format_bytes, format_request_bytes};
 
     #[test]
     fn format_bytes_picks_unit() {
@@ -222,5 +226,7 @@ mod tests {
         assert_eq!(format_bytes(1023), "1023 B");
         assert_eq!(format_bytes(1536), "1.5 KB");
         assert_eq!(format_bytes(3 * 1024 * 1024), "3.0 MB");
+        assert_eq!(format_request_bytes(Some(1536)), "1.5 KB");
+        assert_eq!(format_request_bytes(None), "?");
     }
 }

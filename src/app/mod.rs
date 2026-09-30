@@ -718,6 +718,7 @@ mod tests {
             ttfb_ms: 1,
             elapsed_ms: 12,
             size_bytes: body.len(),
+            request_size_bytes: Some(0),
             headers: vec![("content-type".into(), "application/json".into())],
             redirect_chain: vec![],
             body: body.into(),
