@@ -29,7 +29,7 @@ jobs:
       - name: Build release
         run: cargo build --release --locked
       - name: Upload the exe
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: plunger-windows
           path: target/release/plunger.exe
@@ -49,7 +49,7 @@ jobs:
       - name: Headless smoke test
         run: scripts/smoke-cli.sh target/release/plunger
       - name: Upload the binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: plunger-linux-x86_64
           path: target/release/plunger
