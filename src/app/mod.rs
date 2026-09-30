@@ -454,8 +454,10 @@ impl ApiTesterApp {
         if pressed(egui::Key::Enter) && !self.tab().is_loading() {
             self.trigger_send(ctx);
         }
-        let escape = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
-        if escape && self.renaming.is_none() && self.tab().is_loading() {
+        if self.renaming.is_none()
+            && self.tab().is_loading()
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
             self.tab_mut().cancel();
         }
         if pressed(egui::Key::T) {
