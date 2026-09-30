@@ -440,6 +440,17 @@ impl ApiTesterApp {
         let pressed = |key| {
             ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, key)))
         };
+        if pressed(egui::Key::L) {
+            let url_id = command_bar::url_field_id(self.tab().id);
+            let url_length = self.tab().state.url.chars().count();
+            ctx.memory_mut(|memory| memory.request_focus(url_id));
+            let mut state = egui::text_edit::TextEditState::load(ctx, url_id).unwrap_or_default();
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(url_length),
+            )));
+            state.store(ctx, url_id);
+        }
         if pressed(egui::Key::Enter) && !self.tab().is_loading() {
             self.trigger_send(ctx);
         }
@@ -605,6 +616,47 @@ mod tests {
         assert_eq!(app.active, 2);
         press_tab(&mut app, previous);
         assert_eq!(app.active, 1);
+    }
+
+    #[test]
+    fn command_l_focuses_and_selects_the_url() {
+        let mut a = app(PersistedState {
+            url: "https://example.com/original".into(),
+            ..Default::default()
+        });
+        let ctx = egui::Context::default();
+        theme::apply_theme(&ctx, ThemeChoice::Dark);
+        for _ in 0..2 {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| a.render_ui(ctx));
+        }
+
+        let url_id = egui::Id::new(("url", a.tab().id));
+        let _ = ctx.run(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::L,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::COMMAND,
+                }],
+                ..Default::default()
+            },
+            |ctx| {
+                a.handle_shortcuts(ctx);
+                a.render_ui(ctx);
+            },
+        );
+
+        assert_eq!(ctx.memory(|memory| memory.focused()), Some(url_id));
+        let _ = ctx.run(
+            egui::RawInput {
+                events: vec![egui::Event::Text("https://example.org".into())],
+                ..Default::default()
+            },
+            |ctx| a.render_ui(ctx),
+        );
+        assert_eq!(a.tab().state.url, "https://example.org");
     }
 
     #[test]

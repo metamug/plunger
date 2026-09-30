@@ -6,6 +6,7 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ### Added
 
+- Ctrl+L focuses the URL field and selects its contents (#52).
 - The response header and status bar show the request body size alongside the response size (#37).
 - Ctrl+Tab and Ctrl+Shift+Tab cycle through open request tabs, wrapping at
   either end (#39).
