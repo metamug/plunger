@@ -1,6 +1,6 @@
 # Plunger: architecture and design
 
-How Plunger is built and why. This describes the code as of version 0.3.0. For using it, see the [README](README.md); for the agent interface in detail, see [docs/agents.md](docs/agents.md).
+How Plunger is built and why. This describes the code as of version 0.4.0. For using it, see the [README](README.md); for the agent interface in detail, see [docs/agents.md](docs/agents.md).
 
 ## 1. What it is, and what it refuses to be
 

@@ -4,6 +4,17 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-02
+
+### Added
+
+- Ctrl+F searches the response body: case-insensitive match count, Prev/Next, highlighted matches, and JSON tree nodes expand to the results (#18).
+- XML and HTML responses are pretty-printed with syntax colouring; HTML void elements such as `<br>` and `<img>` keep indentation correct.
+
+### Fixed
+
+- Pressing Escape while renaming a saved request cancels the rename again; the Escape-to-cancel-request shortcut no longer swallows it.
+
 ## [0.3.0] - 2026-09-30
 
 ### Added
@@ -82,7 +93,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 First public release: send requests with params, headers, JSON, form-urlencoded, raw and multipart bodies; `{{variables}}`; secrets kept in Windows Credential Manager on request; curl and HAR import; local history; TLS-skip for local servers.
 
-[Unreleased]: https://github.com/metamug/plunger/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/metamug/plunger/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/metamug/plunger/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/metamug/plunger/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/metamug/plunger/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/metamug/plunger/compare/v0.1.0...v0.2.0
