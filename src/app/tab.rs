@@ -66,6 +66,9 @@ pub(super) struct Tab {
     pub outcome: Outcome,
     pub copied_flash: CopiedFlash,
     pub save_error: Option<String>,
+    pub response_search_open: bool,
+    pub response_search_query: String,
+    pub response_search_index: usize,
 }
 
 impl Tab {
@@ -86,6 +89,9 @@ impl Tab {
             outcome: Outcome::Empty,
             copied_flash: None,
             save_error: None,
+            response_search_open: false,
+            response_search_query: String::new(),
+            response_search_index: 0,
         }
     }
 

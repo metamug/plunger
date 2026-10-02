@@ -113,6 +113,19 @@ impl Tab {
         });
         ui.add_space(4.0);
 
+        if self.response_tab == ResponseTab::Body && self.response_search_open {
+            let matches = response_match_ranges(&resp.body, &self.response_search_query);
+            if self.response_search_index >= matches.len() { self.response_search_index = 0; }
+            ui.horizontal(|ui| {
+                let response = ui.add(egui::TextEdit::singleline(&mut self.response_search_query).hint_text("Find in response").desired_width(220.0));
+                if response.changed() { self.response_search_index = 0; }
+                if ui.button("Prev").clicked() && !matches.is_empty() { self.response_search_index = (self.response_search_index + matches.len() - 1) % matches.len(); }
+                if ui.button("Next").clicked() && !matches.is_empty() { self.response_search_index = (self.response_search_index + 1) % matches.len(); }
+                ui.label(format!("{}/{}", if matches.is_empty() { 0 } else { self.response_search_index + 1 }, matches.len()));
+                if ui.button("Close").clicked() { self.response_search_open = false; }
+            });
+        }
+
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| match self.response_tab {
@@ -132,7 +145,9 @@ impl Tab {
                             );
                         }
                         // Expanding every node of a big document stalls the UI.
-                        let expand = if resp.body.len() > LARGE_JSON_BYTES {
+                        let expand = if self.response_search_open && !self.response_search_query.is_empty() {
+                            DefaultExpand::SearchResults(&self.response_search_query)
+                        } else if resp.body.len() > LARGE_JSON_BYTES {
                             DefaultExpand::ToLevel(1)
                         } else {
                             DefaultExpand::All
@@ -187,12 +202,13 @@ impl Tab {
                                 ),
                             );
                         }
-                        let mut text: &str = &resp.body[..cut];
-                        ui.add(
-                            theme::area(&mut text)
-                                .font(egui::TextStyle::Monospace)
-                                .desired_width(f32::INFINITY),
-                        );
+                        let preview = &resp.body[..cut];
+                        if self.response_search_open && !self.response_search_query.is_empty() {
+                            ui.label(highlight_response_matches(preview, &self.response_search_query));
+                        } else {
+                            let mut text: &str = preview;
+                            ui.add(theme::area(&mut text).font(egui::TextStyle::Monospace).desired_width(f32::INFINITY));
+                        }
                     }
                 }
                 ResponseTab::Headers => {
@@ -265,6 +281,30 @@ fn highlight_markup(text: &str) -> egui::text::LayoutJob {
     job
 }
 
+fn response_match_ranges(text: &str, query: &str) -> Vec<(usize, usize)> {
+    if query.is_empty() || query.len() > text.len() { return Vec::new(); }
+    text.char_indices()
+        .filter_map(|(start, _)| {
+            let end = start + query.len();
+            (end <= text.len() && text.is_char_boundary(end) && text.as_bytes()[start..end].eq_ignore_ascii_case(query.as_bytes()))
+                .then_some((start, end))
+        })
+        .collect()
+}
+
+fn highlight_response_matches(text: &str, query: &str) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    let font_id = egui::FontId::monospace(13.0);
+    let mut cursor = 0;
+    for (start, end) in response_match_ranges(text, query) {
+        if start > cursor { job.append(&text[cursor..start], 0.0, egui::TextFormat { font_id: font_id.clone(), ..Default::default() }); }
+        job.append(&text[start..end], 0.0, egui::TextFormat { font_id: font_id.clone(), background: palette().amber, color: egui::Color32::BLACK, ..Default::default() });
+        cursor = end;
+    }
+    if cursor < text.len() { job.append(&text[cursor..], 0.0, egui::TextFormat { font_id, ..Default::default() }); }
+    job
+}
+
 pub(super) fn format_bytes(n: usize) -> String {
     if n < 1024 {
         format!("{n} B")
@@ -277,11 +317,19 @@ pub(super) fn format_bytes(n: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_bytes, format_request_bytes, pretty_markup};
+    use super::{format_bytes, format_request_bytes, pretty_markup, response_match_ranges};
 
     #[test]
     fn pretty_markup_keeps_html_void_elements_at_the_current_depth() {
         assert_eq!(pretty_markup("<div><img src=\"x\"><br><span>text</span></div>"), "<div>\n  <img src=\"x\">\n  <br>\n  <span>\n    text\n  </span>\n</div>");
+    }
+
+    #[test]
+    fn response_search_offsets_stay_on_original_unicode_boundaries() {
+        assert_eq!(response_match_ranges("İx TEST", "test"), vec![(4, 8)]);
+        assert_eq!(response_match_ranges("ẞx test", "test"), vec![(5, 9)]);
+        assert_eq!(response_match_ranges("café", "CAFÉ"), Vec::<(usize, usize)>::new());
+        assert_eq!(response_match_ranges("café", "café"), vec![(0, 5)]);
     }
 
     #[test]
