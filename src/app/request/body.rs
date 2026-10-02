@@ -25,6 +25,7 @@ impl Tab {
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.state.body_mode, BodyMode::None, "None");
             ui.selectable_value(&mut self.state.body_mode, BodyMode::Json, "JSON");
+            ui.selectable_value(&mut self.state.body_mode, BodyMode::Xml, "XML");
             ui.selectable_value(&mut self.state.body_mode, BodyMode::Multipart, "form-data");
             ui.selectable_value(&mut self.state.body_mode, BodyMode::UrlEncoded, "x-www-form-urlencoded");
             ui.selectable_value(&mut self.state.body_mode, BodyMode::Raw, "Raw");
@@ -35,6 +36,7 @@ impl Tab {
                 ui.label(egui::RichText::new("This request has no body.").weak());
             }
             BodyMode::Json => self.render_json_editor(ui),
+            BodyMode::Xml => self.render_xml_editor(ui),
             BodyMode::Multipart => self.render_multipart_editor(ui),
             BodyMode::UrlEncoded => {
                 ui.label(egui::RichText::new("One key=value per line").weak());
@@ -57,6 +59,11 @@ impl Tab {
                 });
             }
         }
+    }
+
+    fn render_xml_editor(&mut self, ui: &mut egui::Ui) {
+        ui.label(egui::RichText::new("Sent as application/xml unless Content-Type is set explicitly.").weak().small());
+        body_box(ui, "body-xml", |ui| { ui.add(theme::area(&mut self.state.raw_body).desired_rows(BODY_MIN_ROWS).desired_width(f32::INFINITY).font(egui::TextStyle::Monospace)); });
     }
 
     fn render_json_editor(&mut self, ui: &mut egui::Ui) {

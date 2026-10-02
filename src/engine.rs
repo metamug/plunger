@@ -498,6 +498,7 @@ pub fn body_type_name(mode: BodyMode) -> &'static str {
     match mode {
         BodyMode::None => "none",
         BodyMode::Json => "json",
+        BodyMode::Xml => "xml",
         BodyMode::Multipart => "form-data",
         BodyMode::UrlEncoded => "x-www-form-urlencoded",
         BodyMode::Raw => "raw",
@@ -527,7 +528,7 @@ pub fn variables_used(state: &PersistedState) -> Vec<String> {
     let mut texts = vec![state.url.as_str(), state.headers_text.as_str()];
     match state.body_mode {
         BodyMode::Json => texts.push(&state.json_body),
-        BodyMode::Raw => texts.push(&state.raw_body),
+        BodyMode::Raw | BodyMode::Xml => texts.push(&state.raw_body),
         BodyMode::UrlEncoded => texts.push(&state.urlencoded_body),
         BodyMode::Multipart | BodyMode::None => {}
     }

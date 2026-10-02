@@ -149,6 +149,10 @@ pub fn build_request(state: &PersistedState, bearer_token: &str) -> Result<Outgo
             ensure_header(&mut headers, "Content-Type", "application/json");
             OutgoingBody::Text(r.apply(&state.json_body))
         }
+        BodyMode::Xml => {
+            ensure_header(&mut headers, "Content-Type", "application/xml");
+            OutgoingBody::Text(r.apply(&state.raw_body))
+        }
         BodyMode::UrlEncoded => {
             ensure_header(&mut headers, "Content-Type", "application/x-www-form-urlencoded");
             let lines: Vec<String> = state

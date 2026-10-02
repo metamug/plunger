@@ -25,6 +25,7 @@ pub fn to_curl(state: &PersistedState) -> String {
             }
             body_args.push(format!("--data-raw {}", quote(&state.json_body)));
         }
+        BodyMode::Xml => { if !has_header("content-type") { body_args.push(format!("-H {}", quote("Content-Type: application/xml"))); } body_args.push(format!("--data-raw {}", quote(&state.raw_body))); }
         BodyMode::Raw => body_args.push(format!("--data-raw {}", quote(&state.raw_body))),
         BodyMode::UrlEncoded => {
             for line in state.urlencoded_body.lines().map(str::trim).filter(|l| !l.is_empty()) {

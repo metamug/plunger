@@ -113,6 +113,7 @@ fn body_mode_to_str(mode: BodyMode) -> &'static str {
     match mode {
         BodyMode::None => "None",
         BodyMode::Json => "Json",
+        BodyMode::Xml => "Xml",
         BodyMode::UrlEncoded => "UrlEncoded",
         BodyMode::Multipart => "Multipart",
         BodyMode::Raw => "Raw",
@@ -122,6 +123,7 @@ fn body_mode_to_str(mode: BodyMode) -> &'static str {
 fn body_mode_from_str(s: &str) -> BodyMode {
     match s {
         "Json" => BodyMode::Json,
+        "Xml" => BodyMode::Xml,
         "UrlEncoded" => BodyMode::UrlEncoded,
         "Multipart" => BodyMode::Multipart,
         "Raw" => BodyMode::Raw,
@@ -709,7 +711,7 @@ mod tests {
 
     #[test]
     fn body_mode_string_round_trip() {
-        for m in [BodyMode::None, BodyMode::Json, BodyMode::UrlEncoded, BodyMode::Raw] {
+        for m in [BodyMode::None, BodyMode::Json, BodyMode::Xml, BodyMode::UrlEncoded, BodyMode::Raw] {
             assert!(body_mode_from_str(body_mode_to_str(m)) == m);
         }
         assert!(body_mode_from_str("garbage") == BodyMode::None);
