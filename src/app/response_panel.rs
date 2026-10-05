@@ -1,4 +1,5 @@
 use super::copy_button;
+use super::response_search;
 use super::tab::Tab;
 use crate::model::{Outcome, ResponseTab};
 use crate::icons::{self, Icon};
@@ -10,6 +11,10 @@ const LARGE_JSON_BYTES: usize = 200 * 1024;
 /// A text box lays out every character it holds, every frame it changes; 11 MB of text cost
 /// over a gigabyte. Copy and Save always use the whole body.
 const TEXT_PREVIEW_BYTES: usize = 256 * 1024;
+/// The current search match, drawn stronger than the others.
+const CURRENT_MATCH: egui::Color32 = egui::Color32::from_rgb(255, 120, 0);
+/// Frames to keep trying to scroll the current match into view: a collapsed tree node needs one to open.
+const SCROLL_FRAMES: u8 = 3;
 
 impl Tab {
     pub(super) fn render_response_section(&mut self, ui: &mut egui::Ui) {
@@ -113,18 +118,107 @@ impl Tab {
         });
         ui.add_space(4.0);
 
-        if self.response_tab == ResponseTab::Body && self.response_search_open {
-            let matches = response_match_ranges(&resp.body, &self.response_search_query);
-            if self.response_search_index >= matches.len() { self.response_search_index = 0; }
-            ui.horizontal(|ui| {
-                let response = ui.add(egui::TextEdit::singleline(&mut self.response_search_query).hint_text("Find in response").desired_width(220.0));
-                if response.changed() { self.response_search_index = 0; }
-                if ui.button("Prev").clicked() && !matches.is_empty() { self.response_search_index = (self.response_search_index + matches.len() - 1) % matches.len(); }
-                if ui.button("Next").clicked() && !matches.is_empty() { self.response_search_index = (self.response_search_index + 1) % matches.len(); }
-                ui.label(format!("{}/{}", if matches.is_empty() { 0 } else { self.response_search_index + 1 }, matches.len()));
-                if ui.button("Close").clicked() { self.response_search_open = false; }
+        // What the Body tab shows, worked out once so search, highlighting and scrolling agree.
+        let on_body = self.response_tab == ResponseTab::Body;
+        let json_shown = resp.json_display.as_ref().or(resp.json_value.as_ref());
+        let is_text = resp.binary.is_none() && !resp.body.is_empty();
+        let markup = (on_body && json_shown.is_none() && is_text && is_markup_response(&resp.headers))
+            .then(|| pretty_markup(&resp.body));
+        let mut cut = resp.body.len().min(TEXT_PREVIEW_BYTES);
+        while !resp.body.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        let preview = &resp.body[..cut];
+
+        let search_on = on_body && self.response_search_open && is_text;
+        if !search_on {
+            self.response_search_focus = false;
+        }
+        let searching = search_on && !self.response_search_query.is_empty();
+        if searching {
+            let key = (resp.body.as_ptr() as usize, resp.body.len(), resp.elapsed_ms, self.response_search_query.clone());
+            let query = &self.response_search_query;
+            self.response_search_cache.refresh(key, || match (json_shown, &markup) {
+                (Some(value), _) => (Vec::new(), response_search::json_matches(value, query)),
+                (None, Some(formatted)) => (response_search::text_matches(formatted, query), Vec::new()),
+                (None, None) => (response_search::text_matches(preview, query), Vec::new()),
             });
         }
+        let total = match (searching, json_shown.is_some()) {
+            (false, _) => 0,
+            (true, true) => self.response_search_cache.json.len(),
+            (true, false) => self.response_search_cache.text.len(),
+        };
+
+        if search_on {
+            if self.response_search_index >= total {
+                self.response_search_index = 0;
+            }
+            let id = egui::Id::new(("response-search", self.id));
+            ui.horizontal(|ui| {
+                let edit = ui.add(
+                    egui::TextEdit::singleline(&mut self.response_search_query)
+                        .id(id)
+                        .hint_text("Find in response")
+                        .desired_width(220.0),
+                );
+                if std::mem::take(&mut self.response_search_focus) {
+                    edit.request_focus();
+                    let end = self.response_search_query.chars().count();
+                    let mut state = egui::text_edit::TextEditState::load(ui.ctx(), id).unwrap_or_default();
+                    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                        egui::text::CCursor::new(0),
+                        egui::text::CCursor::new(end),
+                    )));
+                    state.store(ui.ctx(), id);
+                }
+                let mut step: isize = 0;
+                if edit.changed() {
+                    self.response_search_index = 0;
+                    self.response_search_scroll = SCROLL_FRAMES;
+                }
+                if edit.lost_focus() {
+                    let (enter, escape, shift) =
+                        ui.input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape), i.modifiers.shift));
+                    if enter {
+                        step = if shift { -1 } else { 1 };
+                        edit.request_focus();
+                    } else if escape {
+                        self.response_search_open = false;
+                    }
+                }
+                if ui.button("Prev").clicked() {
+                    step = -1;
+                }
+                if ui.button("Next").clicked() {
+                    step = 1;
+                }
+                if step != 0 && total > 0 {
+                    self.response_search_index = (self.response_search_index as isize + step).rem_euclid(total as isize) as usize;
+                    self.response_search_scroll = SCROLL_FRAMES;
+                }
+                let more = if total >= response_search::MAX_MATCHES { "+" } else { "" };
+                let at = if total == 0 { 0 } else { self.response_search_index + 1 };
+                ui.label(format!("{at}/{total}{more}"));
+                if ui.button("Close").clicked() {
+                    self.response_search_open = false;
+                }
+            });
+        }
+
+        let current_text = if searching && json_shown.is_none() {
+            self.response_search_cache.text.get(self.response_search_index).copied()
+        } else {
+            None
+        };
+        let current_json = if searching && json_shown.is_some() {
+            self.response_search_cache.json.get(self.response_search_index).cloned()
+        } else {
+            None
+        };
+        let match_ranges: &[response_search::Range] = if searching { &self.response_search_cache.text } else { &[] };
+        let scroll_wanted = self.response_search_scroll > 0;
+        let mut scrolled = false;
 
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
@@ -145,18 +239,25 @@ impl Tab {
                             );
                         }
                         // Expanding every node of a big document stalls the UI.
-                        let expand = if self.response_search_open && !self.response_search_query.is_empty() {
+                        let expand = if searching {
                             DefaultExpand::SearchResults(&self.response_search_query)
                         } else if resp.body.len() > LARGE_JSON_BYTES {
                             DefaultExpand::ToLevel(1)
                         } else {
                             DefaultExpand::All
                         };
-                        JsonTree::new("response-json-tree", shown)
+                        let tree = JsonTree::new("response-json-tree", shown)
                             .default_expand(expand)
                             .on_render(|ui, node| {
                                 let response = node.render_default(ui);
                                 let pointer = node.pointer().to_json_pointer_string();
+                                if current_json.as_deref() == Some(pointer.as_str()) {
+                                    ui.painter().rect_stroke(response.rect.expand(2.0), 3.0, egui::Stroke::new(1.5_f32, CURRENT_MATCH));
+                                    if scroll_wanted {
+                                        response.scroll_to_me(Some(egui::Align::Center));
+                                        scrolled = true;
+                                    }
+                                }
                                 response.context_menu(|ui| {
                                     if ui.button("Copy path").clicked() {
                                         ui.ctx().copy_text(crate::json_view::json_path(value, &pointer));
@@ -174,24 +275,41 @@ impl Tab {
                                 });
                             })
                             .show(ui);
-                    } else if is_markup_response(&resp.headers) {
-                        let formatted = pretty_markup(&resp.body);
-                        let mut text: &str = &formatted;
+                        // The tree remembers each node's open/closed state, so a new response or a
+                        // changed query must reset it for the expansion rule to apply again.
+                        let expand_key = (
+                            resp.body.as_ptr() as usize,
+                            resp.body.len(),
+                            resp.elapsed_ms,
+                            searching.then(|| self.response_search_query.clone()),
+                        );
+                        if self.response_search_cache.expand_key.as_ref() != Some(&expand_key) {
+                            tree.reset_expanded(ui);
+                            self.response_search_cache.expand_key = Some(expand_key);
+                            ui.ctx().request_repaint();
+                        }
+                    } else if let Some(formatted) = &markup {
+                        let mut text: &str = formatted;
+                        let segments = markup_segments(formatted);
                         let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                            let mut job = highlight_markup(text);
+                            let mut job = layout_job(text, &segments, match_ranges, current_text);
                             job.wrap.max_width = wrap_width;
                             ui.fonts(|fonts| fonts.layout_job(job))
                         };
-                        ui.add(theme::area(&mut text).font(egui::TextStyle::Monospace).desired_width(f32::INFINITY).layouter(&mut layouter));
+                        let out = theme::area(&mut text)
+                            .font(egui::TextStyle::Monospace)
+                            .desired_width(f32::INFINITY)
+                            .layouter(&mut layouter)
+                            .show(ui);
+                        if let (true, Some((start, _))) = (scroll_wanted, current_text) {
+                            scroll_to_char(ui, &out.galley, out.galley_pos, formatted, start);
+                            scrolled = true;
+                        }
                     } else if resp.body.is_empty() {
                         ui.label(egui::RichText::new("Empty body").weak());
                     } else {
                         // `&str` is a read-only text buffer: selectable and copyable,
                         // but no per-frame clone of the body and no accidental edits.
-                        let mut cut = resp.body.len().min(TEXT_PREVIEW_BYTES);
-                        while !resp.body.is_char_boundary(cut) {
-                            cut -= 1;
-                        }
                         if cut < resp.body.len() {
                             ui.colored_label(
                                 palette().amber,
@@ -202,9 +320,16 @@ impl Tab {
                                 ),
                             );
                         }
-                        let preview = &resp.body[..cut];
-                        if self.response_search_open && !self.response_search_query.is_empty() {
-                            ui.label(highlight_response_matches(preview, &self.response_search_query));
+                        if searching {
+                            let segments = [(0, preview.len(), ui.visuals().text_color())];
+                            let mut job = layout_job(preview, &segments, match_ranges, current_text);
+                            job.wrap.max_width = ui.available_width();
+                            let galley = ui.fonts(|fonts| fonts.layout_job(job));
+                            let label = ui.add(egui::Label::new(galley.clone()));
+                            if let (true, Some((start, _))) = (scroll_wanted, current_text) {
+                                scroll_to_char(ui, &galley, label.rect.min, preview, start);
+                                scrolled = true;
+                            }
                         } else {
                             let mut text: &str = preview;
                             ui.add(theme::area(&mut text).font(egui::TextStyle::Monospace).desired_width(f32::INFINITY));
@@ -224,6 +349,10 @@ impl Tab {
                     );
                 }
             });
+        self.response_search_scroll = if scrolled { 0 } else { self.response_search_scroll.saturating_sub(1) };
+        if self.response_search_scroll > 0 {
+            ui.ctx().request_repaint();
+        }
     }
 }
 
@@ -265,44 +394,80 @@ fn pretty_markup(input: &str) -> String {
     out.trim_end().to_string()
 }
 
-fn highlight_markup(text: &str) -> egui::text::LayoutJob {
-    let mut job = egui::text::LayoutJob::default();
-    let font_id = egui::FontId::monospace(13.0);
+/// Colour for each stretch of a pretty-printed XML/HTML document: tags apart from text. The
+/// stretches cover the whole text, even an unterminated tag at the end.
+fn markup_segments(text: &str) -> Vec<(usize, usize, egui::Color32)> {
     let colors = palette().json;
-    let mut rest = text;
-    while let Some(start) = rest.find('<') {
-        if start > 0 { job.append(&rest[..start], 0.0, egui::TextFormat { font_id: font_id.clone(), color: colors[2], ..Default::default() }); }
-        let Some(end_rel) = rest[start..].find('>') else { break; };
+    let mut segments = Vec::new();
+    let mut pos = 0;
+    while let Some(rel) = text[pos..].find('<') {
+        let start = pos + rel;
+        if start > pos {
+            segments.push((pos, start, colors[2]));
+        }
+        let Some(end_rel) = text[start..].find('>') else {
+            segments.push((start, text.len(), colors[2]));
+            return segments;
+        };
         let end = start + end_rel + 1;
-        job.append(&rest[start..end], 0.0, egui::TextFormat { font_id: font_id.clone(), color: colors[1], ..Default::default() });
-        rest = &rest[end..];
+        segments.push((start, end, colors[1]));
+        pos = end;
     }
-    if !rest.is_empty() { job.append(rest, 0.0, egui::TextFormat { font_id, color: colors[2], ..Default::default() }); }
-    job
+    if pos < text.len() {
+        segments.push((pos, text.len(), colors[2]));
+    }
+    segments
 }
 
-fn response_match_ranges(text: &str, query: &str) -> Vec<(usize, usize)> {
-    if query.is_empty() || query.len() > text.len() { return Vec::new(); }
-    text.char_indices()
-        .filter_map(|(start, _)| {
-            let end = start + query.len();
-            (end <= text.len() && text.is_char_boundary(end) && text.as_bytes()[start..end].eq_ignore_ascii_case(query.as_bytes()))
-                .then_some((start, end))
-        })
-        .collect()
-}
-
-fn highlight_response_matches(text: &str, query: &str) -> egui::text::LayoutJob {
+/// Lays `text` out in `segments`' colours, with `matches` (sorted, non-overlapping byte
+/// ranges) highlighted and the `current` one stronger.
+fn layout_job(
+    text: &str,
+    segments: &[(usize, usize, egui::Color32)],
+    matches: &[response_search::Range],
+    current: Option<response_search::Range>,
+) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
     let font_id = egui::FontId::monospace(13.0);
-    let mut cursor = 0;
-    for (start, end) in response_match_ranges(text, query) {
-        if start > cursor { job.append(&text[cursor..start], 0.0, egui::TextFormat { font_id: font_id.clone(), ..Default::default() }); }
-        job.append(&text[start..end], 0.0, egui::TextFormat { font_id: font_id.clone(), background: palette().amber, color: egui::Color32::BLACK, ..Default::default() });
-        cursor = end;
+    let plain = |color| egui::TextFormat { font_id: font_id.clone(), color, ..Default::default() };
+    let marked = |is_current: bool| egui::TextFormat {
+        font_id: font_id.clone(),
+        color: egui::Color32::BLACK,
+        background: if is_current { CURRENT_MATCH } else { palette().amber },
+        ..Default::default()
+    };
+    let mut next = 0;
+    for &(seg_start, seg_end, color) in segments {
+        let mut at = seg_start;
+        while at < seg_end {
+            while next < matches.len() && matches[next].1 <= at {
+                next += 1;
+            }
+            match matches.get(next) {
+                Some(&(start, end)) if start < seg_end => {
+                    if start > at {
+                        job.append(&text[at..start], 0.0, plain(color));
+                        at = start;
+                    }
+                    let stop = end.min(seg_end);
+                    job.append(&text[at..stop], 0.0, marked(current == Some((start, end))));
+                    at = stop;
+                }
+                _ => {
+                    job.append(&text[at..seg_end], 0.0, plain(color));
+                    at = seg_end;
+                }
+            }
+        }
     }
-    if cursor < text.len() { job.append(&text[cursor..], 0.0, egui::TextFormat { font_id, ..Default::default() }); }
     job
+}
+
+/// Scrolls the character at byte offset `start` of `text` into view, given where `galley` was drawn.
+fn scroll_to_char(ui: &egui::Ui, galley: &egui::Galley, origin: egui::Pos2, text: &str, start: usize) {
+    let index = text[..start].chars().count();
+    let rect = galley.pos_from_ccursor(egui::text::CCursor::new(index)).translate(origin.to_vec2());
+    ui.scroll_to_rect(rect, Some(egui::Align::Center));
 }
 
 pub(super) fn format_bytes(n: usize) -> String {
@@ -317,7 +482,12 @@ pub(super) fn format_bytes(n: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_bytes, format_request_bytes, pretty_markup, response_match_ranges};
+    use super::{format_bytes, format_request_bytes, layout_job, markup_segments, pretty_markup};
+    use crate::app::response_search::text_matches;
+
+    fn rendered(job: &eframe::egui::text::LayoutJob) -> String {
+        job.sections.iter().map(|s| &job.text[s.byte_range.clone()]).collect()
+    }
 
     #[test]
     fn pretty_markup_keeps_html_void_elements_at_the_current_depth() {
@@ -325,11 +495,21 @@ mod tests {
     }
 
     #[test]
-    fn response_search_offsets_stay_on_original_unicode_boundaries() {
-        assert_eq!(response_match_ranges("İx TEST", "test"), vec![(4, 8)]);
-        assert_eq!(response_match_ranges("ẞx test", "test"), vec![(5, 9)]);
-        assert_eq!(response_match_ranges("café", "CAFÉ"), Vec::<(usize, usize)>::new());
-        assert_eq!(response_match_ranges("café", "café"), vec![(0, 5)]);
+    fn markup_segments_cover_the_whole_text_even_with_an_unterminated_tag() {
+        for text in ["<a>hi</a>", "plain", "<a>hi <b", "<<>>", ""] {
+            let covered: usize = markup_segments(text).iter().map(|&(s, e, _)| e - s).sum();
+            assert_eq!(covered, text.len(), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn highlighting_never_changes_the_text_it_draws() {
+        let text = "<root>\n  <item id=\"1\">aaa item</item>\n</root>";
+        for query in ["a", "aa", "item", "item id", "<", ">", "root", "zzz"] {
+            let matches = text_matches(text, query);
+            let job = layout_job(text, &markup_segments(text), &matches, matches.first().copied());
+            assert_eq!(rendered(&job), text, "query {query:?}");
+        }
     }
 
     #[test]

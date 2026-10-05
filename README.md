@@ -142,6 +142,8 @@ To update, replace the exe. To remove it, delete the exe and `%APPDATA%\Plunger`
 
 Press **Ctrl+L** to focus the URL field and select its contents.
 
+Press **Ctrl+F** to search the response body: **Enter** and **Shift+Enter** (or Next / Prev) step through the matches, **Esc** closes the box.
+
 With multiple request tabs, **Ctrl+Tab** moves to the next tab and
 **Ctrl+Shift+Tab** moves to the previous one. Cycling wraps at either end.
 

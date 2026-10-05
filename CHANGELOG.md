@@ -4,6 +4,15 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed
+
+- Ctrl+F focuses the response search box, so typing goes into it instead of whichever field had focus (it could silently change the URL) (#67).
+- Response search: Prev/Next, and Enter / Shift+Enter in the box, scroll to the match and mark the current one more strongly than the rest (#68).
+- Response search highlights matches in formatted XML and HTML responses (#69).
+- Response search no longer rebuilds its match list every frame, counts only what is shown, and stops at 5,000 matches (shown as `5000+`); a very common query on a 10 MB body no longer uses over 150 MB extra. Escape closes the search box, and it no longer appears for binary or empty responses (#70).
+- Searching a JSON response expands the tree to the matches even after a different query or response was shown, instead of leaving it collapsed.
+- Overlapping matches (for example `aa` in `aaa`) no longer repeat text in the highlighted view.
+
 ## [0.4.0] - 2026-10-02
 
 ### Added

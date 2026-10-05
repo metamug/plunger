@@ -69,6 +69,11 @@ pub(super) struct Tab {
     pub response_search_open: bool,
     pub response_search_query: String,
     pub response_search_index: usize,
+    /// Set by Ctrl+F: focus the search box on its next frame.
+    pub response_search_focus: bool,
+    /// Frames left to keep trying to scroll the current match into view (a tree node may need a frame to expand).
+    pub response_search_scroll: u8,
+    pub response_search_cache: super::response_search::Cache,
 }
 
 impl Tab {
@@ -92,6 +97,9 @@ impl Tab {
             response_search_open: false,
             response_search_query: String::new(),
             response_search_index: 0,
+            response_search_focus: false,
+            response_search_scroll: 0,
+            response_search_cache: Default::default(),
         }
     }
 

@@ -8,6 +8,7 @@ mod emboss;
 mod import_window;
 mod request;
 mod response_panel;
+mod response_search;
 mod sidebar;
 mod tab;
 
@@ -464,6 +465,7 @@ impl ApiTesterApp {
             let tab = self.tab_mut();
             if tab.response_tab == ResponseTab::Body && matches!(tab.outcome, Outcome::Response(_)) {
                 tab.response_search_open = true;
+                tab.response_search_focus = true;
             }
         }
         if pressed(egui::Key::T) {
