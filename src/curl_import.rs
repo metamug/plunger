@@ -13,7 +13,10 @@ use std::path::Path;
 /// isn't mistaken for the URL; other flags (`--compressed`, `-k`, ...) are
 /// ignored.
 pub fn parse_curl(input: &str) -> Result<ParsedRequest, String> {
-    let tokens = shell_words::split(input.trim()).map_err(|e| format!("Could not parse that as a shell command: {e}"))?;
+    let trimmed = input.trim();
+    // A pasted shell prompt ("$ curl ...") is not part of the command.
+    let trimmed = trimmed.strip_prefix("$ ").or_else(|| trimmed.strip_prefix("> ")).unwrap_or(trimmed);
+    let tokens = shell_words::split(trimmed).map_err(|e| format!("Could not parse that as a shell command: {e}"))?;
     if tokens.is_empty() {
         return Err("Nothing to parse.".to_string());
     }
@@ -22,6 +25,8 @@ pub fn parse_curl(input: &str) -> Result<ParsedRequest, String> {
     if let Some(first) = iter.peek() {
         if first.eq_ignore_ascii_case("curl") || first.eq_ignore_ascii_case("curl.exe") {
             iter.next();
+        } else if !first.contains("://") {
+            return Err("That doesn't look like a curl command: it should start with `curl` (or be a URL).".to_string());
         }
     }
 
@@ -293,6 +298,16 @@ mod tests {
     #[test]
     fn errors_are_reported() {
         assert!(parse_curl("   ").is_err());
+    }
+
+    #[test]
+    fn text_that_is_not_a_curl_command_is_refused() {
+        for text in ["not a curl command", "hello", "error: connection refused", "-X POST"] {
+            assert!(parse_curl(text).is_err(), "{text:?}");
+        }
+        assert_eq!(parse_curl("$ curl http://h/x").unwrap().url, "http://h/x");
+        assert_eq!(parse_curl("> curl.exe http://h/y").unwrap().url, "http://h/y");
+        assert_eq!(parse_curl("http://h/z -X PUT").unwrap().method, "PUT");
         assert!(parse_curl("curl -H 'A: b'").is_err());
         assert!(parse_curl("curl 'unterminated").is_err());
     }

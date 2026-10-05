@@ -277,7 +277,7 @@ pub fn get_history(limit: Option<i64>, search: Option<&str>) -> Result<Vec<Histo
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
 pub struct VariablesResult {
     pub variables: Vec<VariableInfo>,
-    /// Always available: {{$uuid}}, {{$timestamp}}, {{$randomInt}}.
+    /// Always available: {{$uuid}}, {{$timestamp}}, {{$randomInt}}, and {{$env:NAME}} (an environment variable, read when the request is sent).
     pub built_in: Vec<String>,
     /// True when a Bearer token is saved in Plunger (send with use_saved_bearer). Its value is never shown.
     pub saved_bearer_available: bool,
@@ -290,7 +290,7 @@ pub fn list_variables() -> VariablesResult {
     let session = Session::load();
     VariablesResult {
         variables: session.variables(),
-        built_in: vec!["$uuid".into(), "$timestamp".into(), "$randomInt".into()],
+        built_in: vec!["$uuid".into(), "$timestamp".into(), "$randomInt".into(), "$env:NAME".into()],
         saved_bearer_available: !session.bearer.is_empty(),
         problems: session.problems,
     }

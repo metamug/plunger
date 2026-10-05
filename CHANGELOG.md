@@ -4,6 +4,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-05
+
 ### Fixed
 
 - Ctrl+F focuses the response search box, so typing goes into it instead of whichever field had focus (it could silently change the URL) (#67).
@@ -12,6 +14,9 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 - Response search no longer rebuilds its match list every frame, counts only what is shown, and stops at 5,000 matches (shown as `5000+`); a very common query on a 10 MB body no longer uses over 150 MB extra. Escape closes the search box, and it no longer appears for binary or empty responses (#70).
 - Searching a JSON response expands the tree to the matches even after a different query or response was shown, instead of leaving it collapsed.
 - Overlapping matches (for example `aa` in `aaa`) no longer repeat text in the highlighted view.
+- After Ctrl+S (or a double-click rename) the whole name is selected, so typing replaces it instead of appending to the default name (#71).
+- The Variables help text, `plunger vars` and the MCP `list_variables` tool mention `{{$env:NAME}}` (#72).
+- `plunger import`, the MCP `import_curl` tool and the import dialog refuse text that isn't a curl command instead of inventing a request from its first word; a pasted `$ ` or `> ` prompt is ignored (#73).
 
 ## [0.4.0] - 2026-10-02
 
@@ -102,7 +107,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 First public release: send requests with params, headers, JSON, form-urlencoded, raw and multipart bodies; `{{variables}}`; secrets kept in Windows Credential Manager on request; curl and HAR import; local history; TLS-skip for local servers.
 
-[Unreleased]: https://github.com/metamug/plunger/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/metamug/plunger/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/metamug/plunger/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/metamug/plunger/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/metamug/plunger/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/metamug/plunger/compare/v0.2.0...v0.2.1

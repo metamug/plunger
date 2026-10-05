@@ -238,6 +238,13 @@ fn entry_row(
         );
         if r.focus {
             edit.request_focus();
+            // Select the whole name so typing replaces it instead of appending to it.
+            let mut state = egui::text_edit::TextEditState::load(ui.ctx(), edit.id).unwrap_or_default();
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(r.text.chars().count()),
+            )));
+            state.store(ui.ctx(), edit.id);
             r.focus = false;
         }
         if edit.lost_focus() {

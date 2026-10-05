@@ -68,7 +68,7 @@ impl Tab {
         let mut forget = false;
         ui.label(
             egui::RichText::new(
-                "Use {{name}} in the URL, params, headers, body, form fields or Bearer token. Built-ins: {{$uuid}}, {{$timestamp}}, {{$randomInt}}.",
+                "Use {{name}} in the URL, params, headers, body, form fields or Bearer token. Built-ins: {{$uuid}}, {{$timestamp}}, {{$randomInt}}, and {{$env:NAME}} for an environment variable.",
             )
             .weak()
             .small(),
