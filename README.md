@@ -3,6 +3,10 @@
 <p align="center"><strong>Unclog your API.</strong></p>
 
 <p align="center">
+  <strong>Your AI agent calls the API. Plunger shows you what it actually sent and what came back.</strong>
+</p>
+
+<p align="center">
   A tiny native API inspection tool for developers who just want to see what their pipeline is actually doing.<br>
   Make the request. See the JSON. Move on.
 </p>
@@ -19,13 +23,19 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip"><strong>Download for Windows</strong></a> (zip, about 3.4 MB, no installer)
+  <a href="https://apps.microsoft.com/detail/9P7WRKLN6WHR"><strong>Get it from the Microsoft Store</strong></a>
+  &nbsp;·&nbsp; <a href="https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip">Windows zip</a> (about 3.6 MB, no installer, not code-signed)
   &nbsp;·&nbsp; <a href="https://github.com/metamug/plunger/releases/latest/download/plunger-linux-x86_64.tar.gz">Linux</a> (command line and MCP server tested; the window is not yet)
   &nbsp;·&nbsp; <a href="LICENSE">MIT license</a>
 </p>
 
 <p align="center">
   <img src="docs/images/demo.gif" alt="Pasting a curl command into Plunger, importing it and sending it; the JSON response appears as a collapsible tree" width="960">
+</p>
+
+<p align="center">
+  <img src="docs/images/mcp-claude-code-demo.gif" alt="Claude Code calling Plunger's send_request tool three times; each call shows up live in Plunger's history, tagged MCP." width="960"><br>
+  <sub>Real Claude Code, unedited: every request the agent sends appears in your window, tagged <code>MCP</code>. <a href="docs/agents.md">Setup and details</a>.</sub>
 </p>
 
 ## Why?
@@ -127,12 +137,27 @@ A few promises, so you know what you're picking up:
 
 ## Install
 
+**Microsoft Store** (signed by Microsoft, no warning, updates itself; it can trail the newest release by a few days): [get it here](https://apps.microsoft.com/detail/9P7WRKLN6WHR), or
+
+```powershell
+winget install 9P7WRKLN6WHR --source msstore
+```
+
+**Scoop:**
+
+```powershell
+scoop bucket add metamug https://github.com/metamug/scoop-bucket
+scoop install plunger
+```
+
+**Zip:**
+
 1. [Download `plunger-windows.zip`](https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip) and unzip it anywhere.
 2. Run `plunger.exe`.
 
-Windows 10 or 11, 64-bit. Plunger isn't code-signed yet, so Windows may say "Windows protected your PC": click **More info**, then **Run anyway**. Or [build it yourself](#build-from-source).
+Windows 10 or 11, 64-bit. The zip isn't code-signed yet, so Windows may say "Windows protected your PC": click **More info**, then **Run anyway**. Or [build it yourself](#build-from-source).
 
-To update, replace the exe. To remove it, delete the exe and `%APPDATA%\Plunger`.
+To update the zip, replace the exe. To remove it, delete the exe and `%APPDATA%\Plunger`.
 
 ## Usage
 
