@@ -834,7 +834,7 @@ mod tests {
         let err = find_saved(&h, "nope").err().unwrap();
         assert!(err.contains("Get user"), "{err}");
         let info = StoredRequestInfo::from(&find_saved(&h, "Get user").unwrap());
-        assert_eq!(info.variables_used, vec!["base", "id"]);
+        assert_eq!(info.variables_used, vec!["base", "id", "token"]);
     }
 
     #[test]

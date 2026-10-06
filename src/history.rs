@@ -518,6 +518,19 @@ mod tests {
     }
 
     #[test]
+    fn a_saved_request_keeps_its_variable_placeholders_in_credential_headers() {
+        let h = history();
+        let mut s = state("https://a.com/x?token={{t}}", BodyMode::None);
+        s.headers_text = "Authorization: Bearer {{token}}
+X-Api-Key: literal".into();
+        let id = h.save_new(&s, "Keeps refs").unwrap();
+        let row = h.list_saved().unwrap().into_iter().find(|r| r.id == id).unwrap();
+        assert_eq!(row.headers_text, "Authorization: Bearer {{token}}
+X-Api-Key:");
+        assert_eq!(row.url, "https://a.com/x?token={{t}}");
+    }
+
+    #[test]
     fn rows_saved_before_redaction_existed_get_scrubbed() {
         let h = history();
         h.conn

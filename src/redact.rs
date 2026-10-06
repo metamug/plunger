@@ -25,11 +25,32 @@ pub fn is_sensitive_param(name: &str) -> bool {
     SENSITIVE_PARAMS.contains(&n.as_str()) || SENSITIVE_FRAGMENTS.iter().any(|f| n.contains(f))
 }
 
+/// True for a value that is only `{{variable}}` placeholders, optionally behind an auth scheme
+/// word (`Bearer {{token}}`) or a `name=` key (`sid={{sid}}`). It holds no secret, so blanking it
+/// would only erase the reference and break the saved request.
+pub fn is_placeholder_only(value: &str) -> bool {
+    let mut rest = value;
+    let mut placeholders = 0;
+    let mut literal = String::new();
+    while let Some(start) = rest.find("{{") {
+        let Some(len) = rest[start..].find("}}") else { return false };
+        literal.push_str(&rest[..start]);
+        literal.push(' ');
+        rest = &rest[start + len + 2..];
+        placeholders += 1;
+    }
+    literal.push_str(rest);
+    placeholders > 0
+        && literal.split(|c: char| c.is_whitespace() || c == ';' || c == ',').filter(|t| !t.is_empty()).all(|token| {
+            token.ends_with('=') || ["bearer", "basic", "token"].contains(&token.to_ascii_lowercase().as_str())
+        })
+}
+
 /// `Name: Value` lines with credential-bearing values blanked out.
 pub fn redact_headers_text(text: &str) -> String {
     text.lines()
         .map(|line| match line.split_once(':') {
-            Some((name, _)) if is_sensitive_header(name) => format!("{}:", name.trim_end()),
+            Some((name, value)) if is_sensitive_header(name) && !is_placeholder_only(value) => format!("{}:", name.trim_end()),
             _ => line.to_string(),
         })
         .collect::<Vec<_>>()
@@ -53,7 +74,7 @@ pub fn redact_url(url: &str) -> String {
         let redacted: Vec<String> = q
             .split('&')
             .map(|pair| match pair.split_once('=') {
-                Some((k, _)) if is_sensitive_param(k) => format!("{k}="),
+                Some((k, v)) if is_sensitive_param(k) && !is_placeholder_only(v) => format!("{k}="),
                 _ => pair.to_string(),
             })
             .collect();
@@ -76,7 +97,8 @@ fn redact_userinfo(base: &str) -> String {
     let (authority, path) = rest.split_at(authority_end);
     let authority = match authority.rsplit_once('@') {
         Some((userinfo, host)) => match userinfo.split_once(':') {
-            Some((user, _password)) => format!("{user}@{host}"),
+            Some((user, password)) if !is_placeholder_only(password) => format!("{user}@{host}"),
+            Some(_) => authority.to_string(),
             None => authority.to_string(),
         },
         None => authority.to_string(),
@@ -105,6 +127,38 @@ mod tests {
     fn redacts_only_sensitive_header_values() {
         let out = redact_headers_text("Accept: */*\nAuthorization: Bearer abc\nX-Api-Key : k123\nX-Trace: 1");
         assert_eq!(out, "Accept: */*\nAuthorization:\nX-Api-Key:\nX-Trace: 1");
+    }
+
+    #[test]
+    fn variable_placeholders_are_not_secrets_and_survive() {
+        let out = redact_headers_text(
+            "Authorization: Bearer {{token}}
+Cookie: sid={{sid}}
+X-Api-Key: {{key}}
+Authorization: Bearer abc{{x}}
+Authorization: Bearer REAL",
+        );
+        assert_eq!(
+            out,
+            "Authorization: Bearer {{token}}
+Cookie: sid={{sid}}
+X-Api-Key: {{key}}
+Authorization:
+Authorization:"
+        );
+        assert_eq!(redact_url("https://a.com/x?token={{t}}&api_key=LIT&page=1"), "https://a.com/x?token={{t}}&api_key=&page=1");
+        assert_eq!(redact_url("https://bob:{{pw}}@a.com/x"), "https://bob:{{pw}}@a.com/x");
+        assert_eq!(redact_url("https://bob:real@a.com/x"), "https://bob@a.com/x");
+    }
+
+    #[test]
+    fn only_pure_placeholders_count_as_placeholders() {
+        for ok in ["{{t}}", "Bearer {{t}}", "bearer  {{t}} ", "sid={{s}}", "a={{x}}; b={{y}}"] {
+            assert!(is_placeholder_only(ok), "{ok:?}");
+        }
+        for bad in ["", "abc", "Bearer abc", "Bearer abc{{t}}", "{{t}}secret", "{{unterminated", "sid=1{{s}}"] {
+            assert!(!is_placeholder_only(bad), "{bad:?}");
+        }
     }
 
     #[test]
