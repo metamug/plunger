@@ -33,7 +33,12 @@ impl Tab {
                         ui.add(theme::field(&mut p.key).desired_width(200.0).hint_text("name"));
                         let width = ui.available_width() - icons::trailing_room(ui, 1);
                         let value_resp =
-                            ui.add(theme::field(&mut p.value).desired_width(width).hint_text("value  (or {{variable}})"));
+                            ui.add(
+                                theme::field(&mut p.value)
+                                    .desired_width(width)
+                                    .hint_text("value  (or {{variable}})")
+                                    .layouter(&mut crate::highlight::variable_layouter(variables)),
+                            );
                         (value_resp, remove_button(ui, "parameter", spare))
                     })
                     .inner;

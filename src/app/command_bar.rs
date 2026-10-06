@@ -116,6 +116,7 @@ impl ApiTesterApp {
                         widgets.hovered.bg_stroke = egui::Stroke::NONE;
                         ui.add(
                             theme::field(&mut tab.state.url)
+                                .layouter(&mut crate::highlight::variable_layouter(&tab.state.variables))
                                 .id(url_field_id(tab.id))
                                 .desired_width(ui.available_width() - icons::SIZE - theme::FIELD_MARGIN_X)
                                 .hint_text("https://api.example.com/resource  or  localhost:3000/api")

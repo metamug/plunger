@@ -69,10 +69,18 @@ impl Tab {
         ui.add_space(6.0);
 
         if self.headers_as_text {
+            let variables = &self.state.variables;
+            let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                let mut job = crate::highlight::header_lines(text, variables);
+                job.wrap.max_width = wrap_width;
+                ui.fonts(|fonts| fonts.layout_job(job))
+            };
             ui.add(
                 theme::area(&mut self.state.headers_text)
                     .desired_rows(3)
                     .desired_width(f32::INFINITY)
+                    .font(egui::TextStyle::Monospace)
+                    .layouter(&mut layouter)
                     .hint_text("Content-Type: application/json"),
             );
             return;
@@ -93,7 +101,12 @@ impl Tab {
                                 .hint_text("Header name"),
                         );
                         let width = ui.available_width() - icons::trailing_room(ui, 1);
-                        let val_resp = ui.add(theme::field(value).desired_width(width).hint_text("Value"));
+                        let val_resp = ui.add(
+                            theme::field(value)
+                                .desired_width(width)
+                                .hint_text("Value")
+                                .layouter(&mut crate::highlight::variable_layouter(variables)),
+                        );
                         (key_resp, val_resp, remove_button(ui, "header", spare))
                     })
                     .inner;

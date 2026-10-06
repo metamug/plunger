@@ -38,21 +38,35 @@ impl Tab {
             BodyMode::Multipart => self.render_multipart_editor(ui),
             BodyMode::UrlEncoded => {
                 ui.label(egui::RichText::new("One key=value per line").weak());
+                let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                    let mut job = crate::highlight::form_body(text);
+                    job.wrap.max_width = wrap_width;
+                    ui.fonts(|fonts| fonts.layout_job(job))
+                };
                 body_box(ui, "body-urlencoded", |ui| {
                     ui.add(
                         theme::area(&mut self.state.urlencoded_body)
                             .desired_rows(BODY_MIN_ROWS)
-                            .desired_width(f32::INFINITY),
+                            .desired_width(f32::INFINITY)
+                            .font(egui::TextStyle::Monospace)
+                            .layouter(&mut layouter),
                     );
                 });
             }
             BodyMode::Raw => {
+                // JSON, XML/HTML and forms are told apart by what the text looks like.
+                let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                    let mut job = crate::highlight::body(text);
+                    job.wrap.max_width = wrap_width;
+                    ui.fonts(|fonts| fonts.layout_job(job))
+                };
                 body_box(ui, "body-raw", |ui| {
                     ui.add(
                         theme::area(&mut self.state.raw_body)
                             .desired_rows(BODY_MIN_ROWS)
                             .desired_width(f32::INFINITY)
-                            .font(egui::TextStyle::Monospace),
+                            .font(egui::TextStyle::Monospace)
+                            .layouter(&mut layouter),
                     );
                 });
             }
@@ -137,9 +151,12 @@ impl Tab {
                     let width = ui.available_width() - icons::trailing_room(ui, 1);
                     match f.kind {
                         FieldKind::Text => {
-                            value_resp = Some(
-                                ui.add(theme::field(&mut f.value).desired_width(width).hint_text("value  (or {{variable}})")),
-                            );
+                            value_resp = Some(ui.add(
+                                theme::field(&mut f.value)
+                                    .desired_width(width)
+                                    .hint_text("value  (or {{variable}})")
+                                    .layouter(&mut crate::highlight::variable_layouter(variables)),
+                            ));
                         }
                         FieldKind::File => {
                             // Same width as a text value, so the remove icon lines up across rows.

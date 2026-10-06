@@ -3,6 +3,7 @@
 
 use super::tab::Tab;
 use super::{ApiTesterApp, NOTICE_FOR};
+use crate::commands::Dialect;
 use crate::icons::{self, Icon};
 use crate::model::Outcome;
 use crate::theme::{self, one_line, palette, ThemeChoice, ACCENT};
@@ -31,11 +32,27 @@ impl ApiTesterApp {
                         self.close_tab(self.active);
                     }
                     ui.separator();
-                    if item(ui, "Import a curl command\u{2026}", "") {
+                    if item(ui, "Import a command\u{2026}", "") {
                         self.open_curl_dialog();
                     }
                     if item(ui, "Import a HAR file\u{2026}", "") {
                         self.open_har_file();
+                    }
+                    ui.separator();
+                    let last = self.export_dialect;
+                    if item(ui, &format!("Copy as {}", last.label()), "Ctrl+Shift+C") {
+                        self.copy_request_as(ui.ctx(), last);
+                    }
+                    ui.menu_button("Copy as", |ui| {
+                        for dialect in Dialect::ALL {
+                            if ui.button(dialect.label()).clicked() {
+                                self.copy_request_as(ui.ctx(), dialect);
+                                ui.close_menu();
+                            }
+                        }
+                    });
+                    if item(ui, "Export request\u{2026}", "") {
+                        self.open_export_dialog();
                     }
                     ui.separator();
                     if item(ui, "Clear history", "") {

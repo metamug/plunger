@@ -1,5 +1,6 @@
 use super::copy_button;
 use super::response_search;
+use crate::highlight::markup_segments;
 use super::tab::Tab;
 use crate::model::{Outcome, ResponseTab};
 use crate::icons::{self, Icon};
@@ -15,6 +16,8 @@ const TEXT_PREVIEW_BYTES: usize = 256 * 1024;
 const CURRENT_MATCH: egui::Color32 = egui::Color32::from_rgb(255, 120, 0);
 /// Frames to keep trying to scroll the current match into view: a collapsed tree node needs one to open.
 const SCROLL_FRAMES: u8 = 3;
+/// Plain-text responses larger than this are drawn without syntax colours.
+const HIGHLIGHT_MAX_BYTES: usize = 64 * 1024;
 
 impl Tab {
     pub(super) fn render_response_section(&mut self, ui: &mut egui::Ui) {
@@ -332,7 +335,23 @@ impl Tab {
                             }
                         } else {
                             let mut text: &str = preview;
-                            ui.add(theme::area(&mut text).font(egui::TextStyle::Monospace).desired_width(f32::INFINITY));
+                            // JSON that failed to parse, a form, or plain text; big previews stay plain so
+                            // building the colours never costs more than drawing the text.
+                            let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                                let mut job = if text.len() <= HIGHLIGHT_MAX_BYTES {
+                                    crate::highlight::body(text)
+                                } else {
+                                    plain_job(text, ui.visuals().text_color())
+                                };
+                                job.wrap.max_width = wrap_width;
+                                ui.fonts(|fonts| fonts.layout_job(job))
+                            };
+                            ui.add(
+                                theme::area(&mut text)
+                                    .font(egui::TextStyle::Monospace)
+                                    .desired_width(f32::INFINITY)
+                                    .layouter(&mut layouter),
+                            );
                         }
                     }
                 }
@@ -394,31 +413,6 @@ fn pretty_markup(input: &str) -> String {
     out.trim_end().to_string()
 }
 
-/// Colour for each stretch of a pretty-printed XML/HTML document: tags apart from text. The
-/// stretches cover the whole text, even an unterminated tag at the end.
-fn markup_segments(text: &str) -> Vec<(usize, usize, egui::Color32)> {
-    let colors = palette().json;
-    let mut segments = Vec::new();
-    let mut pos = 0;
-    while let Some(rel) = text[pos..].find('<') {
-        let start = pos + rel;
-        if start > pos {
-            segments.push((pos, start, colors[2]));
-        }
-        let Some(end_rel) = text[start..].find('>') else {
-            segments.push((start, text.len(), colors[2]));
-            return segments;
-        };
-        let end = start + end_rel + 1;
-        segments.push((start, end, colors[1]));
-        pos = end;
-    }
-    if pos < text.len() {
-        segments.push((pos, text.len(), colors[2]));
-    }
-    segments
-}
-
 /// Lays `text` out in `segments`' colours, with `matches` (sorted, non-overlapping byte
 /// ranges) highlighted and the `current` one stronger.
 fn layout_job(
@@ -463,6 +457,10 @@ fn layout_job(
     job
 }
 
+fn plain_job(text: &str, color: egui::Color32) -> egui::text::LayoutJob {
+    egui::text::LayoutJob::single_section(text.to_owned(), egui::TextFormat::simple(egui::FontId::monospace(13.0), color))
+}
+
 /// Scrolls the character at byte offset `start` of `text` into view, given where `galley` was drawn.
 fn scroll_to_char(ui: &egui::Ui, galley: &egui::Galley, origin: egui::Pos2, text: &str, start: usize) {
     let index = text[..start].chars().count();
@@ -482,7 +480,8 @@ pub(super) fn format_bytes(n: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_bytes, format_request_bytes, layout_job, markup_segments, pretty_markup};
+    use super::{format_bytes, format_request_bytes, layout_job, pretty_markup};
+    use crate::highlight::markup_segments;
     use crate::app::response_search::text_matches;
 
     fn rendered(job: &eframe::egui::text::LayoutJob) -> String {

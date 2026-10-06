@@ -234,6 +234,7 @@ pub struct ResponseData {
 
 /// A parsed request — the common output shape for both curl and HAR import,
 /// so the UI only needs one "apply this" code path regardless of source.
+#[derive(Clone, Debug)]
 pub struct ParsedRequest {
     pub method: String,
     pub url: String,

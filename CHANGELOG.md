@@ -6,6 +6,9 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ### Added
 
+- Export a request as a command: **File > Copy as** and **File > Export request...** write curl (bash), curl (Windows cmd), PowerShell `Invoke-RestMethod` or PowerShell `Invoke-WebRequest`, shown with syntax highlighting; **Ctrl+Shift+C** copies in the last format used. `{{variables}}` stay as placeholders, so an exported command never carries a secret (#81).
+- Import reads those same syntaxes: curl for bash, curl for the Windows command prompt (including Chrome's caret-escaped "Copy as cURL (cmd)"), and PowerShell (including Chrome's "Copy as PowerShell" with its `$session` cookies and user agent). The dialog detects the syntax and highlights what you paste.
+- Syntax highlighting where code is shown: in the import and export dialogs, in the raw and form body editors (JSON, XML/HTML or form detected from the text), in the raw headers editor and in plain-text responses; `{{variables}}` in the URL, params, headers and form-data fields are blue when defined and red when undefined.
 - `plunger curl [curl options] <url>`: curl's own options on Plunger's engine, so a command written for curl runs unchanged. The response body is printed exactly as the server sent it; `-i -I -s -S -f --fail-with-body -L -k -m -o -w` work, `-d @file` and `-d @-` read the body, clustered flags such as `-sSL` and `-XPOST` are understood, and curl's exit codes are used (22, 6, 7, 28, 60). Undefined `{{variables}}` are still refused, secrets masked and the request recorded in the history. Options Plunger cannot honour (`--proxy`, `--cert`, ...) are refused, not ignored (#100).
 - `plunger send https://...` accepts a URL as its first argument (it was read as a saved-request name).
 

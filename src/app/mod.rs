@@ -5,6 +5,7 @@
 mod chrome;
 mod command_bar;
 mod emboss;
+mod export_window;
 mod import_window;
 mod request;
 mod response_panel;
@@ -14,6 +15,7 @@ mod tab;
 
 pub use tab::SavedTab;
 
+use crate::commands::Dialect;
 use crate::history::{History, HistoryEntry};
 use crate::icons::{self, Icon};
 use crate::model::{Outcome, ResponseTab, ParsedRequest, PersistedState};
@@ -117,6 +119,9 @@ pub struct ApiTesterApp {
     history_open: bool,
 
     import: ImportDialog,
+    export: Option<export_window::ExportDialog>,
+    /// The syntax Ctrl+Shift+C copies in: the one last chosen.
+    export_dialect: Dialect,
     /// A short message for the status bar ("Saved …"), and when it was set.
     notice: Option<(String, Instant)>,
 
@@ -152,6 +157,8 @@ impl ApiTesterApp {
             db_version: None,
             last_db_poll: Instant::now(),
             import: ImportDialog::default(),
+            export: None,
+            export_dialect: Dialect::CurlBash,
             notice: None,
             secrets,
             secret_sync: SecretSync::default(),
@@ -461,6 +468,9 @@ impl ApiTesterApp {
         {
             self.tab_mut().cancel();
         }
+        if ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::C))) {
+            self.copy_request_as(ctx, self.export_dialect);
+        }
         if pressed(egui::Key::F) {
             let tab = self.tab_mut();
             if tab.response_tab == ResponseTab::Body && matches!(tab.outcome, Outcome::Response(_)) {
@@ -559,6 +569,7 @@ impl ApiTesterApp {
         self.render_status_bar(ctx);
         self.render_sidebar(ctx);
         self.render_import_windows(ctx);
+        self.render_export_window(ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
             self.render_tab_bar(ui);

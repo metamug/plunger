@@ -59,7 +59,7 @@ A small desktop app that sends an HTTP request and shows you what came back.
 - **Body:** JSON, form-urlencoded, raw text, or multipart form-data with real file uploads.
 - **Response:** status, time and size, the headers, and the body as a collapsible JSON tree. Copy it or save it to a file.
 - **Variables:** `{{name}}` anywhere in the request, plus `{{$uuid}}`, `{{$timestamp}}`, `{{$randomInt}}` and `{{$env:NAME}}` for reading an OS environment variable at send time. A request with an undefined variable is refused, never sent with the placeholder in it.
-- **Import:** paste a curl command (including `-F` uploads) or open a HAR file.
+- **Import and export:** paste a curl command (bash or Windows cmd, including `-F` uploads) or a PowerShell `Invoke-WebRequest` / `Invoke-RestMethod` command, such as DevTools' Copy as cURL or Copy as PowerShell; or open a HAR file. Copy any request back out as curl (bash), curl (Windows cmd) or PowerShell with **Ctrl+Shift+C** or **File > Export request**, shown with syntax highlighting.
 - **Keep what matters:** local history, named saved requests (Ctrl+S) and tabs (Ctrl+T).
 - **Local HTTPS:** skip certificate checks for a self-signed dev server, with a warning that stays visible while it's on.
 - **Behind a proxy:** Plunger uses your system proxy settings and the `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` environment variables.

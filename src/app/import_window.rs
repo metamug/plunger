@@ -1,9 +1,11 @@
-//! Importing a request from a pasted curl command or from a HAR file. Each
-//! has its own dialog; the imported request opens in a tab.
+//! Importing a request from a pasted command (curl for bash or cmd, PowerShell) or from a HAR
+//! file. Each has its own dialog; the imported request opens in a tab.
 
 use super::{ApiTesterApp, ImportDialog};
-use crate::curl_import::{parse_curl, parse_har};
-use crate::theme::{self, palette};
+use crate::commands;
+use crate::curl_import::parse_har;
+use crate::{highlight, theme};
+use crate::theme::palette;
 use eframe::egui;
 
 /// Tall enough for a long curl command; beyond this the box scrolls instead of
@@ -45,26 +47,35 @@ impl ApiTesterApp {
         let mut open = true;
         let mut import = false;
         let mut cancel = false;
-        egui::Window::new("Import a curl command")
+        egui::Window::new("Import a command")
             .collapsible(false)
             .resizable(true)
             .default_width(560.0)
             .open(&mut open)
             .show(ctx, |ui| {
-                ui.label(egui::RichText::new("Paste the command, e.g. from your browser DevTools: right-click a request > Copy > Copy as cURL.").weak().small());
+                ui.label(egui::RichText::new("curl (bash or cmd) or PowerShell, e.g. DevTools: right-click a request > Copy.").weak().small());
                 ui.add_space(4.0);
+                let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                    let mut job = highlight::command(text);
+                    job.wrap.max_width = wrap_width;
+                    ui.fonts(|fonts| fonts.layout_job(job))
+                };
                 egui::ScrollArea::vertical().max_height(CURL_BOX_HEIGHT).show(ui, |ui| {
                     let edit = ui.add(
                         theme::area(text)
                             .desired_rows(8)
                             .desired_width(f32::INFINITY)
                             .font(egui::TextStyle::Monospace)
+                            .layouter(&mut layouter)
                             .hint_text("curl 'https://api.example.com/resource' -H 'Authorization: Bearer ...' -d '{...}'"),
                     );
                     if std::mem::take(focus) {
                         edit.request_focus();
                     }
                 });
+                if !text.trim().is_empty() {
+                    ui.label(egui::RichText::new(format!("Detected: {}", commands::detect(text).label())).weak().small());
+                }
                 if let Some(err) = error {
                     ui.colored_label(palette().error, err.as_str());
                 }
@@ -78,7 +89,7 @@ impl ApiTesterApp {
                 });
             });
         if import {
-            let result = parse_curl(text);
+            let result = commands::import(text);
             match result {
                 Ok(parsed) => self.open_parsed(parsed),
                 Err(e) => *error = Some(e),
