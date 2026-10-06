@@ -4,6 +4,11 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed
+
+- A request sent from the CLI or MCP with a JSON `Content-Type` and a JSON body now opens in the window's JSON body editor instead of Raw, the same as a curl import (#82).
+- JSON bodies from the CLI `--json` flag and the MCP `json` field are sent compact instead of pretty-printed.
+
 ## [0.4.2] - 2026-10-06
 
 ### Fixed

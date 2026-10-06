@@ -111,6 +111,13 @@ pub enum Body {
 }
 
 impl RequestSpec {
+    fn has_json_content_type(&self) -> bool {
+        self.headers.iter().any(|(name, value)| {
+            let value = value.to_ascii_lowercase();
+            name.eq_ignore_ascii_case("content-type") && (value.contains("/json") || value.contains("+json"))
+        })
+    }
+
     /// The form state the window would have for this request, with the
     /// session's variables and options underneath.
     pub fn to_state(&self, session: &Session) -> PersistedState {
@@ -125,6 +132,12 @@ impl RequestSpec {
         match &self.body {
             Body::None => state.body_mode = BodyMode::None,
             Body::Json(text) => {
+                state.body_mode = BodyMode::Json;
+                state.json_body = text.clone();
+            }
+            // A body the caller marked as JSON (Content-Type) and that parses as JSON opens in the
+            // window's JSON editor, the same as a curl import; anything else stays raw text.
+            Body::Text(text) if self.has_json_content_type() && serde_json::from_str::<serde_json::Value>(text).is_ok() => {
                 state.body_mode = BodyMode::Json;
                 state.json_body = text.clone();
             }
@@ -574,6 +587,35 @@ mod tests {
 
     fn var(name: &str, value: &str, secret: bool) -> Variable {
         Variable { name: name.into(), value: value.into(), secret, remember: false }
+    }
+
+    fn spec(headers: &[(&str, &str)], body: Body) -> RequestSpec {
+        RequestSpec {
+            method: Some("POST".into()),
+            url: "http://h/x".into(),
+            headers: headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            body,
+            variables: vec![],
+            timeout_secs: None,
+            follow_redirects: None,
+            insecure_tls: None,
+        }
+    }
+
+    #[test]
+    fn a_json_typed_text_body_opens_in_the_json_editor_and_other_text_stays_raw() {
+        let s = session(vec![]);
+        let json_ct = [("Content-Type", "application/json; charset=utf-8")];
+        let state = spec(&json_ct, Body::Text("{\"a\":1}".into())).to_state(&s);
+        assert!(state.body_mode == BodyMode::Json);
+        assert_eq!(state.json_body, "{\"a\":1}");
+        assert!(spec(&[("content-type", "application/vnd.api+json")], Body::Text("[1]".into())).to_state(&s).body_mode == BodyMode::Json);
+
+        let raw = |headers: &[(&str, &str)], text: &str| spec(headers, Body::Text(text.into())).to_state(&s).body_mode == BodyMode::Raw;
+        assert!(raw(&json_ct, "not json"), "invalid JSON stays raw");
+        assert!(raw(&[("Content-Type", "text/plain")], "123"), "plain text that happens to parse stays raw");
+        assert!(raw(&[("Content-Type", "application/xml")], "<a/>"));
+        assert!(raw(&[], "{\"a\":1}"), "no Content-Type stays raw");
     }
 
     #[test]

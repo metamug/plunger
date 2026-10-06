@@ -81,7 +81,7 @@ impl SendParams {
             return Err("Give only one of `json`, `body` or `form`.".into());
         }
         Ok(match (&self.json, &self.body, &self.form) {
-            (Some(v), _, _) => Body::Json(serde_json::to_string_pretty(v).map_err(|e| e.to_string())?),
+            (Some(v), _, _) => Body::Json(serde_json::to_string(v).map_err(|e| e.to_string())?),
             (_, Some(text), _) => Body::Text(text.clone()),
             (_, _, Some(form)) => Body::Form(form.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
             _ => Body::None,
@@ -125,7 +125,8 @@ impl SendParams {
         }
         if body != Body::None {
             // Reuse RequestSpec's body mapping so both paths agree.
-            let spec = RequestSpec { body, ..Default::default() }.to_state(session);
+            let headers = self.headers.iter().flatten().map(|(k, v)| (k.clone(), v.clone())).collect();
+            let spec = RequestSpec { body, headers, ..Default::default() }.to_state(session);
             state.body_mode = spec.body_mode;
             state.json_body = spec.json_body;
             state.raw_body = spec.raw_body;
@@ -324,6 +325,12 @@ mod tests {
     }
 
     #[test]
+    fn a_json_object_from_an_agent_is_sent_compact() {
+        let p = SendParams { json: Some(serde_json::json!({"a": 1, "b": [1, 2]})), ..Default::default() };
+        assert_eq!(p.body().unwrap(), Body::Json("{\"a\":1,\"b\":[1,2]}".into()));
+    }
+
+    #[test]
     fn a_saved_request_takes_overrides() {
         let h = History::in_memory();
         let saved = PersistedState {
@@ -345,7 +352,7 @@ mod tests {
         assert_eq!(state.method, "POST");
         assert_eq!(state.url, "https://h/users");
         assert_eq!(state.headers_text, "X-Keep: 1\naccept: application/json");
-        assert!(state.body_mode == BodyMode::Json && state.json_body.contains("\"n\": 1"));
+        assert!(state.body_mode == BodyMode::Json && state.json_body.contains("\"n\":1"));
     }
 
     #[test]
