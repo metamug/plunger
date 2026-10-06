@@ -56,13 +56,14 @@ impl Tab {
         }
 
         ui.add_space(6.0);
-        ui.label(egui::RichText::new("RESPONSE").weak().small());
-        ui.add_space(2.0);
-
+        // One row: the Body / Headers tabs, then the status, time and size, then the actions.
         ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.response_tab, ResponseTab::Body, "Body");
+            ui.selectable_value(&mut self.response_tab, ResponseTab::Headers, "Headers");
+            ui.add_space(8.0);
             status_badge(ui, resp.status, &resp.status_text);
-            ui.label(egui::RichText::new(format!("TTFB {} ms · total {} ms", resp.ttfb_ms, resp.elapsed_ms)).weak());
-            ui.label(egui::RichText::new(format!("out {} · in {}", format_request_bytes(resp.request_size_bytes), format_bytes(resp.size_bytes))).weak());
+            ui.label(egui::RichText::new(format!("{} ms · {}", resp.elapsed_ms, format_bytes(resp.size_bytes))).weak())
+                .on_hover_ui(|ui| timing_details(ui, resp));
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if icons::button(ui, Icon::Download, "Save response body to a file").clicked() {
@@ -112,11 +113,6 @@ impl Tab {
             ui.colored_label(palette().error, err);
         }
 
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.response_tab, ResponseTab::Body, "Body");
-            ui.selectable_value(&mut self.response_tab, ResponseTab::Headers, "Headers");
-        });
         ui.add_space(4.0);
 
         // What the Body tab shows, worked out once so search, highlighting and scrolling agree.
@@ -386,6 +382,22 @@ impl Tab {
             ui.ctx().request_repaint();
         }
     }
+}
+
+/// What the time label shows on hover: where the time went and what was sent and received.
+fn timing_details(ui: &mut egui::Ui, resp: &crate::model::ResponseData) {
+    egui::Grid::new("timing-details").num_columns(2).spacing([16.0, 2.0]).show(ui, |ui| {
+        let row = |ui: &mut egui::Ui, label: &str, value: String| {
+            ui.label(egui::RichText::new(label).weak());
+            ui.label(value);
+            ui.end_row();
+        };
+        row(ui, "Waiting (TTFB)", format!("{} ms", resp.ttfb_ms));
+        row(ui, "Download", format!("{} ms", resp.elapsed_ms.saturating_sub(resp.ttfb_ms)));
+        row(ui, "Total", format!("{} ms", resp.elapsed_ms));
+        row(ui, "Request body", format_request_bytes(resp.request_size_bytes));
+        row(ui, "Response body", format_bytes(resp.size_bytes));
+    });
 }
 
 pub(super) fn format_request_bytes(n: Option<usize>) -> String {

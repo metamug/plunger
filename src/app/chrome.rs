@@ -82,19 +82,10 @@ impl ApiTesterApp {
                     ui.add(egui::Spinner::new().size(12.0));
                     small(ui, format!("Sending {} {}\u{2026}", tab.state.method, tab.state.url), None);
                 } else {
+                    // The response's status, time and size are shown once, above the response body.
                     match &tab.outcome {
-                        Outcome::Empty => small(ui, "Ready".to_string(), None),
+                        Outcome::Empty | Outcome::Response(_) => small(ui, "Ready".to_string(), None),
                         Outcome::Failed(_) => small(ui, "Request failed".to_string(), Some(p.error)),
-                        Outcome::Response(r) => {
-                            let (_, fg) = p.status[match r.status {
-                                200..=299 => 0,
-                                300..=399 => 1,
-                                400..=499 => 2,
-                                _ => 3,
-                            }];
-                            small(ui, format!("{} {}", r.status, r.status_text), Some(fg));
-                            small(ui, format!("TTFB {} ms · total {} ms  \u{b7}  out {} · in {}", r.ttfb_ms, r.elapsed_ms, super::response_panel::format_request_bytes(r.request_size_bytes), super::response_panel::format_bytes(r.size_bytes)), None);
-                        }
                     }
                 }
                 if let Some((message, at)) = &self.notice {

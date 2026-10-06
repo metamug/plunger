@@ -4,6 +4,10 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed
+- Compact layout: the help paragraphs under the Params and Variables tabs are now hover tips on the tabs. The response's Body/Headers tabs, status, time and size share one row; hovering the time shows TTFB, download and sizes. The status bar no longer repeats the response numbers.
+- The saved-requests list draws only the rows in view (fast with thousands of saved requests).
+
 ### Added
 
 - Agents can set variables. `plunger vars set NAME VALUE` (`--secret`, or `-` to read the value from standard input), `plunger vars unset`, `plunger vars clear`, and the MCP tools `set_variable` / `delete_variable` keep a value for later requests as `{{name}}`. It persists, is shared by the window, the CLI and MCP at once, and shows in the window under "Set by agents" (usable from the window too, with a delete button). A secret or a credential-looking name is kept in the system credential store only and masked in results. An agent cannot change or delete variables the user defined, and the user's win on a clash (#36).

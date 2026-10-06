@@ -12,13 +12,6 @@ use eframe::egui;
 
 impl Tab {
     pub(in crate::app) fn render_params_tab(&mut self, ui: &mut egui::Ui) {
-        ui.label(
-            egui::RichText::new("Mirrors the URL's query string: edit either one. Untick a row to leave it out of the URL.")
-                .weak()
-                .small(),
-        );
-        ui.add_space(6.0);
-
         let before = self.state.params.clone();
         let variables = &self.state.variables;
         edit_rows(
@@ -77,46 +70,9 @@ impl Tab {
         delete_agent: &mut Option<String>,
     ) -> bool {
         let mut forget = false;
-        ui.label(
-            egui::RichText::new(
-                "Use {{name}} in the URL, params, headers, body, form fields or Bearer token. Built-ins: {{$uuid}}, {{$timestamp}}, {{$randomInt}}, and {{$env:NAME}} for an environment variable.",
-            )
-            .weak()
-            .small(),
-        );
-        ui.horizontal_top(|ui| {
-            // A label in a horizontal row doesn't wrap: it ran past the panel and pushed the
-            // button off the edge. Give the text the room left beside the button and wrap it.
-            let room = ui.available_width() - icons::trailing_room(ui, 1);
-            ui.scope(|ui| {
-                ui.set_max_width(room);
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(
-                            "Secret values (lock on, or named like token/secret/password/key) are never written to a file. Turn on the key to keep one in the system credential store; otherwise it is blank after a restart.",
-                        )
-                        .weak()
-                        .small(),
-                    )
-                    .wrap(),
-                );
-            });
-            // Next to the text it explains, not in the per-row column, so it
-            // can't be mistaken for "remove this variable".
-            if icons::button(
-                ui,
-                Icon::Trash,
-                "Forget saved secrets: remove every remembered secret (including the Bearer token) from the system credential store",
-            )
-            .clicked()
-            {
-                forget = true;
-            }
-        });
         if let Some(err) = secrets_error {
             ui.colored_label(palette().error, err);
         }
-        ui.add_space(6.0);
 
         edit_rows(
             ui,
@@ -166,6 +122,16 @@ impl Tab {
                 .inner
             },
         );
+        if self.state.variables.iter().any(|v| v.remember && v.is_secret()) || self.state.remember_bearer {
+            ui.add_space(4.0);
+            if ui
+                .small_button("Forget remembered secrets")
+                .on_hover_text("Remove every remembered secret (including the Bearer token) from the system credential store")
+                .clicked()
+            {
+                forget = true;
+            }
+        }
         if !agent_variables.is_empty() {
             ui.add_space(8.0);
             ui.label(egui::RichText::new("Set by agents").weak().small())

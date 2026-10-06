@@ -27,11 +27,20 @@ impl ApiTesterApp {
         let tab = &mut self.tabs[self.active];
         ui.horizontal(|ui| {
             let labels = tab_labels(&tab.state, !self.bearer_token.is_empty());
-            ui.selectable_value(&mut tab.request_tab, RequestTab::Params, &labels.params);
-            ui.selectable_value(&mut tab.request_tab, RequestTab::Auth, &labels.auth);
-            ui.selectable_value(&mut tab.request_tab, RequestTab::Headers, &labels.headers);
-            ui.selectable_value(&mut tab.request_tab, RequestTab::Body, &labels.body);
-            ui.selectable_value(&mut tab.request_tab, RequestTab::Variables, &labels.variables);
+            ui.selectable_value(&mut tab.request_tab, RequestTab::Params, &labels.params)
+                .on_hover_text("Query parameters. They mirror the URL's query string: edit either one. Untick a row to leave it out of the URL.");
+            ui.selectable_value(&mut tab.request_tab, RequestTab::Auth, &labels.auth)
+                .on_hover_text("A Bearer token, sent as Authorization: Bearer <token> on every request from every tab.");
+            ui.selectable_value(&mut tab.request_tab, RequestTab::Headers, &labels.headers)
+                .on_hover_text("Request headers. {{variables}} work in the values.");
+            ui.selectable_value(&mut tab.request_tab, RequestTab::Body, &labels.body)
+                .on_hover_text("The request body: JSON, form-data, url-encoded or raw text.");
+            ui.selectable_value(&mut tab.request_tab, RequestTab::Variables, &labels.variables).on_hover_text(
+                "Use {{name}} in the URL, params, headers, body, form fields or the Bearer token.\n\
+                 Built-ins: {{$uuid}}, {{$timestamp}}, {{$randomInt}} and {{$env:NAME}} (an environment variable).\n\n\
+                 Secret values (lock on, or a name like token, secret, password or key) are never written to a file. \
+                 Turn on the key to keep one in the system credential store; otherwise it is blank after a restart.",
+            );
             let options_label = if tab.state.insecure_tls { "Options (TLS check off)" } else { "Options" };
             ui.selectable_value(&mut tab.request_tab, RequestTab::Options, options_label);
         });

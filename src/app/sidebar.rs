@@ -179,6 +179,11 @@ fn entry_row(
     let height = if two_lines { TWO_LINES } else { ONE_LINE };
     let width = ui.available_width();
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
+    // The row keeps its height so the list scrolls correctly, but a row outside the visible area
+    // is not laid out or painted: with thousands of saved requests that was most of every frame.
+    if rename.is_none() && !ui.is_rect_visible(rect) {
+        return None;
+    }
     let p = palette();
     let hovered = ui.rect_contains_pointer(rect);
 
