@@ -25,6 +25,17 @@ fn append_with_placeholders(job: &mut LayoutJob, text: &str, font: &FontId, colo
     append(job, rest, font, color);
 }
 
+/// Text longer than this is drawn without colours (and bodies are not validated): building the
+/// colours and parsing the text on every frame cost a core and hundreds of MB for a few MB of text.
+pub const LARGE_TEXT_BYTES: usize = 128 * 1024;
+
+/// `text` in one colour, for text too large to colour.
+pub fn plain(text: &str, color: Color32) -> LayoutJob {
+    let mut job = LayoutJob::default();
+    append(&mut job, text, &FontId::monospace(13.0), color);
+    job
+}
+
 const COMMAND_WORDS: &[&str] = &["curl", "curl.exe", "invoke-restmethod", "invoke-webrequest", "irm", "iwr", "plunger", "new-object"];
 
 /// A shell command in any of the supported dialects: bash curl, Windows cmd curl, PowerShell. The
@@ -178,6 +189,9 @@ pub fn header_lines(text: &str, vars: &[Variable]) -> LayoutJob {
 /// `key=value` lines or an `a=1&b=2` string: keys, `=` and `&` apart from values.
 pub fn form_body(text: &str) -> LayoutJob {
     let [punct, key, string, _, _, default] = palette().json;
+    if text.len() > LARGE_TEXT_BYTES {
+        return plain(text, default);
+    }
     let placeholder = palette().amber;
     let font = FontId::monospace(13.0);
     let mut job = LayoutJob::default();
@@ -238,6 +252,9 @@ pub fn markup(text: &str) -> LayoutJob {
 /// A body of unknown type: JSON when it looks like JSON, markup when it looks like XML or HTML,
 /// a form when it is `key=value`, otherwise plain text.
 pub fn body(text: &str) -> LayoutJob {
+    if text.len() > LARGE_TEXT_BYTES {
+        return plain(text, palette().json[5]);
+    }
     let trimmed = text.trim_start();
     if trimmed.starts_with('{') || trimmed.starts_with('[') {
         crate::json_view::highlight_json(text)
@@ -316,6 +333,15 @@ mod tests {
         assert_eq!(color("{{$uuid}}"), palette().accent_text);
         assert_eq!(color("{{ base }}"), palette().accent_text);
         assert!(!variable_is_defined("", &vars));
+    }
+
+    #[test]
+    fn large_text_is_drawn_plain_and_unchanged() {
+        let big = format!("{{\"a\": [{}]}}", "1, ".repeat(LARGE_TEXT_BYTES));
+        for job in [body(&big), form_body(&big)] {
+            assert_eq!(job.sections.len(), 1, "one colour, no tokenising");
+            assert_eq!(job.text, big);
+        }
     }
 
     #[test]

@@ -16,8 +16,6 @@ const TEXT_PREVIEW_BYTES: usize = 256 * 1024;
 const CURRENT_MATCH: egui::Color32 = egui::Color32::from_rgb(255, 120, 0);
 /// Frames to keep trying to scroll the current match into view: a collapsed tree node needs one to open.
 const SCROLL_FRAMES: u8 = 3;
-/// Plain-text responses larger than this are drawn without syntax colours.
-const HIGHLIGHT_MAX_BYTES: usize = 64 * 1024;
 
 impl Tab {
     pub(super) fn render_response_section(&mut self, ui: &mut egui::Ui) {
@@ -357,11 +355,7 @@ impl Tab {
                             // JSON that failed to parse, a form, or plain text; big previews stay plain so
                             // building the colours never costs more than drawing the text.
                             let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                                let mut job = if text.len() <= HIGHLIGHT_MAX_BYTES {
-                                    crate::highlight::body(text)
-                                } else {
-                                    plain_job(text, ui.visuals().text_color())
-                                };
+                                let mut job = crate::highlight::body(text);
                                 job.wrap.max_width = wrap_width;
                                 ui.fonts(|fonts| fonts.layout_job(job))
                             };
@@ -496,10 +490,6 @@ fn layout_job(
         }
     }
     job
-}
-
-fn plain_job(text: &str, color: egui::Color32) -> egui::text::LayoutJob {
-    egui::text::LayoutJob::single_section(text.to_owned(), egui::TextFormat::simple(egui::FontId::monospace(13.0), color))
 }
 
 /// Scrolls the character at byte offset `start` of `text` into view, given where `galley` was drawn.

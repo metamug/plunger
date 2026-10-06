@@ -74,8 +74,13 @@ impl Tab {
     }
 
     fn render_json_editor(&mut self, ui: &mut egui::Ui) {
+        let large = self.state.json_body.len() > crate::highlight::LARGE_TEXT_BYTES;
         let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| -> std::sync::Arc<egui::Galley> {
-            let mut job = highlight_json(text);
+            let mut job = if text.len() > crate::highlight::LARGE_TEXT_BYTES {
+                crate::highlight::plain(text, palette().json[5])
+            } else {
+                highlight_json(text)
+            };
             job.wrap.max_width = wrap_width;
             ui.fonts(|f| f.layout_job(job))
         };
@@ -88,6 +93,17 @@ impl Tab {
             );
         });
 
+        if large {
+            // Parsing a body this size on every frame would keep a core busy.
+            ui.label(
+                egui::RichText::new(format!(
+                    "Large body ({}): colouring and validation are off.",
+                    crate::app::response_panel::format_bytes(self.state.json_body.len())
+                ))
+                .weak(),
+            );
+            return;
+        }
         let trimmed = self.state.json_body.trim();
         if trimmed.is_empty() {
             return;
