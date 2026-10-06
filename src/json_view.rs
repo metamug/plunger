@@ -229,6 +229,14 @@ pub fn highlight_json(text: &str) -> egui::text::LayoutJob {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_response_keeps_the_key_order_the_server_sent() {
+        let (pretty, value) = pretty_json_if_possible(r#"{"zebra":1,"apple":{"y":2,"x":[3,{"b":1,"a":2}]}}"#);
+        let order = |key: &str| pretty.find(&format!("\"{key}\"")).unwrap();
+        assert!(order("zebra") < order("apple") && order("y") < order("x") && order("b") < order("a"), "{pretty}");
+        assert_eq!(value.unwrap().as_object().unwrap().keys().collect::<Vec<_>>(), ["zebra", "apple"]);
+    }
+
     use super::*;
 
     #[test]

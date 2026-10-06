@@ -18,6 +18,7 @@ USAGE
   plunger                               Open the window
   plunger send <saved name> [options]   Send a saved request
   plunger send --url <url> [options]    Send a request described on the command line
+  plunger curl [curl options] <url>     Run a curl command through Plunger (see `plunger curl --help`)
   plunger import \"<curl command>\"       Parse a curl command (prints it as a request)
       --save <name>                     ...and add it to the Saved list
       --send [options]                  ...or send it
@@ -112,10 +113,14 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
             let mut opts = SendOptions::default();
             while let Some(arg) = args.next() {
                 if !opts.take(&arg, &mut args)? {
-                    if arg.starts_with('-') || opts.params.saved_request.is_some() {
+                    if arg.starts_with('-') || opts.params.saved_request.is_some() || opts.params.url.is_some() {
                         return Err(usage_error(format!("Unexpected argument `{arg}`")));
                     }
-                    opts.params.saved_request = Some(arg);
+                    if arg.contains("://") {
+                        opts.params.url = Some(arg);
+                    } else {
+                        opts.params.saved_request = Some(arg);
+                    }
                 }
             }
             if opts.params.saved_request.is_none() && opts.params.url.is_none() {
@@ -123,6 +128,7 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
             }
             finish_send(agent::send_request(&opts.params, Source::Cli), opts.fail)
         }
+        "curl" => Ok(crate::curl_cli::run(args.rest())),
         "import" => {
             let curl = args.next().ok_or_else(|| usage_error("Give the curl command in quotes"))?;
             let (mut save, mut send, mut opts) = (None, false, SendOptions::default());
@@ -257,6 +263,11 @@ impl Args {
 
     fn next(&mut self) -> Option<String> {
         self.items.next()
+    }
+
+    /// Everything not consumed yet.
+    fn rest(&mut self) -> Vec<String> {
+        self.items.by_ref().collect()
     }
 
     fn value(&mut self, option: &str) -> Result<String, Exit> {

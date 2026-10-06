@@ -3,6 +3,7 @@
 mod agent;
 mod app;
 mod cli;
+mod curl_cli;
 mod curl_export;
 mod curl_import;
 mod engine;

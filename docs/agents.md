@@ -97,6 +97,32 @@ Everything prints JSON, errors included: `{"error": "...", "kind": "not_sent"}`.
 | 3 | Sent, but no response (refused, DNS, timeout) |
 | 4 | `--fail` was given and the status was 400 or higher |
 
+### `plunger curl`: curl's options, Plunger's safety
+
+An agent that already writes curl commands can swap `curl` for `plunger curl` and change nothing else. The arguments are curl's, the output is curl's (the response body, byte for byte, on stdout), and the request still goes through Plunger: an undefined `{{variable}}` is refused, secrets are filled in and masked, and the request lands in the history the window shows.
+
+```bash
+plunger curl -sS https://api.example.com/items
+plunger curl -s -X POST https://api.example.com/orders   -H "Authorization: Bearer {{token}}" -H "Content-Type: application/json" -d @order.json --var token=...
+plunger curl -sL https://example.com/old -o /dev/null -w "%{http_code} %{url_effective}
+"
+plunger curl -sf https://api.example.com/health || echo "unhealthy"
+plunger curl -s -F file=@report.csv https://api.example.com/upload
+```
+
+| Supported | Notes |
+|---|---|
+| `-X -H -d -u -F -G -A -b -e --json --data-urlencode --url` | `-d @file` and `-d @-` (standard input) read the body like curl does |
+| `-L -k -s -S -i -I -f --fail-with-body -m/--max-time -o -w` | Like curl, redirects are followed only with `-L`. `-w` knows `%{http_code} %{size_download} %{time_total} %{time_starttransfer} %{content_type} %{num_redirects} %{url_effective} %{redirect_url}` |
+| clustered flags | `-sSL`, `-XPOST`, `-ofile` |
+| Plunger extras | `--var name=value`, `--use-saved-bearer`, `--plunger-json` (print Plunger's structured result instead) |
+
+These are refused with a message rather than silently ignored: `-x/--proxy`, `--cert`, `--key`, `--cacert`, `-T`, `-K`, `--resolve`, `--interface`, `-c/--cookie-jar`, `--retry`.
+
+Exit codes follow curl: 0 ok, 22 with `-f` and a status of 400 or higher, 6 DNS, 7 connection refused, 28 timeout, 60 TLS, and 2 when Plunger refused to send (for example an undefined variable), which is always reported on stderr even with `-s`.
+
+A URL can also be given straight to `send`: `plunger send https://api.example.com/items`.
+
 `plunger.exe` is a Windows GUI program. Agents run it with piped output and that works normally. Typed by hand in a terminal, the output still appears, but the prompt may come back before it does.
 
 ## What an agent can and can't do

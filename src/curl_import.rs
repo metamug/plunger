@@ -2,34 +2,141 @@ use crate::model::{FieldKind, FormField, ParsedRequest};
 use serde::Deserialize;
 use std::path::Path;
 
+/// Reads the file (or standard input, for `-`) that `-d @path` names.
+pub type FileReader<'a> = dyn FnMut(&str) -> Result<String, String> + 'a;
+
+/// Options of a curl command line that are about the transfer rather than the request: what to
+/// print, where to write it, when to fail. Only `plunger curl` acts on them.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct CurlOptions {
+    /// `-i`: print the status line and headers before the body.
+    pub include_headers: bool,
+    /// `-I`: a HEAD request, print only the headers.
+    pub head_only: bool,
+    /// `-s`: no error text unless `-S` is also given.
+    pub silent: bool,
+    pub show_error: bool,
+    /// `-f`: exit 22 on a status of 400 or more, printing no body.
+    pub fail: bool,
+    pub fail_with_body: bool,
+    /// `-L`: follow redirects (curl does not by default).
+    pub follow: bool,
+    /// `-k`: skip TLS certificate checks.
+    pub insecure: bool,
+    /// `-m`: seconds, may be fractional.
+    pub max_time: Option<f64>,
+    /// `-o`: write the body to a file (`-` is stdout).
+    pub output: Option<String>,
+    /// `-w`: a template printed after the transfer.
+    pub write_out: Option<String>,
+    /// Flags that change how curl would connect and that Plunger cannot honour.
+    pub unsupported: Vec<String>,
+}
+
+/// Short flags that take a value (`-H x`, `-Hx`, and last in a cluster such as `-sSLo file`).
+const SHORT_WITH_VALUE: &str = "XHdFubAeomwxcTUK";
+const LONG_WITH_VALUE: &[&str] = &[
+    "--request", "--header", "--data", "--data-raw", "--data-binary", "--data-ascii", "--data-urlencode", "--json",
+    "--form", "--form-string", "--user", "--cookie", "--user-agent", "--referer", "--url", "--output", "--max-time",
+    "--connect-timeout", "--proxy", "--cacert", "--cert", "--key", "--write-out", "--retry", "--resolve",
+    "--max-redirs", "--cookie-jar", "--upload-file", "--interface", "--proxy-user", "--config",
+];
+
+/// True for `-sSL`, `-XPOST` or `-ofile.txt`: letters up to the first value-taking flag, whose
+/// value is whatever follows it. A token like `-1` or `-x9` is not a cluster.
+fn is_cluster(tok: &str) -> bool {
+    if tok.len() <= 2 || !tok.starts_with('-') {
+        return false;
+    }
+    for c in tok[1..].chars() {
+        if SHORT_WITH_VALUE.contains(c) {
+            return true;
+        }
+        if !c.is_ascii_alphabetic() {
+            return false;
+        }
+    }
+    true
+}
+
+/// Splits clustered short flags (`-sSL` -> `-s -S -L`, `-XPOST` -> `-X POST`, `-ofile` -> `-o file`),
+/// leaving the values of value-taking flags untouched.
+fn expand_clusters(tokens: Vec<String>) -> Vec<String> {
+    let mut out = Vec::with_capacity(tokens.len());
+    let mut expecting_value = false;
+    for tok in tokens {
+        if expecting_value {
+            expecting_value = false;
+            out.push(tok);
+        } else if tok.starts_with("--") {
+            expecting_value = !tok.contains('=') && LONG_WITH_VALUE.contains(&tok.as_str());
+            out.push(tok);
+        } else if is_cluster(&tok) {
+            for (i, c) in tok[1..].char_indices() {
+                out.push(format!("-{c}"));
+                if SHORT_WITH_VALUE.contains(c) {
+                    let rest = &tok[1 + i + 1..];
+                    if rest.is_empty() {
+                        expecting_value = true;
+                    } else {
+                        out.push(rest.to_string());
+                    }
+                    break;
+                }
+            }
+        } else {
+            expecting_value = tok.len() == 2 && tok.starts_with('-') && SHORT_WITH_VALUE.contains(&tok[1..]);
+            out.push(tok);
+        }
+    }
+    out
+}
+
 /// Parses a pasted curl command (as copied from a browser's "Copy as cURL",
 /// or typed by hand) into method/url/headers/body.
 ///
 /// Understands `-X`, `-H`, `-d` and its variants (repeated `-d` are joined
 /// with `&`, `--data-urlencode` is encoded), `--json`, `-F`, `-u` (becomes a
 /// Basic `Authorization` header), `-b`, `-A`, `-e`, `-G`, `-I`, `--url`, and
-/// the `--flag=value` forms. Flags that take a value but don't matter here
-/// (`-o`, `-m`, `--proxy`, ...) are skipped together with their value so it
+/// the `--flag=value` forms, and clustered short flags (`-sSL`). Flags that take a value but
+/// don't matter here (`-o`, `-m`, `--proxy`, ...) are skipped together with their value so it
 /// isn't mistaken for the URL; other flags (`--compressed`, `-k`, ...) are
-/// ignored.
+/// ignored. `@file` in a body stays literal text: a pasted command never reads files.
 pub fn parse_curl(input: &str) -> Result<ParsedRequest, String> {
     let trimmed = input.trim();
     // A pasted shell prompt ("$ curl ...") is not part of the command.
     let trimmed = trimmed.strip_prefix("$ ").or_else(|| trimmed.strip_prefix("> ")).unwrap_or(trimmed);
     let tokens = shell_words::split(trimmed).map_err(|e| format!("Could not parse that as a shell command: {e}"))?;
+    parse_tokens(tokens, None).map(|(request, _)| request)
+}
+
+/// Parses curl's arguments as `plunger curl` receives them (no leading `curl`). `-d @file`,
+/// `--data-binary @file`, `--json @file` and `@-` (stdin) are read through `read_file`.
+pub fn parse_curl_args(
+    args: &[String],
+    read_file: &mut FileReader,
+) -> Result<(ParsedRequest, CurlOptions), String> {
+    parse_tokens(args.to_vec(), Some(read_file))
+}
+
+fn parse_tokens(
+    tokens: Vec<String>,
+    mut read_file: Option<&mut FileReader>,
+) -> Result<(ParsedRequest, CurlOptions), String> {
     if tokens.is_empty() {
         return Err("Nothing to parse.".to_string());
     }
 
-    let mut iter = tokens.into_iter().peekable();
+    let mut iter = expand_clusters(tokens).into_iter().peekable();
     if let Some(first) = iter.peek() {
         if first.eq_ignore_ascii_case("curl") || first.eq_ignore_ascii_case("curl.exe") {
             iter.next();
-        } else if !first.contains("://") {
+        } else if read_file.is_none() && !first.contains("://") {
             return Err("That doesn't look like a curl command: it should start with `curl` (or be a URL).".to_string());
         }
     }
 
+    let mut opts = CurlOptions::default();
     let mut method: Option<String> = None;
     let mut url: Option<String> = None;
     let mut headers: Vec<(String, String)> = Vec::new();
@@ -44,6 +151,16 @@ pub fn parse_curl(input: &str) -> Result<ParsedRequest, String> {
             None => (tok.clone(), None),
         };
         let mut value = || inline.clone().or_else(|| iter.next());
+        // A body value; `@path` is read from a file (curl strips line breaks for -d and --data-ascii).
+        let mut body_value = |raw: Option<String>, strip_newlines: bool| -> Result<Option<String>, String> {
+            match (raw, read_file.as_mut()) {
+                (Some(spec), Some(read)) if spec.starts_with('@') => {
+                    let text = read(&spec[1..])?;
+                    Ok(Some(if strip_newlines { text.replace(['\r', '\n'], "") } else { text }))
+                }
+                (raw, _) => Ok(raw),
+            }
+        };
         match flag.as_str() {
             "-X" | "--request" => method = value(),
             "-H" | "--header" => {
@@ -51,9 +168,11 @@ pub fn parse_curl(input: &str) -> Result<ParsedRequest, String> {
                     headers.push((k.trim().to_string(), v.trim().to_string()));
                 }
             }
-            "-d" | "--data" | "--data-raw" | "--data-binary" | "--data-ascii" => data.extend(value()),
+            "-d" | "--data" | "--data-ascii" => data.extend(body_value(value(), true)?),
+            "--data-binary" => data.extend(body_value(value(), false)?),
+            "--data-raw" => data.extend(value()),
             "--data-urlencode" => data.extend(value().map(|v| encode_data(&v))),
-            "--json" => json = value(),
+            "--json" => json = body_value(value(), false)?,
             "-F" | "--form" | "--form-string" => {
                 if let Some(field) = value().and_then(|f| parse_form_field(&f)) {
                     form_fields.push(field);
@@ -75,10 +194,27 @@ pub fn parse_curl(input: &str) -> Result<ParsedRequest, String> {
             "-e" | "--referer" => headers.extend(value().map(|v| ("Referer".to_string(), v))),
             "--url" => url = url.or_else(value),
             "-G" | "--get" => get_mode = true,
-            "-I" | "--head" => head_mode = true,
-            "-o" | "--output" | "-m" | "--max-time" | "--connect-timeout" | "-x" | "--proxy" | "--cacert"
-            | "--cert" | "--key" | "-w" | "--write-out" | "--retry" | "--resolve" | "--max-redirs" | "-c"
-            | "--cookie-jar" | "-T" | "--upload-file" | "--interface" | "-U" | "--proxy-user" | "-K" | "--config" => {
+            "-I" | "--head" => {
+                head_mode = true;
+                opts.head_only = true;
+            }
+            "-i" | "--include" => opts.include_headers = true,
+            "-s" | "--silent" => opts.silent = true,
+            "-S" | "--show-error" => opts.show_error = true,
+            "-f" | "--fail" => opts.fail = true,
+            "--fail-with-body" => opts.fail_with_body = true,
+            "-L" | "--location" => opts.follow = true,
+            "-k" | "--insecure" => opts.insecure = true,
+            "-m" | "--max-time" => opts.max_time = value().and_then(|v| v.parse().ok()),
+            "-o" | "--output" => opts.output = value(),
+            "-w" | "--write-out" => opts.write_out = value(),
+            // Changes how curl would connect or authenticate; Plunger cannot honour these.
+            "-x" | "--proxy" | "-U" | "--proxy-user" | "--cacert" | "--cert" | "--key" | "-T" | "--upload-file"
+            | "-K" | "--config" | "--resolve" | "--interface" | "-c" | "--cookie-jar" | "--retry" => {
+                opts.unsupported.push(flag.clone());
+                value();
+            }
+            "--connect-timeout" | "--max-redirs" => {
                 value();
             }
             _ if tok.starts_with('-') => {
@@ -120,13 +256,8 @@ pub fn parse_curl(input: &str) -> Result<ParsedRequest, String> {
         }
     });
 
-    Ok(ParsedRequest {
-        method: method.to_uppercase(),
-        url,
-        headers,
-        body,
-        form_fields,
-    })
+    let request = ParsedRequest { method: method.to_uppercase(), url, headers, body, form_fields };
+    Ok((request, opts))
 }
 
 /// `--data-urlencode`: `name=content` encodes the content, a bare `content`
@@ -310,6 +441,81 @@ mod tests {
         assert_eq!(parse_curl("http://h/z -X PUT").unwrap().method, "PUT");
         assert!(parse_curl("curl -H 'A: b'").is_err());
         assert!(parse_curl("curl 'unterminated").is_err());
+    }
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn no_files(spec: &str) -> Result<String, String> {
+        Err(format!("unexpected file read: {spec}"))
+    }
+
+    #[test]
+    fn clustered_short_flags_are_split() {
+        let (r, o) = parse_curl_args(&args(&["-sSL", "-XPOST", "-H", "A: b", "-ofile.txt", "http://h/x"]), &mut no_files).unwrap();
+        assert_eq!((r.method.as_str(), r.url.as_str()), ("POST", "http://h/x"));
+        assert!(o.silent && o.show_error && o.follow);
+        assert_eq!(o.output.as_deref(), Some("file.txt"));
+        assert_eq!(r.headers, vec![("A".to_string(), "b".to_string())]);
+        // a cluster that ends in a value flag takes the next argument as its value
+        let (r, o) = parse_curl_args(&args(&["-fsSLo", "out.bin", "http://h/y"]), &mut no_files).unwrap();
+        assert_eq!(r.url, "http://h/y");
+        assert!(o.fail && o.silent && o.follow);
+        assert_eq!(o.output.as_deref(), Some("out.bin"));
+    }
+
+    #[test]
+    fn a_value_that_looks_like_a_flag_is_not_split() {
+        let (r, _) = parse_curl_args(&args(&["-H", "-Weird: yes", "-d", "-abc", "http://h"]), &mut no_files).unwrap();
+        assert_eq!(r.headers, vec![("-Weird".to_string(), "yes".to_string())]);
+        assert_eq!(r.body.as_deref(), Some("-abc"));
+    }
+
+    #[test]
+    fn transfer_options_are_recorded() {
+        let (_, o) = parse_curl_args(
+            &args(&["-i", "-k", "-m", "2.5", "-w", "%{http_code}", "--fail-with-body", "--compressed", "http://h"]),
+            &mut no_files,
+        )
+        .unwrap();
+        assert!(o.include_headers && o.insecure && o.fail_with_body);
+        assert_eq!(o.max_time, Some(2.5));
+        assert_eq!(o.write_out.as_deref(), Some("%{http_code}"));
+        assert!(o.unsupported.is_empty());
+        let (r, o) = parse_curl_args(&args(&["-I", "http://h"]), &mut no_files).unwrap();
+        assert!(o.head_only);
+        assert_eq!(r.method, "HEAD");
+    }
+
+    #[test]
+    fn at_file_bodies_are_read_only_when_a_reader_is_given() {
+        let mut read = |spec: &str| -> Result<String, String> {
+            assert_eq!(spec, "body.json");
+            Ok("{\"a\":1}
+".to_string())
+        };
+        let (r, _) = parse_curl_args(&args(&["--data-binary", "@body.json", "http://h"]), &mut read).unwrap();
+        assert_eq!(r.body.as_deref(), Some("{\"a\":1}
+"));
+        let (r, _) = parse_curl_args(&args(&["-d", "@body.json", "http://h"]), &mut read).unwrap();
+        assert_eq!(r.body.as_deref(), Some("{\"a\":1}"), "-d strips line breaks like curl");
+        let (r, _) = parse_curl_args(&args(&["--json", "@body.json", "http://h"]), &mut read).unwrap();
+        assert_eq!(r.body.as_deref(), Some("{\"a\":1}
+"));
+        let (r, _) = parse_curl_args(&args(&["--data-raw", "@body.json", "http://h"]), &mut no_files).unwrap();
+        assert_eq!(r.body.as_deref(), Some("@body.json"), "--data-raw is never a file");
+        // a pasted command never reads files
+        assert_eq!(parse_curl("curl -d @body.json http://h").unwrap().body.as_deref(), Some("@body.json"));
+        assert!(parse_curl_args(&args(&["-d", "@missing", "http://h"]), &mut |_| Err("no such file".into())).is_err());
+    }
+
+    #[test]
+    fn options_plunger_cannot_honour_are_reported_not_dropped() {
+        let (_, o) = parse_curl_args(&args(&["-x", "http://proxy:8080", "--cert", "c.pem", "--retry", "3", "http://h"]), &mut no_files).unwrap();
+        assert_eq!(o.unsupported, vec!["-x", "--cert", "--retry"]);
+        // pasted commands still just skip them
+        assert_eq!(parse_curl("curl --proxy http://p:1 http://h/z").unwrap().url, "http://h/z");
     }
 
     #[test]

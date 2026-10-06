@@ -203,6 +203,9 @@ pub enum Outcome {
 }
 
 pub struct ResponseData {
+    /// The body exactly as the server sent it, kept only when `body` is a reformatted copy of it
+    /// (JSON is pretty-printed for display); otherwise `body` is already the original text.
+    pub raw_text: Option<String>,
     pub status: u16,
     pub status_text: String,
     /// Time until the response headers arrive.

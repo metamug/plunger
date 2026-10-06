@@ -4,6 +4,11 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+
+- `plunger curl [curl options] <url>`: curl's own options on Plunger's engine, so a command written for curl runs unchanged. The response body is printed exactly as the server sent it; `-i -I -s -S -f --fail-with-body -L -k -m -o -w` work, `-d @file` and `-d @-` read the body, clustered flags such as `-sSL` and `-XPOST` are understood, and curl's exit codes are used (22, 6, 7, 28, 60). Undefined `{{variables}}` are still refused, secrets masked and the request recorded in the history. Options Plunger cannot honour (`--proxy`, `--cert`, ...) are refused, not ignored (#100).
+- `plunger send https://...` accepts a URL as its first argument (it was read as a saved-request name).
+
 ### Changed
 
 - The MCP server's instructions now describe every tool, how variables, secrets, redirects and large bodies behave, and what is not supported yet, so an agent knows the whole surface when it connects. A test fails if a tool is added without being mentioned.
@@ -12,6 +17,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- A JSON response keeps the key order the server sent. It was shown (in the window, the CLI and MCP) with the keys sorted alphabetically.
+- Clustered curl flags (`-XPOST`, `-sSL`) in an imported curl command are understood instead of being mistaken for the URL.
 - Saving a request no longer erases `{{variable}}` placeholders in credential headers, cookies and query values (`Authorization: Bearer {{token}}`): only literal credentials are blanked. Before this, a saved request that used a token variable could never be re-run, from the window, the CLI or MCP (#92).
 - A request sent from the CLI or MCP with a JSON `Content-Type` and a JSON body now opens in the window's JSON body editor instead of Raw, the same as a curl import (#82).
 - JSON bodies from the CLI `--json` flag and the MCP `json` field are sent compact instead of pretty-printed.

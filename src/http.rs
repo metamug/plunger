@@ -130,10 +130,15 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
 
     let trimmed = text.trim_start();
     let looks_json = content_type.contains("json") || trimmed.starts_with('{') || trimmed.starts_with('[');
-    let (body, json_value) = if looks_json {
-        pretty_json_if_possible(&text)
+    let (body, json_value, raw_text) = if looks_json {
+        let (pretty, value) = pretty_json_if_possible(&text);
+        if value.is_some() {
+            (pretty, value, Some(text))
+        } else {
+            (pretty, None, None)
+        }
     } else {
-        (text, None)
+        (text, None, None)
     };
 
     let (json_display, json_nodes) = match json_value.as_ref().and_then(crate::json_view::limit_for_display) {
@@ -151,6 +156,7 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
         headers,
         redirect_chain: redirect_chain.lock().map(|chain| chain.clone()).unwrap_or_default(),
         body,
+        raw_text,
         json_value,
         truncated,
         total_size,
