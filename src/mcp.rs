@@ -15,13 +15,28 @@ use rmcp::{tool, tool_handler, tool_router, Json, ServerHandler, ServiceExt};
 use serde::Deserialize;
 
 const INSTRUCTIONS: &str = "\
-Plunger sends HTTP requests on the user's machine and shows them in the Plunger window.
-Prefer these tools over running curl yourself:
-- {{variables}} are resolved from the user's Plunger setup, including secrets you never see; \
-a request with an undefined {{variable}} is refused instead of sent with the placeholder.
-- Results are structured (status, time, size, headers, parsed JSON), and secret values are masked.
-- Every request you send lands in the history the user can review in Plunger.
-Start with list_saved_requests and list_variables to see what the user has set up.";
+Plunger sends HTTP requests on the user's machine and shows every one of them in the Plunger window, \
+so the user can see what you sent. Use it instead of running curl.
+
+TOOLS
+- list_saved_requests: the requests the user saved, by name. Check it before building a request from scratch.
+- list_variables: the {{variables}} the user defined (secrets by name only), the built-ins ($uuid, $timestamp, $randomInt, $env:NAME) and whether a Bearer token is saved.
+- send_request: send a request, or a saved one by name (`saved_request`) with overrides. Use `json`, `body` or `form` for the body; `headers` is an object like {\"Accept\": \"application/json\"}.
+- import_curl: parse a curl command into a request, and with `save_as` keep it in the user's Saved list.
+- export_curl: a saved request or a history entry as a curl command.
+- get_history: recent requests, who sent them (gui, cli, mcp), status and time; `search` filters.
+
+HOW IT BEHAVES
+- {{variables}} work in the URL, headers and body. Secret values are filled in for you and never shown; if a server echoes one back it appears as [redacted:name]. A request with an undefined {{variable}} is refused, not sent.
+- Pass values for one request with `variables`. They are not kept for the next call.
+- A saved request keeps its {{placeholders}}, including in credential headers such as Authorization: Bearer {{token}}. Literal credentials are blanked when a request is saved.
+- Redirects are followed unless `follow_redirects` is false. `timeout_secs` defaults to the user's setting.
+- A response comes back as structured fields: status, timing, size, headers and the parsed JSON (`json`) or text (`body`). A body over `max_body_chars` (default 50000) is cut and marked with `body_cut_from_chars`. A binary body is not returned (`binary: true`, with its size). Set-Cookie and similar response headers are shown as [redacted].
+- Failures are reported, not hidden: a request that could not be sent returns an error and is not recorded; one that got no response (DNS, refused, timeout) is recorded in the history.
+
+NOT SUPPORTED YET
+- Cookies are not carried from one request to the next, and multipart/form-data file uploads are not possible (`form` is url-encoded only).
+- Values from one response cannot yet be saved for later requests; copy what you need into the next call's `variables` or headers.";
 
 #[derive(Debug, Clone)]
 pub struct PlungerMcp {
@@ -163,6 +178,13 @@ mod tests {
         assert!(send.output_schema.is_some());
         let read_only = tools.iter().find(|t| t.name == "get_history").unwrap().annotations.clone().unwrap();
         assert_eq!(read_only.read_only_hint, Some(true));
+    }
+
+    #[test]
+    fn the_instructions_mention_every_tool() {
+        for tool in PlungerMcp::new().tool_router.list_all() {
+            assert!(INSTRUCTIONS.contains(tool.name.as_ref()), "INSTRUCTIONS does not mention {}", tool.name);
+        }
     }
 
     /// Keys the tool's advertised output schema requires but the serialized output leaves out.

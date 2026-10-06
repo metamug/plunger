@@ -6,8 +6,9 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ### Changed
 
+- The MCP server's instructions now describe every tool, how variables, secrets, redirects and large bodies behave, and what is not supported yet, so an agent knows the whole surface when it connects. A test fails if a tool is added without being mentioned.
 - The Bearer token field has its own **Auth** tab instead of sitting above the headers, and the sentence that explained it is gone (#79, #83).
-- The request tabs show what they hold: `Headers (2)` as `Params (n)` and `Variables (n)` already did, and a bullet on `Body •` and `Auth •` when they are set.
+- The request tabs show what they hold: `Headers (2)`, like `Params (n)` and `Variables (n)` already did, and a bullet on `Body •` and `Auth •` when they are set.
 
 ### Fixed
 
