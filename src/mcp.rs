@@ -164,4 +164,47 @@ mod tests {
         let read_only = tools.iter().find(|t| t.name == "get_history").unwrap().annotations.clone().unwrap();
         assert_eq!(read_only.read_only_hint, Some(true));
     }
+
+    /// Keys the tool's advertised output schema requires but the serialized output leaves out.
+    /// A strict MCP client rejects such a result ("Structured content does not match the tool's
+    /// output schema"), so this must stay empty even when every optional list is empty.
+    fn missing_required_keys<T: JsonSchema + serde::Serialize>(output: &T) -> Vec<String> {
+        let schema = serde_json::to_value(rmcp::schemars::schema_for!(T)).unwrap();
+        let value = serde_json::to_value(output).unwrap();
+        let required = schema["required"].as_array().cloned().unwrap_or_default();
+        required.iter().filter_map(|k| k.as_str()).filter(|k| value.get(*k).is_none()).map(String::from).collect()
+    }
+
+    #[test]
+    fn structured_output_has_every_key_its_schema_requires() {
+        use crate::engine::{AgentResponse, SentRequest};
+        let response = AgentResponse {
+            ok: true,
+            status: 200,
+            status_text: "OK".into(),
+            elapsed_ms: 1,
+            size_bytes: 0,
+            json: None,
+            body: None,
+            body_cut_from_chars: None,
+            truncated_at_10mb: false,
+            binary: false,
+            headers: vec![],
+            request: SentRequest { method: "GET".into(), url: "http://h/".into(), history_id: None },
+            redacted: vec![],
+        };
+        assert_eq!(missing_required_keys(&response), Vec::<String>::new(), "send_request");
+
+        let imported = crate::agent::import_curl("curl http://h/x", None, Source::Mcp).unwrap();
+        assert!(imported.form_fields.is_empty());
+        assert_eq!(missing_required_keys(&imported), Vec::<String>::new(), "import_curl");
+
+        let variables = crate::agent::VariablesResult {
+            variables: vec![],
+            built_in: vec![],
+            saved_bearer_available: false,
+            problems: vec![],
+        };
+        assert_eq!(missing_required_keys(&variables), Vec::<String>::new(), "list_variables");
+    }
 }

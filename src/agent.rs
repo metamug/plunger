@@ -219,7 +219,7 @@ pub struct ImportedRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
     /// multipart -F fields: "name=value" or "name=@file".
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub form_fields: Vec<String>,
     /// {{variables}} the request uses.
     pub variables_used: Vec<String>,
@@ -282,7 +282,7 @@ pub struct VariablesResult {
     /// True when a Bearer token is saved in Plunger (send with use_saved_bearer). Its value is never shown.
     pub saved_bearer_available: bool,
     /// Problems reading remembered secrets, if any.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub problems: Vec<String>,
 }
 

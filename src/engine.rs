@@ -375,7 +375,7 @@ pub struct AgentResponse {
     pub request: SentRequest,
     /// Secrets whose values appeared in the response and were replaced with
     /// `[redacted:<name>]`. Names only, never values.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub redacted: Vec<String>,
 }
 

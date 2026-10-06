@@ -38,7 +38,7 @@ body:
     attributes:
       label: Plunger version
       description: Shown in the window's title bar, or run `plunger --version`.
-      placeholder: "0.4.1"
+      placeholder: "0.4.2"
     validations:
       required: true
   - type: input
