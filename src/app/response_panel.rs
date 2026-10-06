@@ -125,8 +125,16 @@ impl Tab {
         let on_body = self.response_tab == ResponseTab::Body;
         let json_shown = resp.json_display.as_ref().or(resp.json_value.as_ref());
         let is_text = resp.binary.is_none() && !resp.body.is_empty();
-        let markup = (on_body && json_shown.is_none() && is_text && is_markup_response(&resp.headers))
-            .then(|| pretty_markup(&resp.body));
+        // The XML/HTML view is built once per response (and only from the first part of a big body):
+        // pretty-printing and colouring on every frame used 1.4 GB and a full core for a 4 MB page.
+        let want_markup = on_body && json_shown.is_none() && is_text && is_markup_response(&resp.headers);
+        if want_markup {
+            let key = (resp.body.as_ptr() as usize, resp.body.len(), resp.elapsed_ms, palette().json[1].to_array());
+            if self.markup_cache.as_ref().map(|view| view.key) != Some(key) {
+                self.markup_cache = Some(MarkupView::build(&resp.body, key));
+            }
+        }
+        let markup = if want_markup { self.markup_cache.as_ref() } else { None };
         let mut cut = resp.body.len().min(TEXT_PREVIEW_BYTES);
         while !resp.body.is_char_boundary(cut) {
             cut -= 1;
@@ -143,7 +151,7 @@ impl Tab {
             let query = &self.response_search_query;
             self.response_search_cache.refresh(key, || match (json_shown, &markup) {
                 (Some(value), _) => (Vec::new(), response_search::json_matches(value, query)),
-                (None, Some(formatted)) => (response_search::text_matches(formatted, query), Vec::new()),
+                (None, Some(view)) => (response_search::text_matches(&view.text, query), Vec::new()),
                 (None, None) => (response_search::text_matches(preview, query), Vec::new()),
             });
         }
@@ -291,11 +299,22 @@ impl Tab {
                             self.response_search_cache.expand_key = Some(expand_key);
                             ui.ctx().request_repaint();
                         }
-                    } else if let Some(formatted) = &markup {
+                    } else if let Some(view) = markup {
+                        let formatted = &view.text;
+                        if let Some(total) = view.cut_from {
+                            ui.colored_label(
+                                palette().amber,
+                                format!(
+                                    "Showing the first {} of {}. Copy or Save keeps everything.",
+                                    format_bytes(TEXT_PREVIEW_BYTES),
+                                    format_bytes(total)
+                                ),
+                            );
+                        }
                         let mut text: &str = formatted;
-                        let segments = markup_segments(formatted);
+                        let segments = &view.segments;
                         let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                            let mut job = layout_job(text, &segments, match_ranges, current_text);
+                            let mut job = layout_job(text, segments, match_ranges, current_text);
                             job.wrap.max_width = wrap_width;
                             ui.fonts(|fonts| fonts.layout_job(job))
                         };
@@ -385,6 +404,28 @@ fn is_markup_response(headers: &[(String, String)]) -> bool {
         let value = value.to_ascii_lowercase();
         value.contains("application/xml") || value.contains("text/xml") || value.contains("+xml") || value.contains("text/html")
     })
+}
+
+/// The pretty-printed, coloured form of an XML or HTML response, built once per response.
+pub(super) struct MarkupView {
+    /// Which response and theme this was built for: body address and length, elapsed time, a theme colour.
+    key: (usize, usize, u128, [u8; 4]),
+    text: String,
+    segments: Vec<(usize, usize, egui::Color32)>,
+    /// The body was longer than the preview limit; this is its full length.
+    cut_from: Option<usize>,
+}
+
+impl MarkupView {
+    fn build(body: &str, key: (usize, usize, u128, [u8; 4])) -> Self {
+        let mut cut = body.len().min(TEXT_PREVIEW_BYTES);
+        while !body.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        let text = pretty_markup(&body[..cut]);
+        let segments = markup_segments(&text);
+        Self { key, text, segments, cut_from: (cut < body.len()).then_some(body.len()) }
+    }
 }
 
 fn pretty_markup(input: &str) -> String {
@@ -491,6 +532,20 @@ mod tests {
     #[test]
     fn pretty_markup_keeps_html_void_elements_at_the_current_depth() {
         assert_eq!(pretty_markup("<div><img src=\"x\"><br><span>text</span></div>"), "<div>\n  <img src=\"x\">\n  <br>\n  <span>\n    text\n  </span>\n</div>");
+    }
+
+    #[test]
+    fn a_big_markup_body_is_formatted_from_its_first_part_only() {
+        let body = "<a>x</a>".repeat(100_000);
+        let view = super::MarkupView::build(&body, (0, 0, 0, [0; 4]));
+        assert_eq!(view.cut_from, Some(body.len()));
+        assert!(view.text.len() < super::TEXT_PREVIEW_BYTES * 4, "formatted {} bytes", view.text.len());
+        assert!(!view.segments.is_empty());
+        // a cut inside a multi-byte character must not panic
+        let accents = "<p>é</p>".repeat(200_000);
+        assert!(super::MarkupView::build(&accents, (0, 0, 0, [0; 4])).cut_from.is_some());
+        // a small body is shown whole
+        assert_eq!(super::MarkupView::build("<a>1</a>", (0, 0, 0, [0; 4])).cut_from, None);
     }
 
     #[test]

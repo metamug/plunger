@@ -26,6 +26,7 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- A large XML or HTML response no longer uses over a gigabyte of memory and a full CPU core: the formatted view is built once per response from the first 256 KB (with the same "showing the first 256 KB" notice plain text has), instead of formatting and colouring the whole body on every frame. A 4 MB XML response now takes about 200 MB.
 - An environment variable whose name looks like a credential (`API_TOKEN`, `STRIPE_KEY`, ...) used as `{{$env:NAME}}` is masked in results like a secret variable, and a saved request lists the environment variables it needs (`$env:NAME`).
 - A JSON response keeps the key order the server sent. It was shown (in the window, the CLI and MCP) with the keys sorted alphabetically.
 - Clustered curl flags (`-XPOST`, `-sSL`) in an imported curl command are understood instead of being mistaken for the URL.

@@ -74,6 +74,8 @@ pub(super) struct Tab {
     /// Frames left to keep trying to scroll the current match into view (a tree node may need a frame to expand).
     pub response_search_scroll: u8,
     pub response_search_cache: super::response_search::Cache,
+    /// The formatted XML/HTML view of the response on screen.
+    pub markup_cache: Option<super::response_panel::MarkupView>,
 }
 
 impl Tab {
@@ -100,6 +102,7 @@ impl Tab {
             response_search_focus: false,
             response_search_scroll: 0,
             response_search_cache: Default::default(),
+            markup_cache: None,
         }
     }
 
