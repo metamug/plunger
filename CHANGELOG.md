@@ -6,6 +6,11 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ### Added
 
+- Agents can set variables. `plunger vars set NAME VALUE` (`--secret`, or `-` to read the value from standard input), `plunger vars unset`, `plunger vars clear`, and the MCP tools `set_variable` / `delete_variable` keep a value for later requests as `{{name}}`. It persists, is shared by the window, the CLI and MCP at once, and shows in the window under "Set by agents" (usable from the window too, with a delete button). A secret or a credential-looking name is kept in the system credential store only and masked in results. An agent cannot change or delete variables the user defined, and the user's win on a clash (#36).
+- Agents can manage saved requests: `plunger save NAME ...` and the MCP `save_request` save a request without sending it, keep `{{placeholders}}`, and `--overwrite` / `overwrite: true` fixes an existing one; `plunger saved show|delete` and the MCP `get_saved_request` / `delete_saved_request` read one in full or remove it.
+- Every command has its own help (`plunger vars --help`, ...), and a usage error points at the help of the command that was used.
+- `plunger send --json @file` and `-d @file` (and `@-` for standard input) read the body from a file, which gets a JSON body past PowerShell's quote handling (#138).
+
 - Export a request as a command: **File > Copy as** and **File > Export request...** write curl (bash), curl (Windows cmd), PowerShell `Invoke-RestMethod` or PowerShell `Invoke-WebRequest`, shown with syntax highlighting; **Ctrl+Shift+C** copies in the last format used. `{{variables}}` stay as placeholders, so an exported command never carries a secret (#81).
 - Import reads those same syntaxes: curl for bash, curl for the Windows command prompt (including Chrome's caret-escaped "Copy as cURL (cmd)"), and PowerShell (including Chrome's "Copy as PowerShell" with its `$session` cookies and user agent). The dialog detects the syntax and highlights what you paste.
 - Syntax highlighting where code is shown: in the import and export dialogs, in the raw and form body editors (JSON, XML/HTML or form detected from the text), in the raw headers editor and in plain-text responses; `{{variables}}` in the URL, params, headers and form-data fields are blue when defined and red when undefined.
@@ -20,6 +25,7 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- An environment variable whose name looks like a credential (`API_TOKEN`, `STRIPE_KEY`, ...) used as `{{$env:NAME}}` is masked in results like a secret variable, and a saved request lists the environment variables it needs (`$env:NAME`).
 - A JSON response keeps the key order the server sent. It was shown (in the window, the CLI and MCP) with the keys sorted alphabetically.
 - Clustered curl flags (`-XPOST`, `-sSL`) in an imported curl command are understood instead of being mistaken for the URL.
 - Saving a request no longer erases `{{variable}}` placeholders in credential headers, cookies and query values (`Authorization: Bearer {{token}}`): only literal credentials are blanked. Before this, a saved request that used a token variable could never be re-run, from the window, the CLI or MCP (#92).

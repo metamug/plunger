@@ -20,6 +20,13 @@ pub fn is_sensitive_header(name: &str) -> bool {
     SENSITIVE_HEADERS.contains(&n.as_str()) || SENSITIVE_FRAGMENTS.iter().any(|f| n.contains(f))
 }
 
+/// An environment variable whose value should be masked in results: its name looks like a
+/// credential (`API_TOKEN`, `STRIPE_KEY`, `DB_PASSWORD`).
+pub fn is_secret_env_name(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    ["token", "secret", "password", "passwd", "pwd", "key", "credential", "auth", "bearer"].iter().any(|f| n.contains(f))
+}
+
 pub fn is_sensitive_param(name: &str) -> bool {
     let n = name.trim().to_ascii_lowercase();
     SENSITIVE_PARAMS.contains(&n.as_str()) || SENSITIVE_FRAGMENTS.iter().any(|f| n.contains(f))
@@ -112,6 +119,16 @@ fn redact_userinfo(base: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secret_looking_environment_names_are_recognised() {
+        for n in ["API_TOKEN", "github_token", "STRIPE_KEY", "DB_PASSWORD", "AWS_SECRET_ACCESS_KEY", "OAUTH_CREDENTIALS"] {
+            assert!(is_secret_env_name(n), "{n}");
+        }
+        for n in ["HOME", "PATH", "BASE_URL", "REGION", "USERNAME"] {
+            assert!(!is_secret_env_name(n), "{n}");
+        }
+    }
 
     #[test]
     fn classifies_sensitive_headers() {

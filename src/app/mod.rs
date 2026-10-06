@@ -16,7 +16,7 @@ mod tab;
 pub use tab::SavedTab;
 
 use crate::commands::Dialect;
-use crate::history::{History, HistoryEntry};
+use crate::history::{AgentVariable, History, HistoryEntry};
 use crate::icons::{self, Icon};
 use crate::model::{Outcome, ResponseTab, ParsedRequest, PersistedState};
 use crate::secrets::{OsStore, SecretStore, SecretSync};
@@ -118,6 +118,8 @@ pub struct ApiTesterApp {
     saved_open: bool,
     history_open: bool,
 
+    /// Variables an agent set (read from the shared database).
+    agent_variables: Vec<AgentVariable>,
     import: ImportDialog,
     export: Option<export_window::ExportDialog>,
     /// The syntax Ctrl+Shift+C copies in: the one last chosen.
@@ -156,6 +158,7 @@ impl ApiTesterApp {
             history_open: true,
             db_version: None,
             last_db_poll: Instant::now(),
+            agent_variables: Vec::new(),
             import: ImportDialog::default(),
             export: None,
             export_dialect: Dialect::CurlBash,
@@ -308,7 +311,8 @@ impl ApiTesterApp {
 
     fn trigger_send(&mut self, ctx: &egui::Context) {
         let bearer = self.bearer_token.clone();
-        self.tab_mut().send(&bearer);
+        let agent_variables = self.agent_variable_values();
+        self.tab_mut().send(&bearer, &agent_variables);
         ctx.request_repaint();
     }
 
@@ -344,7 +348,38 @@ impl ApiTesterApp {
             if let Ok(entries) = h.search_saved(&self.sidebar_filter) {
                 self.saved_entries = entries;
             }
+            if let Ok(vars) = h.list_agent_variables() {
+                crate::highlight::set_agent_variable_names(vars.iter().map(|v| v.name.clone()).collect());
+                self.agent_variables = vars;
+            }
         }
+    }
+
+    /// The agent variables as values a request can use; a secret's value comes from the credential store.
+    fn agent_variable_values(&self) -> Vec<crate::model::Variable> {
+        self.agent_variables
+            .iter()
+            .map(|v| crate::model::Variable {
+                name: v.name.clone(),
+                value: if v.secret {
+                    self.secrets.get(&crate::engine::agent_secret_key(&v.name)).ok().flatten().unwrap_or_default()
+                } else {
+                    v.value.clone()
+                },
+                secret: v.secret,
+                remember: false,
+            })
+            .collect()
+    }
+
+    /// Removes a variable an agent set (the Variables tab's trash icon).
+    fn delete_agent_variable(&mut self, name: &str) {
+        if let Some(h) = &self.history {
+            let _ = h.delete_agent_variable(name);
+            let _ = self.secrets.delete(&crate::engine::agent_secret_key(name));
+        }
+        self.refresh_lists();
+        self.notify(format!("Removed {name}"));
     }
 
     /// Ctrl+S: writes the tab back to its saved request, or saves it as a new

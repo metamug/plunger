@@ -129,6 +129,18 @@ fn body_mode_from_str(s: &str) -> BodyMode {
     }
 }
 
+/// A variable set from the command line or over MCP.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AgentVariable {
+    pub name: String,
+    /// Empty for a secret: its value is in the credential store.
+    pub value: String,
+    pub secret: bool,
+    /// Who set it: `cli` or `mcp`.
+    pub source: String,
+    pub updated_at: String,
+}
+
 pub struct History {
     conn: Connection,
 }
@@ -231,6 +243,18 @@ impl History {
                 raw_body        TEXT NOT NULL,
                 status          INTEGER,
                 elapsed_ms      INTEGER
+            )",
+            [],
+        )?;
+        // Variables set by agents (CLI / MCP). Secret values never live here: they are kept in the
+        // credential store and this row only records that the variable exists.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS agent_variables (
+                name       TEXT PRIMARY KEY,
+                value      TEXT NOT NULL DEFAULT '',
+                secret     INTEGER NOT NULL DEFAULT 0,
+                source     TEXT NOT NULL DEFAULT 'mcp',
+                updated_at TEXT NOT NULL DEFAULT ''
             )",
             [],
         )?;
@@ -392,6 +416,43 @@ impl History {
         Ok(())
     }
 
+    /// Creates or updates a variable set by an agent. A secret's value must not be passed here
+    /// (it goes to the credential store); only the fact that it exists is recorded.
+    pub fn set_agent_variable(&self, name: &str, value: &str, secret: bool, source: Source) -> rusqlite::Result<()> {
+        let now = time::OffsetDateTime::now_utc()
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_default();
+        self.conn.execute(
+            "INSERT INTO agent_variables (name, value, secret, source, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(name) DO UPDATE SET value = ?2, secret = ?3, source = ?4, updated_at = ?5",
+            params![name, value, secret, source.as_str(), now],
+        )?;
+        Ok(())
+    }
+
+    /// Variables set by agents, by name.
+    pub fn list_agent_variables(&self) -> rusqlite::Result<Vec<AgentVariable>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT name, value, secret, source, updated_at FROM agent_variables ORDER BY name COLLATE NOCASE, name")?;
+        let rows = stmt.query_map([], |r| {
+            Ok(AgentVariable { name: r.get(0)?, value: r.get(1)?, secret: r.get(2)?, source: r.get(3)?, updated_at: r.get(4)? })
+        })?;
+        rows.collect()
+    }
+
+    /// Removes one agent variable; false when there was none by that name.
+    pub fn delete_agent_variable(&self, name: &str) -> rusqlite::Result<bool> {
+        Ok(self.conn.execute("DELETE FROM agent_variables WHERE name = ?1", params![name])? > 0)
+    }
+
+    /// Removes every agent variable and returns their names (so the caller can forget secrets).
+    pub fn clear_agent_variables(&self) -> rusqlite::Result<Vec<String>> {
+        let names: Vec<String> = self.list_agent_variables()?.into_iter().map(|v| v.name).collect();
+        self.conn.execute("DELETE FROM agent_variables", [])?;
+        Ok(names)
+    }
+
     /// Saved requests, alphabetically.
     pub fn list_saved(&self) -> rusqlite::Result<Vec<HistoryEntry>> {
         self.search_saved("")
@@ -515,6 +576,35 @@ mod tests {
         assert_eq!(row.url, "https://bob@a.com/x?token=&page=1");
         assert_eq!(row.headers_text, "Accept: */*\nAuthorization:\nCookie:");
         assert!(!format!("{} {}", row.url, row.headers_text).contains("SECRET"));
+    }
+
+    #[test]
+    fn agent_variables_are_stored_listed_updated_and_removed() {
+        let h = history();
+        assert!(h.list_agent_variables().unwrap().is_empty());
+        h.set_agent_variable("base", "http://h", false, Source::Mcp).unwrap();
+        h.set_agent_variable("token", "", true, Source::Cli).unwrap();
+        h.set_agent_variable("base", "http://other", false, Source::Cli).unwrap();
+        let list = h.list_agent_variables().unwrap();
+        assert_eq!(list.iter().map(|v| v.name.as_str()).collect::<Vec<_>>(), ["base", "token"]);
+        assert_eq!((list[0].value.as_str(), list[0].source.as_str()), ("http://other", "cli"));
+        assert!(list[1].secret && list[1].value.is_empty());
+        assert!(h.delete_agent_variable("base").unwrap());
+        assert!(!h.delete_agent_variable("base").unwrap());
+        assert_eq!(h.clear_agent_variables().unwrap(), vec!["token".to_string()]);
+        assert!(h.list_agent_variables().unwrap().is_empty());
+    }
+
+    #[test]
+    fn agent_variables_are_shared_between_connections() {
+        let path = std::env::temp_dir().join(format!("plunger-agentvars-{}.sqlite3", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let writer = History::open_at(&path);
+        let reader = History::open_at(&path);
+        writer.set_agent_variable("a", "1", false, Source::Mcp).unwrap();
+        assert_eq!(reader.list_agent_variables().unwrap().len(), 1);
+        drop((writer, reader));
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

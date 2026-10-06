@@ -23,10 +23,17 @@ USAGE
       --save <name>                     ...and add it to the Saved list
       --send [options]                  ...or send it
   plunger saved                         List saved requests
+  plunger saved show <name>             One saved request in full (headers, body, variables it needs)
+  plunger saved delete <name>           Remove a saved request
+  plunger save <name> [send options]    Save a request without sending it (--overwrite replaces)
   plunger history [--limit N] [--search TEXT]
                                         Recent requests, newest first (default 20);
                                         --search matches URL, method, name or status
   plunger vars                          List variables (secret values are never shown)
+  plunger vars set <name> <value>       Set a variable for later requests ({{name}}); --secret keeps it
+                                        in the credential store (use `-` as the value to read stdin)
+  plunger vars unset <name>             Remove a variable an agent set
+  plunger vars clear                    Remove every variable agents set
   plunger export <saved name>           A saved request as a curl command
   plunger export --id <history id>      A history entry as a curl command
   plunger mcp                           Run as an MCP server on stdin/stdout
@@ -46,6 +53,9 @@ SEND OPTIONS
   --max-body <CHARS>          Cut longer bodies in the output (default 50000)
   --fail                      Exit with 4 when the status is 400 or higher
 
+Run `plunger <command> --help` for the options of one command. Environment variables work too:
+{{$env:NAME}} is read when the request is sent (a name like API_TOKEN is masked in results).
+
 Output is JSON on stdout; errors are JSON too: {\"error\": \"...\", \"kind\": \"...\"}.
 Requests are recorded in the same history the window shows. Secret values never
 appear in the output.
@@ -62,9 +72,16 @@ pub const EXIT_HTTP_ERROR: i32 = 4;
 
 /// Runs a command and returns the process exit code.
 pub fn run(args: Vec<String>) -> i32 {
+    let command = args.first().cloned().unwrap_or_default();
     match dispatch(args) {
         Ok(code) => code,
         Err(Exit { code, kind, message }) => {
+            // A usage error points at the help of the command that was used, when it has some.
+            let message = if kind == "usage" && command_help(&command).is_some() {
+                message.replace("run `plunger --help`", &format!("run `plunger {command} --help`"))
+            } else {
+                message
+            };
             print_json(&serde_json::json!({ "error": message, "kind": kind }));
             code
         }
@@ -92,7 +109,74 @@ fn print_json(value: &impl Serialize) {
     }
 }
 
+/// The options of one command, shown by `plunger <command> --help`.
+fn command_help(command: &str) -> Option<&'static str> {
+    Some(match command {
+        "send" => "\
+plunger send <saved name> [options]      send a saved request
+plunger send <url> | --url <url> [options]
+
+  -X, --method M   -H \"Name: value\" (repeatable)   --json <JSON|@file|@->   -d <TEXT|@file|@->
+  --form k=v (repeatable)   --var name=value (repeatable)   --use-saved-bearer
+  --timeout SECONDS   --insecure   --no-follow   --max-body CHARS   --fail
+
+{{variables}} in the URL, headers and body are filled in; {{$env:NAME}} reads an environment variable.
+Output is JSON: status, timing, headers, and `json` (parsed) or `body` (text).
+",
+        "vars" | "variables" => "\
+plunger vars                         list variables (names, whether secret, who set them; secret values never shown)
+plunger vars set <name> <value>      set a variable for later requests, used as {{name}}
+plunger vars set <name>=<value>
+    --secret   keep the value in the system credential store and mask it in results (a name like
+               token, password or api_key is always secret)
+    --plain    force a plain value
+    a value of `-` reads standard input, so a secret does not appear in the command line
+plunger vars unset <name>            remove a variable an agent set
+plunger vars clear                   remove every variable agents set
+
+Variables you define in the Plunger window cannot be changed or removed from here.
+Environment variables need no setup: use {{$env:NAME}} in a request.
+",
+        "saved" => "\
+plunger saved                       list saved requests (name, method, URL, the variables each needs)
+plunger saved show <name>           one saved request in full, including its body
+plunger saved delete <name>         remove a saved request (history stays)
+plunger save <name> ...             save a request, see `plunger save --help`
+plunger send <name> [options]       send a saved request; any option overrides that part of it
+",
+        "save" => "\
+plunger save <name> [--url] <url> [send options] [--overwrite]
+
+Saves the request without sending it. {{placeholders}} (including in Authorization headers) are
+kept as written. An existing name is refused unless --overwrite is given, which replaces it.
+Options are those of `plunger send`: -X, -H, --json, -d, --form, --timeout, --insecure, --no-follow.
+",
+        "history" => "\
+plunger history [--limit N] [--search TEXT]   recent requests, newest first (default 20)
+",
+        "import" => "\
+plunger import \"<curl command>\" [--save <name>] [--send [send options]]
+
+Reads a curl command (bash, Windows cmd or PowerShell) into a request.
+",
+        "export" => "\
+plunger export <saved name>        a saved request as a curl command
+plunger export --id <history id>   a history entry as a curl command
+",
+        "mcp" => "\
+plunger mcp   run as an MCP server on stdin/stdout (see docs/agents.md)
+",
+        _ => return None,
+    })
+}
+
 fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
+    if args.len() >= 2 && matches!(args[args.len() - 1].as_str(), "-h" | "--help") && args[0] != "curl" {
+        if let Some(text) = command_help(&args[0]) {
+            print!("{text}");
+            return Ok(EXIT_OK);
+        }
+    }
     let mut args = Args::new(args);
     let command = args.next().unwrap_or_default();
     match command.as_str() {
@@ -150,8 +234,39 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
             Ok(EXIT_OK)
         }
         "saved" => {
-            args.finish()?;
-            print_json(&agent::list_saved_requests().map_err(error)?);
+            match args.next().as_deref() {
+                None => print_json(&agent::list_saved_requests().map_err(error)?),
+                Some("show") => print_json(&agent::show_saved_request(&args.value("saved show")?).map_err(error)?),
+                Some("delete") => {
+                    let name = args.value("saved delete")?;
+                    args.finish()?;
+                    let removed = agent::delete_saved_request(&name).map_err(error)?;
+                    print_json(&serde_json::json!({ "deleted": name, "was": removed }));
+                }
+                Some(other) => return Err(usage_error(format!("Unexpected argument `{other}`"))),
+            }
+            Ok(EXIT_OK)
+        }
+        "save" => {
+            let (mut name, mut overwrite, mut opts) = (None, false, SendOptions::default());
+            while let Some(arg) = args.next() {
+                if arg == "--overwrite" {
+                    overwrite = true;
+                } else if !opts.take(&arg, &mut args)? {
+                    if arg.starts_with('-') {
+                        return Err(usage_error(format!("Unexpected argument `{arg}`")));
+                    }
+                    if name.is_none() {
+                        name = Some(arg);
+                    } else if opts.params.url.is_none() && arg.contains("://") {
+                        opts.params.url = Some(arg);
+                    } else {
+                        return Err(usage_error(format!("Unexpected argument `{arg}`")));
+                    }
+                }
+            }
+            let name = name.ok_or_else(|| usage_error("Give the request a name"))?;
+            print_json(&agent::save_request(&name, overwrite, &opts.params, Source::Cli).map_err(error)?);
             Ok(EXIT_OK)
         }
         "history" => {
@@ -174,8 +289,49 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
             Ok(EXIT_OK)
         }
         "vars" | "variables" => {
-            args.finish()?;
-            print_json(&agent::list_variables());
+            let Some(sub) = args.next() else {
+                print_json(&agent::list_variables());
+                return Ok(EXIT_OK);
+            };
+            match sub.as_str() {
+                "set" => {
+                    let (mut name, mut value, mut secret) = (None::<String>, None::<String>, None);
+                    while let Some(arg) = args.next() {
+                        match arg.as_str() {
+                            "--secret" => secret = Some(true),
+                            "--plain" => secret = Some(false),
+                            _ if arg.starts_with('-') && arg != "-" => return Err(usage_error(format!("Unexpected argument `{arg}`"))),
+                            _ if name.is_none() => match arg.split_once('=') {
+                                Some((n, v)) if !n.is_empty() => {
+                                    name = Some(n.to_string());
+                                    value = Some(v.to_string());
+                                }
+                                _ => name = Some(arg),
+                            },
+                            _ if value.is_none() => value = Some(arg),
+                            _ => return Err(usage_error(format!("Unexpected argument `{arg}`"))),
+                        }
+                    }
+                    let name = name.ok_or_else(|| usage_error("Give a variable name"))?;
+                    let mut value = value.ok_or_else(|| usage_error(format!("Give a value for `{name}`")))?;
+                    if value == "-" {
+                        value = std::io::read_to_string(std::io::stdin()).map_err(|e| error(format!("Couldn't read standard input: {e}")))?;
+                        value = value.trim_end_matches(['\r', '\n']).to_string();
+                    }
+                    print_json(&agent::set_variable(&name, &value, secret, Source::Cli).map_err(error)?);
+                }
+                "unset" | "delete" | "rm" => {
+                    let name = args.value("vars unset")?;
+                    args.finish()?;
+                    agent::delete_variable(&name).map_err(error)?;
+                    print_json(&serde_json::json!({ "deleted": name }));
+                }
+                "clear" => {
+                    args.finish()?;
+                    print_json(&serde_json::json!({ "deleted": agent::clear_variables().map_err(error)? }));
+                }
+                other => return Err(usage_error(format!("Unexpected argument `{other}`"))),
+            }
             Ok(EXIT_OK)
         }
         "export" => {
@@ -225,10 +381,10 @@ impl SendOptions {
                 p.headers.get_or_insert_with(BTreeMap::new).insert(name.trim().to_string(), value.trim().to_string());
             }
             "--json" => {
-                let raw = args.value(arg)?;
+                let raw = file_or_text(args.value(arg)?)?;
                 p.json = Some(serde_json::from_str(&raw).map_err(|e| usage_error(format!("--json isn't valid JSON: {e}")))?);
             }
-            "-d" | "--data" => p.body = Some(args.value(arg)?),
+            "-d" | "--data" => p.body = Some(file_or_text(args.value(arg)?)?),
             "--form" => {
                 let (k, v) = args.pair(arg)?;
                 if p.form.get_or_insert_with(BTreeMap::new).insert(k.clone(), v).is_some() {
@@ -249,6 +405,14 @@ impl SendOptions {
         }
         Ok(true)
     }
+}
+
+/// A body option's value: `@path` reads that file, `@-` reads standard input, anything else is the text.
+/// This is how a JSON body gets past shell quoting (PowerShell mangles quotes inside arguments).
+fn file_or_text(value: String) -> Result<String, Exit> {
+    let Some(source) = value.strip_prefix('@') else { return Ok(value) };
+    let read = if source == "-" { std::io::read_to_string(std::io::stdin()) } else { std::fs::read_to_string(source) };
+    read.map_err(|e| usage_error(format!("Couldn't read {}: {e}", if source == "-" { "standard input" } else { source })))
 }
 
 /// A cursor over the arguments with small helpers for option values.
@@ -335,6 +499,29 @@ mod tests {
             assert!(opts.take(&arg, &mut a)?, "not an option: {arg}");
         }
         Ok(opts)
+    }
+
+    #[test]
+    fn a_body_option_can_come_from_a_file() {
+        let path = std::env::temp_dir().join(format!("plunger-body-{}.json", std::process::id()));
+        std::fs::write(&path, "{\"a\": 1}").unwrap();
+        let spec = format!("@{}", path.display());
+        assert_eq!(file_or_text(spec.clone()).ok().unwrap(), "{\"a\": 1}");
+        let opts = send_opts(&["--json", &spec]).ok().unwrap();
+        assert_eq!(opts.params.json, Some(serde_json::json!({"a": 1})));
+        let opts = send_opts(&["-d", &spec]).ok().unwrap();
+        assert_eq!(opts.params.body.as_deref(), Some("{\"a\": 1}"));
+        assert_eq!(file_or_text("plain text".into()).ok().unwrap(), "plain text");
+        assert!(file_or_text("@/no/such/file.json".into()).is_err());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn every_command_in_the_usage_has_its_own_help() {
+        for command in ["send", "vars", "saved", "save", "history", "import", "export", "mcp"] {
+            assert!(command_help(command).is_some(), "{command}");
+        }
+        assert!(command_help("nonsense").is_none());
     }
 
     #[test]

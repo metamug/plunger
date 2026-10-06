@@ -69,7 +69,13 @@ impl Tab {
 
     /// Returns true when "forget saved secrets" was clicked; the app owns the
     /// credential store, so it does the forgetting.
-    pub(in crate::app) fn render_variables_tab(&mut self, ui: &mut egui::Ui, secrets_error: Option<&str>) -> bool {
+    pub(in crate::app) fn render_variables_tab(
+        &mut self,
+        ui: &mut egui::Ui,
+        secrets_error: Option<&str>,
+        agent_variables: &[crate::history::AgentVariable],
+        delete_agent: &mut Option<String>,
+    ) -> bool {
         let mut forget = false;
         ui.label(
             egui::RichText::new(
@@ -160,6 +166,24 @@ impl Tab {
                 .inner
             },
         );
+        if !agent_variables.is_empty() {
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("Set by agents").weak().small())
+                .on_hover_text("Variables an agent set from the command line or over MCP. Requests use them like your own; remove one with the trash icon.");
+            for var in agent_variables {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(&var.name).monospace());
+                    let shown = if var.secret { "••••".to_string() } else { var.value.clone() };
+                    ui.add(egui::Label::new(egui::RichText::new(shown).monospace().weak()).truncate());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if icons::button(ui, Icon::Trash, "Remove this variable").clicked() {
+                            *delete_agent = Some(var.name.clone());
+                        }
+                        ui.label(egui::RichText::new(&var.source).weak().small());
+                    });
+                });
+            }
+        }
         forget
     }
 }

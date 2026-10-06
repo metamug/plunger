@@ -37,6 +37,7 @@ impl ApiTesterApp {
         });
         ui.add_space(4.0);
         let mut forget = false;
+        let mut delete_agent = None;
         // A long request (40 headers, a big body) scrolls inside its own area
         // rather than pushing the response off the bottom of the window.
         egui::ScrollArea::vertical()
@@ -46,7 +47,9 @@ impl ApiTesterApp {
             .show(ui, |ui| {
                 card(ui, |ui| match tab.request_tab {
                     RequestTab::Params => tab.render_params_tab(ui),
-                    RequestTab::Variables => forget = tab.render_variables_tab(ui, self.secrets_error.as_deref()),
+                    RequestTab::Variables => {
+                        forget = tab.render_variables_tab(ui, self.secrets_error.as_deref(), &self.agent_variables, &mut delete_agent)
+                    }
                     RequestTab::Auth => tab.render_auth_tab(ui, &mut self.bearer_token, self.secrets_error.as_deref()),
                     RequestTab::Headers => tab.render_headers_tab(ui),
                     RequestTab::Body => tab.render_body_tab(ui),
@@ -55,6 +58,9 @@ impl ApiTesterApp {
             });
         if forget {
             self.forget_secrets();
+        }
+        if let Some(name) = delete_agent {
+            self.delete_agent_variable(&name);
         }
     }
 }

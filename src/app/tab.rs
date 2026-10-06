@@ -3,7 +3,7 @@
 
 use crate::history::HistoryEntry;
 use crate::http::send_request;
-use crate::model::{Outcome, ParsedRequest, PersistedState, RequestTab, ResponseTab, SendResult};
+use crate::model::{Outcome, ParsedRequest, PersistedState, RequestTab, ResponseTab, SendResult, Variable};
 use crate::query::{params_from_url, reconcile};
 use crate::request::{parse_headers, prepare_to_send};
 use serde::{Deserialize, Serialize};
@@ -184,9 +184,19 @@ impl Tab {
         self.outcome = Outcome::Empty;
     }
 
-    pub fn send(&mut self, bearer_token: &str) {
+    /// `agent_variables` are the ones agents set; they count as defined for this request only and
+    /// are never added to the tab's own variables (which are saved with the window state).
+    pub fn send(&mut self, bearer_token: &str, agent_variables: &[Variable]) {
+        let own = self.state.variables.len();
+        for var in agent_variables {
+            if !self.state.variables.iter().any(|v| v.name.trim() == var.name) {
+                self.state.variables.push(var.clone());
+            }
+        }
         // The scheme is filled in in the field itself, where the user sees it.
-        let req = match prepare_to_send(&mut self.state, bearer_token) {
+        let prepared = prepare_to_send(&mut self.state, bearer_token);
+        self.state.variables.truncate(own);
+        let req = match prepared {
             Ok(req) => req,
             Err(message) => {
                 self.outcome = Outcome::Failed(message);
@@ -256,6 +266,29 @@ mod tests {
         let mut named = tab("https://h.com/a");
         named.name = Some("Fixtures".into());
         assert_eq!(named.title(), "Fixtures");
+    }
+
+    #[test]
+    fn agent_variables_count_for_a_send_but_are_never_added_to_the_tabs_own_variables() {
+        let agent = vec![Variable { name: "base".into(), value: "http://127.0.0.1:1".into(), secret: false, remember: false }];
+
+        let mut without = tab("{{base}}/x");
+        without.send("", &[]);
+        assert!(matches!(&without.outcome, Outcome::Failed(m) if m.contains("Undefined variable")), "refused without the variable");
+
+        let mut with = tab("{{base}}/x");
+        with.send("", &agent);
+        assert!(with.is_loading(), "sent once an agent variable defines it");
+        assert!(with.state.variables.is_empty(), "the tab's own variables are untouched");
+        let RequestStatus::InFlight { sent, .. } = &with.status else { panic!("not in flight") };
+        assert!(sent.variables.is_empty(), "and so is the record of what was sent");
+
+        // the user's own variable of the same name wins
+        let mut own = tab("{{base}}/x");
+        own.state.variables = vec![Variable { name: "base".into(), value: "http://127.0.0.1:2".into(), secret: false, remember: false }];
+        own.send("", &agent);
+        assert_eq!(own.state.variables.len(), 1);
+        assert_eq!(own.state.variables[0].value, "http://127.0.0.1:2");
     }
 
     #[test]

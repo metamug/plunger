@@ -101,9 +101,22 @@ pub fn command(text: &str) -> LayoutJob {
     job
 }
 
+/// The names of variables agents set. They are defined for every request, so wherever
+/// `{{variables}}` are coloured they count as defined even though the tab does not hold them.
+static AGENT_VARIABLES: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
+
+pub fn set_agent_variable_names(names: Vec<String>) {
+    if let Ok(mut guard) = AGENT_VARIABLES.write() {
+        *guard = names;
+    }
+}
+
 /// Whether `{{name}}` would be filled in when the request is sent.
 pub fn variable_is_defined(name: &str, variables: &[Variable]) -> bool {
     let name = name.trim();
+    if AGENT_VARIABLES.read().is_ok_and(|names| names.iter().any(|n| n == name)) {
+        return true;
+    }
     if let Some(var) = name.strip_prefix("$env:") {
         return std::env::var_os(var).is_some();
     }

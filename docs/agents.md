@@ -64,9 +64,14 @@ python scripts/mcp-demo-client.py path\to\plunger.exe
 |---|---|
 | `send_request` | Sends a request and returns `status`, `ok`, `elapsed_ms`, `size_bytes`, `headers`, and the body (`json` when it parses, otherwise `body`). Send a saved request by name with `saved_request`, or describe one with `method`, `url`, `headers`, and one of `json`, `body` or `form`. `variables` adds or overrides `{{variables}}` for this request only. |
 | `import_curl` | Parses a curl command into a request without sending it. With `save_as`, adds it to the Saved list. |
-| `list_saved_requests` | The user's saved requests: name, method, URL, headers, and the `{{variables}}` each one needs. |
+| `save_request` | Saves a request without sending it, described like `send_request` plus a `name`. `{{placeholders}}` (even in `Authorization: Bearer {{token}}`) are kept. An existing name is refused unless `overwrite` is true, so a mistake can be fixed. |
+| `get_saved_request` | One saved request in full: method, URL, headers, body and the variables it needs. |
+| `delete_saved_request` | Removes a saved request (history stays). |
+| `list_saved_requests` | The user's saved requests: name, method, URL, headers, and the `{{variables}}` each one needs (an environment variable shows as `$env:NAME`). |
 | `get_history` | Recent requests, newest first, with who sent each (`gui`, `cli` or `mcp`). Optional `search` narrows it to a URL, method, name or status (for example `orders` or `500`). Credentials are blanked. |
-| `list_variables` | Variable names; values only for non-secret variables. Also says whether a saved Bearer token is available. |
+| `list_variables` | Variable names and where each came from (`window` or `agent`); values only for non-secret variables. Also says whether a saved Bearer token is available. |
+| `set_variable` | Keeps a value for later requests as `{{name}}`, for example a token read from a login response. It persists, is shared with the window and the command line, and appears in the window under "Set by agents". A secret, or a name like `token` or `api_key`, is kept in the system credential store and masked in results. |
+| `delete_variable` | Removes a variable an agent set. The user's own variables cannot be changed or removed by an agent. |
 | `export_curl` | A saved request or history entry as a curl command, with `{{variables}}` left as placeholders. |
 
 The read-only tools are marked as such, so a client can run them without asking.
@@ -83,9 +88,19 @@ plunger saved
 plunger history --limit 5
 plunger history --search orders      # URL, method, name or status contains the text
 plunger vars
+plunger vars set base https://api.example.com        # keep a value for later requests: {{base}}
+echo "$TOKEN" | plunger vars set token -            # a secret read from stdin, kept in the credential store
+plunger vars unset token
+plunger save "create order" --url "{{base}}/orders" -X POST -H "Authorization: Bearer {{token}}" --json @order.json
+plunger save "create order" ... --overwrite          # fix a saved request
+plunger saved show "create order"                    # headers, body and variables it needs
+plunger saved delete "create order"
 plunger export "Get user"
+plunger send "Get user" --help                       # every command has its own --help
 plunger --help
 ```
+
+A typical agent session sets its variables once and then refers to them by name, so no credential is pasted into a command: `plunger vars set username=demo`, `echo demo | plunger vars set password -`, then `plunger curl -s -X POST {{base}}/login --json '{"username":"{{username}}","password":"{{password}}"}'`.
 
 Everything prints JSON, errors included: `{"error": "...", "kind": "not_sent"}`. `export` prints the curl command as plain text.
 
@@ -130,7 +145,8 @@ A URL can also be given straight to `send`: `plunger send https://api.example.co
 ## What an agent can and can't do
 
 - **OS environment variables can enter requests.** `{{$env:NAME}}` reads NAME from Plunger's process environment at send time. Treat those values like other secrets: they can be sent to any request destination even though they are not stored in Plunger's state or history.
-- **Variables come from the window.** The agent sees the variables configured in Plunger. The window saves its state when it closes and about every 30 seconds, so a variable edited a moment ago may take that long to reach an agent.
+- **Two kinds of variables.** The ones you define in the window (an agent sees them, and the window saves its state when it closes and about every 30 seconds, so one edited a moment ago may take that long to reach an agent), and the ones agents set with `set_variable` / `plunger vars set`, which are visible everywhere at once. An agent cannot change or delete yours, and yours win when the names clash.
+- **Environment variables cannot be set by an agent.** `{{$env:NAME}}` reads the environment the Plunger process started with (for MCP, whatever the client launched it with, for example `claude mcp add -e NAME=value`). A name that looks like a credential (`API_TOKEN`, `STRIPE_KEY`, `DB_PASSWORD`) is masked in results.
 - **The saved Bearer token is off by default.** It's only attached when a request sets `use_saved_bearer` (`--use-saved-bearer` on the command line). An agent chooses its URLs, and the token should only go where you intend.
 - **`{{secret}}` can still go anywhere.** The agent never sees a secret's value, but it can put `{{token}}` into a request to any host. Only give an agent Plunger access in projects where you trust where its requests go.
 - **No file uploads over MCP.** `send_request` over MCP can't upload files, so a prompt-injected agent can't send files from your disk. The command line and the window can.

@@ -31,6 +31,13 @@ pub struct Session {
     pub bearer: String,
     /// Non-fatal problems, e.g. the credential store couldn't be read.
     pub problems: Vec<String>,
+    /// Names of the variables an agent set (`state.variables` also holds the window's own).
+    pub agent_variables: std::collections::BTreeSet<String>,
+}
+
+/// The credential store key for the value of a secret variable an agent set.
+pub fn agent_secret_key(name: &str) -> String {
+    format!("agentvar:{name}")
 }
 
 impl Session {
@@ -38,14 +45,48 @@ impl Session {
     /// remembered secrets. The window writes its state when it closes and
     /// about every 30 seconds, so a variable edited a moment ago may lag.
     pub fn load() -> Self {
-        Self::load_with(&app_data_dir().join("app.ron"), &OsStore::new())
+        let history = History::open().ok();
+        Self::load_with(&app_data_dir().join("app.ron"), &OsStore::new(), history.as_ref())
     }
 
-    pub fn load_with(state_file: &Path, store: &dyn SecretStore) -> Self {
+    /// The window's state plus the variables agents set (kept in `history`). A variable the user
+    /// defined in the window wins over an agent's of the same name.
+    pub fn load_with(state_file: &Path, store: &dyn SecretStore, history: Option<&History>) -> Self {
         let mut state = read_window_state(state_file).unwrap_or_default();
         let mut bearer = String::new();
-        let problems = SecretSync::default().restore(store, &mut state, &mut bearer);
-        Self { state, bearer, problems }
+        let mut problems = SecretSync::default().restore(store, &mut state, &mut bearer);
+        let mut agent_variables = std::collections::BTreeSet::new();
+        if let Some(history) = history {
+            match history.list_agent_variables() {
+                Ok(list) => {
+                    for var in list {
+                        if state.variables.iter().any(|v| v.name.trim() == var.name) {
+                            continue;
+                        }
+                        let value = if var.secret {
+                            match store.get(&agent_secret_key(&var.name)) {
+                                Ok(found) => found.unwrap_or_default(),
+                                Err(e) => {
+                                    problems.push(format!("Couldn't read the secret value of {}: {e}", var.name));
+                                    String::new()
+                                }
+                            }
+                        } else {
+                            var.value
+                        };
+                        state.variables.push(Variable { name: var.name.clone(), value, secret: var.secret, remember: var.secret });
+                        agent_variables.insert(var.name);
+                    }
+                }
+                Err(e) => problems.push(format!("Couldn't read the variables agents set: {e}")),
+            }
+        }
+        Self { state, bearer, problems, agent_variables }
+    }
+
+    /// Variables the user defined in the window (not the ones agents set).
+    pub fn window_variables(&self) -> Vec<&Variable> {
+        self.state.variables.iter().filter(|v| !self.agent_variables.contains(v.name.trim())).collect()
     }
 
     /// Variables as an agent may see them: names always, values only when not secret.
@@ -60,6 +101,7 @@ impl Session {
                 has_value: !v.value.is_empty(),
                 remembered: v.remember && v.is_secret(),
                 value: (!v.is_secret()).then(|| v.value.clone()),
+                source: if self.agent_variables.contains(v.name.trim()) { "agent" } else { "window" }.to_string(),
             })
             .collect()
     }
@@ -84,6 +126,8 @@ pub struct VariableInfo {
     /// Only for non-secret variables.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
+    /// `window` for a variable the user defined, `agent` for one set from the CLI or MCP.
+    pub source: String,
 }
 
 /// A request described by an agent. Everything but the URL is optional.
@@ -308,6 +352,18 @@ impl Scrubber {
             .collect();
         if bearer.trim().len() >= MIN_MASKED_LEN {
             secrets.push(("bearer".to_string(), bearer.trim().to_string()));
+        }
+        // An environment variable that looks like a credential, used by this request.
+        for name in variables_used(state) {
+            let Some(env_name) = name.strip_prefix("$env:") else { continue };
+            if !crate::redact::is_secret_env_name(env_name) {
+                continue;
+            }
+            if let Ok(value) = std::env::var(env_name) {
+                if value.trim().len() >= MIN_MASKED_LEN {
+                    secrets.push((name.clone(), value.trim().to_string()));
+                }
+            }
         }
         // Servers often echo values URL-encoded (a query string, a form body),
         // so mask those spellings too.
@@ -535,7 +591,9 @@ impl From<&HistoryEntry> for StoredRequestInfo {
     }
 }
 
-/// `{{names}}` referenced anywhere in the request, without built-ins, in order of first use.
+/// `{{names}}` referenced anywhere in the request, in order of first use. The built-ins that fill
+/// themselves in (`$uuid`, ...) are left out; an environment variable is listed as `$env:NAME`
+/// because it must be set when the request is sent.
 pub fn variables_used(state: &PersistedState) -> Vec<String> {
     let mut texts = vec![state.url.as_str(), state.headers_text.as_str()];
     match state.body_mode {
@@ -560,9 +618,11 @@ fn collect_names(text: &str, names: &mut Vec<String>) {
         let after = &rest[start + 2..];
         let Some(end) = after.find("}}") else { return };
         let name = after[..end].trim();
-        let valid = !name.is_empty()
-            && !name.starts_with('$')
-            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.');
+        let is_env = name.strip_prefix("$env:").is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'));
+        let valid = is_env
+            || (!name.is_empty()
+                && !name.starts_with('$')
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.'));
         if valid && !names.iter().any(|n| n == name) {
             names.push(name.to_string());
         }
@@ -582,6 +642,7 @@ mod tests {
             state: PersistedState { variables: vars, ..Default::default() },
             bearer: String::new(),
             problems: Vec::new(),
+            agent_variables: Default::default(),
         }
     }
 
@@ -762,7 +823,7 @@ mod tests {
 
         let store = MemoryStore::default();
         store.data.borrow_mut().insert("var:token".into(), "T0KEN-VALUE".into());
-        let s = Session::load_with(&file, &store);
+        let s = Session::load_with(&file, &store, None);
         assert_eq!(s.state.variables[1].value, "T0KEN-VALUE");
 
         let listed = serde_json::to_string(&s.variables()).unwrap();
@@ -773,7 +834,7 @@ mod tests {
 
     #[test]
     fn a_missing_state_file_is_just_an_empty_session() {
-        let s = Session::load_with(Path::new("Z:/nope/app.ron"), &MemoryStore::default());
+        let s = Session::load_with(Path::new("Z:/nope/app.ron"), &MemoryStore::default(), None);
         assert!(s.state.variables.is_empty());
     }
 
@@ -835,6 +896,20 @@ mod tests {
         assert!(err.contains("Get user"), "{err}");
         let info = StoredRequestInfo::from(&find_saved(&h, "Get user").unwrap());
         assert_eq!(info.variables_used, vec!["base", "id", "token"]);
+    }
+
+    #[test]
+    fn environment_variables_are_listed_and_secret_looking_ones_are_masked() {
+        let state = PersistedState {
+            url: "{{base}}/x?e={{$env:PLUNGER_TEST_API_TOKEN}}&n={{$env:PLUNGER_TEST_REGION}}&u={{$uuid}}".into(),
+            ..Default::default()
+        };
+        assert_eq!(variables_used(&state), vec!["base", "$env:PLUNGER_TEST_API_TOKEN", "$env:PLUNGER_TEST_REGION"]);
+
+        std::env::set_var("PLUNGER_TEST_API_TOKEN", "tok-12345678");
+        std::env::set_var("PLUNGER_TEST_REGION", "eu-west-1");
+        let scrubber = Scrubber::new(&state, "");
+        assert_eq!(scrubber.text("a tok-12345678 b eu-west-1"), "a [redacted:$env:PLUNGER_TEST_API_TOKEN] b eu-west-1");
     }
 
     #[test]

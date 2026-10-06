@@ -6,13 +6,13 @@
 //! so they say when to reach for Plunger rather than raw curl.
 
 use crate::agent::{self, ImportedRequest, SendParams, VariablesResult};
-use crate::engine::{AgentResponse, HistoryItem, StoredRequestInfo};
+use crate::engine::{AgentResponse, HistoryItem, StoredRequestInfo, VariableInfo};
 use crate::history::Source;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
 use rmcp::schemars::{self, JsonSchema};
 use rmcp::{tool, tool_handler, tool_router, Json, ServerHandler, ServiceExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 const INSTRUCTIONS: &str = "\
 Plunger sends HTTP requests on the user's machine and shows every one of them in the Plunger window, \
@@ -20,15 +20,17 @@ so the user can see what you sent. Use it instead of running curl.
 
 TOOLS
 - list_saved_requests: the requests the user saved, by name. Check it before building a request from scratch.
-- list_variables: the {{variables}} the user defined (secrets by name only), the built-ins ($uuid, $timestamp, $randomInt, $env:NAME) and whether a Bearer token is saved.
+- list_variables: the {{variables}} in use (secrets by name only; `source` says whether the user defined it in the window or an agent set it), the built-ins ($uuid, $timestamp, $randomInt, $env:NAME) and whether a Bearer token is saved.
+- set_variable / delete_variable: keep a value for later requests as {{name}} (for example a token from a login response). It persists, and the user sees it in the window. A secret (or a name like token, password, api_key) goes to the system credential store and is masked in results. You cannot change or delete variables the user defined.
 - send_request: send a request, or a saved one by name (`saved_request`) with overrides. Use `json`, `body` or `form` for the body; `headers` is an object like {\"Accept\": \"application/json\"}.
+- save_request / get_saved_request / delete_saved_request: save a request without sending it (same fields as send_request, plus `name`; `overwrite: true` replaces an existing one), read one back in full, or remove one. {{placeholders}} are kept, so Authorization: Bearer {{token}} works when it is sent later.
 - import_curl: parse a curl command into a request, and with `save_as` keep it in the user's Saved list.
 - export_curl: a saved request or a history entry as a curl command.
 - get_history: recent requests, who sent them (gui, cli, mcp), status and time; `search` filters.
 
 HOW IT BEHAVES
 - {{variables}} work in the URL, headers and body. Secret values are filled in for you and never shown; if a server echoes one back it appears as [redacted:name]. A request with an undefined {{variable}} is refused, not sent.
-- Pass values for one request with `variables`. They are not kept for the next call.
+- `variables` on send_request sets values for that one request only; set_variable keeps them. {{$env:NAME}} reads an environment variable of the Plunger process when the request is sent (a name like API_TOKEN is masked in results); an agent cannot set one, because the environment is fixed when the server starts.
 - A saved request keeps its {{placeholders}}, including in credential headers such as Authorization: Bearer {{token}}. Literal credentials are blanked when a request is saved.
 - Redirects are followed unless `follow_redirects` is false. `timeout_secs` defaults to the user's setting.
 - A response comes back as structured fields: status, timing, size, headers and the parsed JSON (`json`) or text (`body`). A body over `max_body_chars` (default 50000) is cut and marked with `body_cut_from_chars`. A binary body is not returned (`binary: true`, with its size). Set-Cookie and similar response headers are shown as [redacted].
@@ -36,7 +38,7 @@ HOW IT BEHAVES
 
 NOT SUPPORTED YET
 - Cookies are not carried from one request to the next, and multipart/form-data file uploads are not possible (`form` is url-encoded only).
-- Values from one response cannot yet be saved for later requests; copy what you need into the next call's `variables` or headers.";
+- Values from a response are not extracted for you: read the value, then keep it with set_variable (use the name `token` or similar to make it a hidden secret).";
 
 #[derive(Debug, Clone)]
 pub struct PlungerMcp {
@@ -50,6 +52,42 @@ pub struct ImportCurlParams {
     /// Also save it in Plunger's Saved list under this name.
     #[serde(default)]
     pub save_as: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct SetVariableParams {
+    /// The name, used in requests as {{name}}. Letters, digits, _ - and . only, at most 64 characters.
+    pub name: String,
+    /// The value. For a secret it is stored in the system credential store and never returned.
+    pub value: String,
+    /// Keep it as a secret: masked in results, and never written to a file. A name that looks like a credential
+    /// (token, password, api_key, secret...) is always secret.
+    #[serde(default)]
+    pub secret: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct NameParams {
+    /// The name of a variable an agent set, or of a saved request.
+    pub name: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct SaveRequestParams {
+    /// The name to save it under, shown in Plunger's Saved list.
+    pub name: String,
+    /// Replace a saved request that already has this name (otherwise an existing name is refused).
+    #[serde(default)]
+    pub overwrite: Option<bool>,
+    /// The request, described like send_request does: method, url, headers, json / body / form, options.
+    #[serde(flatten)]
+    pub request: SendParams,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct DeletedVariable {
+    /// The variable that was removed.
+    pub deleted: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -123,6 +161,43 @@ impl PlungerMcp {
         blocking(|| Ok(agent::list_variables())).await.map(Json)
     }
 
+    /// Set a variable that later requests use as {{name}}, for example a token you read from a login response.
+    /// It persists between calls and runs and is shared with the Plunger window, the CLI and other agents.
+    /// A secret (or a credential-looking name such as token or api_key) is kept in the system credential store and
+    /// masked in results. A variable the user defined in the window cannot be changed.
+    #[tool(name = "set_variable", annotations(title = "Set a variable", idempotent_hint = true, destructive_hint = false))]
+    async fn set_variable(&self, Parameters(p): Parameters<SetVariableParams>) -> Result<Json<VariableInfo>, String> {
+        blocking(move || agent::set_variable(&p.name, &p.value, p.secret, Source::Mcp)).await.map(Json)
+    }
+
+    /// Remove a variable an agent set (with set_variable). Variables the user defined in the window can only be
+    /// removed there.
+    #[tool(name = "delete_variable", annotations(title = "Delete a variable", destructive_hint = true, idempotent_hint = true))]
+    async fn delete_variable(&self, Parameters(p): Parameters<NameParams>) -> Result<Json<DeletedVariable>, String> {
+        blocking(move || agent::delete_variable(&p.name).map(|()| DeletedVariable { deleted: p.name.trim().to_string() })).await.map(Json)
+    }
+
+    /// Save a request in the user's Saved list without sending it, so it can be re-run by name with send_request
+    /// (`saved_request`). Describe it like send_request. {{placeholders}} are kept as written, including in
+    /// Authorization headers. An existing name is refused unless `overwrite` is true, which replaces it, so a
+    /// mistake can be fixed.
+    #[tool(name = "save_request", annotations(title = "Save a request", idempotent_hint = true, destructive_hint = false))]
+    async fn save_request(&self, Parameters(p): Parameters<SaveRequestParams>) -> Result<Json<ImportedRequest>, String> {
+        blocking(move || agent::save_request(&p.name, p.overwrite.unwrap_or(false), &p.request, Source::Mcp)).await.map(Json)
+    }
+
+    /// One saved request in full: method, URL, headers, body, and the {{variables}} it needs.
+    #[tool(name = "get_saved_request", annotations(title = "Get a saved request", read_only_hint = true))]
+    async fn get_saved_request(&self, Parameters(p): Parameters<NameParams>) -> Result<Json<ImportedRequest>, String> {
+        blocking(move || agent::show_saved_request(&p.name)).await.map(Json)
+    }
+
+    /// Remove a saved request by name (its history entries stay). Returns what was removed.
+    #[tool(name = "delete_saved_request", annotations(title = "Delete a saved request", destructive_hint = true))]
+    async fn delete_saved_request(&self, Parameters(p): Parameters<NameParams>) -> Result<Json<ImportedRequest>, String> {
+        blocking(move || agent::delete_saved_request(&p.name)).await.map(Json)
+    }
+
     /// Turn a saved request (by name) or a history entry (by id) into a curl command, for CI scripts or tools
     /// that only speak curl. {{variables}} stay as placeholders, so no secret is written out.
     #[tool(name = "export_curl", annotations(title = "Export as curl", read_only_hint = true))]
@@ -161,13 +236,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_six_tools_are_listed_with_input_schemas_and_hints() {
+    fn every_tool_is_listed_with_input_schemas_and_hints() {
         let tools = PlungerMcp::new().tool_router.list_all();
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
         names.sort();
         assert_eq!(
             names,
-            ["export_curl", "get_history", "import_curl", "list_saved_requests", "list_variables", "send_request"]
+            [
+                "delete_saved_request", "delete_variable", "export_curl", "get_history", "get_saved_request", "import_curl",
+                "list_saved_requests", "list_variables", "save_request", "send_request", "set_variable"
+            ]
         );
         let send = tools.iter().find(|t| t.name == "send_request").unwrap();
         let schema = serde_json::to_string(&send.input_schema).unwrap();
