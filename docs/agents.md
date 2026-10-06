@@ -128,11 +128,12 @@ plunger curl -s -F file=@report.csv https://api.example.com/upload
 | Supported | Notes |
 |---|---|
 | `-X -H -d -u -F -G -A -b -e --json --data-urlencode --url` | `-d @file` and `-d @-` (standard input) read the body like curl does |
+| `--retry N --retry-delay S --retry-max-time S --retry-all-errors` | Timeouts, refused connections and 408, 429, 500, 502, 503, 504 are tried again; a `Retry-After` header is waited for. Each try is recorded in the history. |
 | `-L -k -s -S -i -I -f --fail-with-body -m/--max-time -o -w` | Like curl, redirects are followed only with `-L`. `-w` knows `%{http_code} %{size_download} %{time_total} %{time_starttransfer} %{content_type} %{num_redirects} %{url_effective} %{redirect_url}` |
 | clustered flags | `-sSL`, `-XPOST`, `-ofile` |
 | Plunger extras | `--var name=value`, `--use-saved-bearer`, `--plunger-json` (print Plunger's structured result instead) |
 
-These are refused with a message rather than silently ignored: `-x/--proxy`, `--cert`, `--key`, `--cacert`, `-T`, `-K`, `--resolve`, `--interface`, `-c/--cookie-jar`, `--retry`.
+These are refused with a message rather than silently ignored: `-x/--proxy`, `--cert`, `--key`, `--cacert`, `-T`, `-K`, `--resolve`, `--interface`, `-c/--cookie-jar`.
 
 Exit codes follow curl: 0 ok, 22 with `-f` and a status of 400 or higher, 6 DNS, 7 connection refused, 28 timeout, 60 TLS, and 2 when Plunger refused to send (for example an undefined variable), which is always reported on stderr even with `-s`.
 

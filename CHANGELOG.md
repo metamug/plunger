@@ -8,6 +8,7 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 - Agents can set variables. `plunger vars set NAME VALUE` (`--secret`, or `-` to read the value from standard input), `plunger vars unset`, `plunger vars clear`, and the MCP tools `set_variable` / `delete_variable` keep a value for later requests as `{{name}}`. It persists, is shared by the window, the CLI and MCP at once, and shows in the window under "Set by agents" (usable from the window too, with a delete button). A secret or a credential-looking name is kept in the system credential store only and masked in results. An agent cannot change or delete variables the user defined, and the user's win on a clash (#36).
 - Agents can manage saved requests: `plunger save NAME ...` and the MCP `save_request` save a request without sending it, keep `{{placeholders}}`, and `--overwrite` / `overwrite: true` fixes an existing one; `plunger saved show|delete` and the MCP `get_saved_request` / `delete_saved_request` read one in full or remove it.
+- `plunger curl` supports `--retry`, `--retry-delay`, `--retry-max-time` and `--retry-all-errors`: transient failures (timeouts, refused connections, 408, 429, 500, 502, 503, 504) are tried again, waiting for the server's `Retry-After`.
 - Every command has its own help (`plunger vars --help`, ...), and a usage error points at the help of the command that was used.
 - `plunger send --json @file` and `-d @file` (and `@-` for standard input) read the body from a file, which gets a JSON body past PowerShell's quote handling (#138).
 

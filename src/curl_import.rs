@@ -29,6 +29,14 @@ pub struct CurlOptions {
     pub output: Option<String>,
     /// `-w`: a template printed after the transfer.
     pub write_out: Option<String>,
+    /// `--retry N`: how many times to try again after a transient failure.
+    pub retry: u32,
+    /// `--retry-delay`: seconds between tries (curl doubles the wait each time when this is not given).
+    pub retry_delay: Option<f64>,
+    /// `--retry-max-time`: stop retrying after this many seconds in total.
+    pub retry_max_time: Option<f64>,
+    /// `--retry-all-errors`: retry on any HTTP error, not only the transient ones.
+    pub retry_all_errors: bool,
     /// Flags that change how curl would connect and that Plunger cannot honour.
     pub unsupported: Vec<String>,
 }
@@ -38,8 +46,9 @@ const SHORT_WITH_VALUE: &str = "XHdFubAeomwxcTUK";
 const LONG_WITH_VALUE: &[&str] = &[
     "--request", "--header", "--data", "--data-raw", "--data-binary", "--data-ascii", "--data-urlencode", "--json",
     "--form", "--form-string", "--user", "--cookie", "--user-agent", "--referer", "--url", "--output", "--max-time",
-    "--connect-timeout", "--proxy", "--cacert", "--cert", "--key", "--write-out", "--retry", "--resolve",
-    "--max-redirs", "--cookie-jar", "--upload-file", "--interface", "--proxy-user", "--config",
+    "--connect-timeout", "--proxy", "--cacert", "--cert", "--key", "--write-out", "--retry", "--retry-delay",
+    "--retry-max-time", "--resolve", "--max-redirs", "--cookie-jar", "--upload-file", "--interface", "--proxy-user",
+    "--config",
 ];
 
 /// True for `-sSL`, `-XPOST` or `-ofile.txt`: letters up to the first value-taking flag, whose
@@ -209,8 +218,13 @@ fn parse_tokens(
             "-o" | "--output" => opts.output = value(),
             "-w" | "--write-out" => opts.write_out = value(),
             // Changes how curl would connect or authenticate; Plunger cannot honour these.
+            "--retry" => opts.retry = value().and_then(|v| v.parse().ok()).unwrap_or(0),
+            "--retry-delay" => opts.retry_delay = value().and_then(|v| v.parse().ok()),
+            "--retry-max-time" => opts.retry_max_time = value().and_then(|v| v.parse().ok()),
+            "--retry-all-errors" => opts.retry_all_errors = true,
+            "--retry-connrefused" => {}
             "-x" | "--proxy" | "-U" | "--proxy-user" | "--cacert" | "--cert" | "--key" | "-T" | "--upload-file"
-            | "-K" | "--config" | "--resolve" | "--interface" | "-c" | "--cookie-jar" | "--retry" => {
+            | "-K" | "--config" | "--resolve" | "--interface" | "-c" | "--cookie-jar" => {
                 opts.unsupported.push(flag.clone());
                 value();
             }
@@ -511,9 +525,17 @@ mod tests {
     }
 
     #[test]
+    fn retry_options_are_recorded() {
+        let (r, o) = parse_curl_args(&args(&["--retry", "3", "--retry-delay", "2", "--retry-max-time=30", "--retry-all-errors", "--retry-connrefused", "http://h"]), &mut no_files).unwrap();
+        assert_eq!((o.retry, o.retry_delay, o.retry_max_time, o.retry_all_errors), (3, Some(2.0), Some(30.0), true));
+        assert!(o.unsupported.is_empty());
+        assert_eq!(r.url, "http://h");
+    }
+
+    #[test]
     fn options_plunger_cannot_honour_are_reported_not_dropped() {
-        let (_, o) = parse_curl_args(&args(&["-x", "http://proxy:8080", "--cert", "c.pem", "--retry", "3", "http://h"]), &mut no_files).unwrap();
-        assert_eq!(o.unsupported, vec!["-x", "--cert", "--retry"]);
+        let (_, o) = parse_curl_args(&args(&["-x", "http://proxy:8080", "--cert", "c.pem", "--resolve", "h:80:1.2.3.4", "http://h"]), &mut no_files).unwrap();
+        assert_eq!(o.unsupported, vec!["-x", "--cert", "--resolve"]);
         // pasted commands still just skip them
         assert_eq!(parse_curl("curl --proxy http://p:1 http://h/z").unwrap().url, "http://h/z");
     }

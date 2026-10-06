@@ -24,8 +24,12 @@ Supported: -X -H -d -u -F -G -A -b -e --json --data-urlencode --url, -d @file an
 -L -k -s -S -i -I -f --fail-with-body -m/--max-time -o -w, and clustered flags such as -sSL.
 Like curl, redirects are followed only with -L.
 
+--retry N, --retry-delay S, --retry-max-time S, --retry-all-errors: transient failures (timeouts,
+refused connections, 408, 429, 500, 502, 503, 504) are tried again, waiting for a Retry-After header
+when the server sends one.
+
 Not supported (refused, never ignored): -x/--proxy, --cert, --key, --cacert, -T, -K, --resolve,
---interface, -c/--cookie-jar, --retry.
+--interface, -c/--cookie-jar.
 
 Plunger extras: --var name=value (repeatable), --use-saved-bearer, --plunger-json (print
 Plunger's structured result instead of curl's output).
@@ -131,7 +135,24 @@ fn execute(args: Vec<String>) -> Result<i32, Failure> {
     let scrubber = Scrubber::new(&state, &session.bearer);
     let bearer = if extras.use_saved_bearer { session.bearer.as_str() } else { "" };
 
-    match engine::send(state, bearer, Some(&history), Source::Cli) {
+    let started = std::time::Instant::now();
+    let mut attempt = 0u32;
+    let outcome = loop {
+        let result = engine::send(state.clone(), bearer, Some(&history), Source::Cli);
+        let wait = match &result {
+            Ok(sent) => retry_wait(&opts, attempt, started.elapsed(), RetryReason::Status(sent.response.status, retry_after(&sent.response.headers))),
+            Err(SendError::Failed { message, .. }) => retry_wait(&opts, attempt, started.elapsed(), RetryReason::Transport(message)),
+            Err(SendError::Refused(_)) => None,
+        };
+        let Some(wait) = wait else { break result };
+        attempt += 1;
+        if !quiet {
+            eprintln!("plunger curl: retrying in {:.1}s (attempt {attempt} of {})", wait.as_secs_f64(), opts.retry);
+        }
+        std::thread::sleep(wait);
+    };
+
+    match outcome {
         Ok(sent) => {
             if extras.plunger_json {
                 let response = AgentResponse::from_sent(&sent, &scrubber, DEFAULT_MAX_BODY_CHARS);
@@ -149,6 +170,45 @@ fn execute(args: Vec<String>) -> Result<i32, Failure> {
             Err(Failure { code: exit_code_for(&message), message: scrubber.text(&message), quiet })
         }
     }
+}
+
+/// Why a try failed, for deciding whether to try again.
+enum RetryReason<'a> {
+    Status(u16, Option<std::time::Duration>),
+    Transport(&'a str),
+}
+
+/// The seconds a `Retry-After` header asks for (the HTTP-date form is not interpreted).
+fn retry_after(headers: &[(String, String)]) -> Option<std::time::Duration> {
+    let value = headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("retry-after"))?.1.trim();
+    value.parse::<f64>().ok().filter(|s| *s >= 0.0).map(std::time::Duration::from_secs_f64)
+}
+
+/// How long to wait before the next try, or None when this failure is final: out of tries, out of
+/// time, or not a transient problem. curl's schedule: the server's `Retry-After`, else `--retry-delay`,
+/// else 1 s doubling each time (at most 10 minutes).
+fn retry_wait(opts: &CurlOptions, attempt: u32, elapsed: std::time::Duration, reason: RetryReason) -> Option<std::time::Duration> {
+    if attempt >= opts.retry {
+        return None;
+    }
+    let (transient, server_wait) = match reason {
+        RetryReason::Status(status, wait) => (matches!(status, 408 | 429 | 500 | 502 | 503 | 504) || (opts.retry_all_errors && status >= 400), wait),
+        RetryReason::Transport(message) => {
+            let m = message.to_ascii_lowercase();
+            (m.contains("timed out") || m.contains("refused") || m.contains("reset") || opts.retry_all_errors, None)
+        }
+    };
+    if !transient {
+        return None;
+    }
+    let backoff = std::time::Duration::from_secs_f64(1.0 * 2f64.powi(attempt as i32)).min(std::time::Duration::from_secs(600));
+    let wait = server_wait.or(opts.retry_delay.map(std::time::Duration::from_secs_f64)).unwrap_or(backoff);
+    if let Some(limit) = opts.retry_max_time {
+        if elapsed + wait > std::time::Duration::from_secs_f64(limit) {
+            return None;
+        }
+    }
+    Some(wait)
 }
 
 /// curl's exit code for a transport failure, from the text of Plunger's error.
@@ -345,6 +405,40 @@ mod tests {
         let mut none = request(vec![], None);
         with_curl_default_content_type(&mut none);
         assert!(none.headers.is_empty());
+    }
+
+    #[test]
+    fn retrying_follows_curls_rules_and_honours_retry_after() {
+        use std::time::Duration;
+        let opts = |retry| CurlOptions { retry, ..Default::default() };
+        let secs = Duration::from_secs;
+        // only transient statuses, only while tries remain
+        assert_eq!(retry_wait(&opts(3), 0, secs(0), RetryReason::Status(503, None)), Some(secs(1)));
+        assert_eq!(retry_wait(&opts(3), 2, secs(0), RetryReason::Status(503, None)), Some(secs(4)), "the wait doubles");
+        assert_eq!(retry_wait(&opts(3), 3, secs(0), RetryReason::Status(503, None)), None, "out of tries");
+        assert_eq!(retry_wait(&opts(3), 0, secs(0), RetryReason::Status(404, None)), None, "404 is not transient");
+        assert_eq!(retry_wait(&opts(0), 0, secs(0), RetryReason::Status(503, None)), None, "no --retry, no retries");
+        // the server's Retry-After wins over the schedule, then --retry-delay
+        assert_eq!(retry_wait(&opts(3), 0, secs(0), RetryReason::Status(429, Some(secs(7)))), Some(secs(7)));
+        let delayed = CurlOptions { retry: 3, retry_delay: Some(2.0), ..Default::default() };
+        assert_eq!(retry_wait(&delayed, 1, secs(0), RetryReason::Status(500, None)), Some(secs(2)));
+        // --retry-all-errors and the total time limit
+        let all = CurlOptions { retry: 3, retry_all_errors: true, ..Default::default() };
+        assert_eq!(retry_wait(&all, 0, secs(0), RetryReason::Status(404, None)), Some(secs(1)));
+        let limited = CurlOptions { retry: 5, retry_max_time: Some(5.0), ..Default::default() };
+        assert_eq!(retry_wait(&limited, 0, secs(5), RetryReason::Status(503, None)), None, "the next wait would pass the limit");
+        // connection trouble
+        assert!(retry_wait(&opts(2), 0, secs(0), RetryReason::Transport("operation timed out")).is_some());
+        assert!(retry_wait(&opts(2), 0, secs(0), RetryReason::Transport("tcp connect error: connection refused")).is_some());
+        assert!(retry_wait(&opts(2), 0, secs(0), RetryReason::Transport("invalid peer certificate")).is_none());
+    }
+
+    #[test]
+    fn a_retry_after_header_is_read_in_seconds() {
+        let headers = vec![("Retry-After".to_string(), " 3 ".to_string())];
+        assert_eq!(retry_after(&headers), Some(std::time::Duration::from_secs(3)));
+        assert_eq!(retry_after(&[("retry-after".into(), "Wed, 21 Oct 2026 07:28:00 GMT".into())]), None);
+        assert_eq!(retry_after(&[]), None);
     }
 
     #[test]
