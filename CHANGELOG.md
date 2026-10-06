@@ -4,6 +4,11 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed
+
+- The Bearer token field has its own **Auth** tab instead of sitting above the headers, and the sentence that explained it is gone (#79, #83).
+- The request tabs show what they hold: `Headers (2)` as `Params (n)` and `Variables (n)` already did, and a bullet on `Body •` and `Auth •` when they are set.
+
 ### Fixed
 
 - Saving a request no longer erases `{{variable}}` placeholders in credential headers, cookies and query values (`Authorization: Bearer {{token}}`): only literal credentials are blanked. Before this, a saved request that used a token variable could never be re-run, from the window, the CLI or MCP (#92).

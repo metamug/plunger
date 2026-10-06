@@ -14,6 +14,7 @@ pub enum BodyMode {
 #[derive(PartialEq, Clone, Copy)]
 pub enum RequestTab {
     Params,
+    Auth,
     Headers,
     Body,
     Variables,

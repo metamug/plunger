@@ -304,18 +304,6 @@ pub fn card(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
         });
 }
 
-/// A card outlined in a given accent color, e.g. amber for the auth field.
-pub fn accented_card(ui: &mut egui::Ui, color: egui::Color32, add_contents: impl FnOnce(&mut egui::Ui)) {
-    egui::Frame::none()
-        .stroke(egui::Stroke::new(1.3_f32, color))
-        .rounding(egui::Rounding::same(5.0))
-        .inner_margin(egui::Margin::symmetric(10.0, 7.0))
-        .show(ui, |ui| {
-            ui.set_min_width(ui.available_width());
-            add_contents(ui);
-        });
-}
-
 /// Status code as a colored badge — green (2xx), blue (3xx), orange (4xx),
 /// red (5xx) — instead of plain colored text, so it reads at a glance.
 pub fn status_badge(ui: &mut egui::Ui, status: u16, status_text: &str) {

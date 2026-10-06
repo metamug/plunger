@@ -3,7 +3,7 @@ use super::suggest::{chips, variable_chips};
 use crate::app::tab::Tab;
 use crate::icons::{self, Icon};
 use crate::request::{headers_to_text, parse_headers};
-use crate::theme::{self, accented_card, palette};
+use crate::theme;
 use eframe::egui;
 
 const COMMON_HEADERS: &[&str] = &[
@@ -48,37 +48,8 @@ fn rows_to_text(rows: &[(String, String)]) -> String {
 }
 
 impl Tab {
-    pub(in crate::app) fn render_headers_tab(&mut self, ui: &mut egui::Ui, bearer: &mut String, secrets_error: Option<&str>) {
-        accented_card(ui, palette().amber, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Authorization: Bearer");
-                let hint = if self.state.remember_bearer {
-                    "token — kept in the system credential store"
-                } else {
-                    "token — not saved between runs"
-                };
-                let width = ui.available_width() - icons::trailing_room(ui, 1);
-                ui.add(theme::field(bearer).desired_width(width).hint_text(hint).password(true));
-                icons::toggle(
-                    ui,
-                    &mut self.state.remember_bearer,
-                    Icon::Key,
-                    "Remembered in the system credential store (never in a file). Click to stop remembering",
-                    "Not remembered: cleared when the app closes. Click to keep it in the system credential store",
-                );
-            });
-            if let Some(err) = secrets_error {
-                ui.colored_label(palette().error, err);
-            }
-        });
-        ui.add_space(8.0);
-
+    pub(in crate::app) fn render_headers_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("The Bearer token above is added automatically — no need to repeat it here.")
-                    .weak()
-                    .small(),
-            );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let toggled = icons::toggle(
                     ui,

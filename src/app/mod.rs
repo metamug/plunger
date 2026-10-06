@@ -766,6 +766,7 @@ mod tests {
         let mut a = app(busy_state());
         for tab in [
             RequestTab::Params,
+            RequestTab::Auth,
             RequestTab::Headers,
             RequestTab::Body,
             RequestTab::Variables,
@@ -980,7 +981,7 @@ mod tests {
         a.restore_secrets();
         assert!(a.secrets_error.as_deref().is_some_and(|e| e.contains("locked")));
 
-        for tab in [RequestTab::Headers, RequestTab::Variables] {
+        for tab in [RequestTab::Auth, RequestTab::Headers, RequestTab::Variables] {
             a.tab_mut().request_tab = tab;
             draw(&mut a);
         }
