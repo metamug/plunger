@@ -10,7 +10,7 @@ use crate::engine::{
 };
 use crate::history::{History, Source};
 use crate::redact::is_sensitive_header;
-use crate::model::{BodyMode, FieldKind, PersistedState};
+use crate::model::{BodyMode, FieldKind, PersistedState, ResponseData};
 use crate::request::{headers_to_text, parse_headers};
 use rmcp::schemars::{self, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -182,12 +182,31 @@ pub(super) fn send_prepared(
     history: &History,
     source: Source,
 ) -> Result<AgentResponse, SendFailure> {
+    send_prepared_raw(state, params, session, history, source).map(|(shaped, _)| shaped)
+}
+
+/// Like `send_request`, but also returns the response as the server sent it, so a workflow can take
+/// a value out of it before any secret is masked. The raw response never goes to an agent.
+pub fn send_request_raw(params: &SendParams, source: Source) -> Result<(AgentResponse, ResponseData), SendFailure> {
+    let session = Session::load();
+    let history = open_history().map_err(SendFailure::NotSent)?;
+    let state = params.to_state(&session, &history).map_err(SendFailure::NotSent)?;
+    send_prepared_raw(state, params, &session, &history, source)
+}
+
+fn send_prepared_raw(
+    state: PersistedState,
+    params: &SendParams,
+    session: &Session,
+    history: &History,
+    source: Source,
+) -> Result<(AgentResponse, ResponseData), SendFailure> {
     // Mask every secret the session knows, used in this request or not.
     let scrubber = Scrubber::new(&state, &session.bearer);
     let bearer = if params.use_saved_bearer.unwrap_or(false) { session.bearer.as_str() } else { "" };
     let max_body_chars = params.max_body_chars.unwrap_or(DEFAULT_MAX_BODY_CHARS);
     match engine::send(state, bearer, Some(history), source) {
-        Ok(sent) => Ok(AgentResponse::from_sent(&sent, &scrubber, max_body_chars)),
+        Ok(sent) => Ok((AgentResponse::from_sent(&sent, &scrubber, max_body_chars), sent.response)),
         Err(SendError::Refused(msg)) => {
             // The window's advice ("define it in the Variables tab") isn't
             // something an agent can do; say how it can supply one instead.

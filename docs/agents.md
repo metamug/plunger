@@ -73,8 +73,35 @@ python scripts/mcp-demo-client.py path\to\plunger.exe
 | `set_variable` | Keeps a value for later requests as `{{name}}`, for example a token read from a login response. It persists, is shared with the window and the command line, and appears in the window under "Set by agents". A secret, or a name like `token` or `api_key`, is kept in the system credential store and masked in results. |
 | `delete_variable` | Removes a variable an agent set. The user's own variables cannot be changed or removed by an agent. |
 | `export_curl` | A saved request or history entry as a curl command, with `{{variables}}` left as placeholders. |
+| `save_workflow` | Saves a workflow: ordered steps, each described like `send_request`, plus `extract` and `expect_status`. See [Workflows](#workflows). |
+| `run_workflow` | Runs a workflow by name, optionally with `variables` for every step. Returns each step's status and the variables it set (secrets by name only), and the last response in full. |
+| `list_workflows` / `delete_workflow` | List the saved workflows with their steps, or remove one. |
 
 The read-only tools are marked as such, so a client can run them without asking.
+
+## Workflows
+
+A workflow is a saved list of requests where a later one can use a value from an earlier response, for example log in, then call the API with the token. A step is a request (a saved one by name, or `method` / `url` / `headers` / `json` / `body` / `form`) plus:
+
+- `extract`: `[{"name": "token", "from": "json:$.access_token"}]` keeps a value as `{{token}}` for the steps after it. `from` is `json:$.a.b[0]`, `header:Name` or `status`. A name like `token` or `password` (or `"secret": true`) goes to the system credential store and is never shown, but it is used in the next request. The value is read from the response as the server sent it, before any secret is masked.
+- `expect_status`: the status the step must return. Without it any 2xx passes. A failing step stops the run.
+
+```json
+[
+  {"label": "log in", "method": "POST", "url": "{{base}}/login",
+   "json": {"username": "{{username}}", "password": "{{password}}"},
+   "extract": [{"name": "token", "from": "json:$.token"}]},
+  {"label": "create an order", "method": "POST", "url": "{{base}}/orders",
+   "headers": {"Authorization": "Bearer {{token}}"}, "json": {"item_id": 1, "qty": 2},
+   "expect_status": 201, "extract": [{"name": "order_url", "from": "header:Location"}]}
+]
+```
+
+From a terminal: `plunger workflow save shop @steps.json`, `plunger workflow run shop --var base=http://localhost:8080` (exit code 4 when a step fails), `plunger workflow list|show|delete`. Variables a workflow sets stay afterwards and show in the window under "Set by agents".
+
+## Resources and prompts
+
+Besides tools, the MCP server offers resources a client can read without calling a tool: `plunger://guide`, `plunger://variables`, `plunger://saved-requests`, `plunger://workflows`, `plunger://history`, and one for each saved request and workflow (`plunger://saved-requests/{name}`, `plunger://workflows/{name}`). It also offers prompts that start common jobs: `test_endpoint`, `login_workflow`, `debug_failed_request` and `record_workflow`.
 
 ## Command line
 

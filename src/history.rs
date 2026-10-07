@@ -1,6 +1,6 @@
 use crate::model::{BodyMode, FormField, KeyValue, PersistedState};
 use crate::redact::{redact_headers_text, redact_url};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -258,6 +258,15 @@ impl History {
             )",
             [],
         )?;
+        // Workflows: an ordered list of steps (JSON), run by name from the CLI or MCP.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS workflows (
+                name       TEXT PRIMARY KEY,
+                steps      TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT ''
+            )",
+            [],
+        )?;
         let columns: Vec<String> = conn
             .prepare("PRAGMA table_info(requests)")?
             .query_map([], |r| r.get::<_, String>(1))?
@@ -451,6 +460,38 @@ impl History {
         let names: Vec<String> = self.list_agent_variables()?.into_iter().map(|v| v.name).collect();
         self.conn.execute("DELETE FROM agent_variables", [])?;
         Ok(names)
+    }
+
+    /// Creates or replaces a workflow; `steps` is its JSON.
+    pub fn save_workflow(&self, name: &str, steps: &str) -> rusqlite::Result<()> {
+        let now = time::OffsetDateTime::now_utc()
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_default();
+        self.conn.execute(
+            "INSERT INTO workflows (name, steps, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(name) DO UPDATE SET steps = ?2, updated_at = ?3",
+            params![name, steps, now],
+        )?;
+        Ok(())
+    }
+
+    /// A workflow's steps (JSON), if there is one by that name.
+    pub fn get_workflow(&self, name: &str) -> rusqlite::Result<Option<String>> {
+        self.conn
+            .query_row("SELECT steps FROM workflows WHERE name = ?1", params![name], |r| r.get(0))
+            .optional()
+    }
+
+    /// Workflows by name, with their steps (JSON).
+    pub fn list_workflows(&self) -> rusqlite::Result<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare("SELECT name, steps FROM workflows ORDER BY name COLLATE NOCASE, name")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect()
+    }
+
+    /// Removes a workflow; false when there was none by that name.
+    pub fn delete_workflow(&self, name: &str) -> rusqlite::Result<bool> {
+        Ok(self.conn.execute("DELETE FROM workflows WHERE name = ?1", params![name])? > 0)
     }
 
     /// Saved requests, alphabetically.

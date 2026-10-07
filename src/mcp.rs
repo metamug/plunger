@@ -8,8 +8,16 @@
 use crate::agent::{self, ImportedRequest, SendParams, VariablesResult};
 use crate::engine::{AgentResponse, HistoryItem, StoredRequestInfo, VariableInfo};
 use crate::history::Source;
+use crate::mcp_content;
+use crate::workflow::{self, Step, WorkflowInfo, WorkflowList, WorkflowResult};
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
-use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
+use rmcp::model::{
+    GetPromptRequestParams, GetPromptResponse, GetPromptResult, Implementation, ListPromptsResult, ListResourceTemplatesResult,
+    ListResourcesResult, PaginatedRequestParams, Prompt, PromptArgument, PromptMessage, ReadResourceRequestParams, ReadResourceResponse,
+    ReadResourceResult, Resource, ResourceContents, ResourceTemplate, Role, ServerCapabilities, ServerConfig,
+};
+use rmcp::service::RequestContext;
+use rmcp::{ErrorData, RoleServer};
 use rmcp::schemars::{self, JsonSchema};
 use rmcp::{tool, tool_handler, tool_router, Json, ServerHandler, ServiceExt};
 use serde::{Deserialize, Serialize};
@@ -27,6 +35,7 @@ TOOLS
 - import_curl: parse a curl command into a request, and with `save_as` keep it in the user's Saved list.
 - export_curl: a saved request or a history entry as a curl command.
 - get_history: recent requests, who sent them (gui, cli, mcp), status and time; `search` filters.
+- save_workflow / run_workflow / list_workflows / delete_workflow: a workflow is an ordered list of steps (each is like send_request, plus `extract` and `expect_status`). `extract` takes a value from the response (`json:$.data.token`, `header:Name` or `status`) and keeps it as a variable for the steps after it, so a login token reaches the next request without you ever seeing it. A step that fails (not 2xx, or not `expect_status`) stops the run. run_workflow takes `variables` that apply to every step.
 
 HOW IT BEHAVES
 - {{variables}} work in the URL, headers and body. Secret values are filled in for you and never shown; if a server echoes one back it appears as [redacted:name]. A request with an undefined {{variable}} is refused, not sent.
@@ -36,9 +45,11 @@ HOW IT BEHAVES
 - A response comes back as structured fields: status, timing, size, headers and the parsed JSON (`json`) or text (`body`). A body over `max_body_chars` (default 50000) is cut and marked with `body_cut_from_chars`. A binary body is not returned (`binary: true`, with its size). Set-Cookie and similar response headers are shown as [redacted].
 - Failures are reported, not hidden: a request that could not be sent returns an error and is not recorded; one that got no response (DNS, refused, timeout) is recorded in the history.
 
+RESOURCES AND PROMPTS
+- Resources (plunger://guide, variables, saved-requests, workflows, history, and one per saved request and workflow) can be read without calling a tool. Prompts (test_endpoint, login_workflow, debug_failed_request, record_workflow) start common jobs.
+
 NOT SUPPORTED YET
-- Cookies are not carried from one request to the next, and multipart/form-data file uploads are not possible (`form` is url-encoded only).
-- Values from a response are not extracted for you: read the value, then keep it with set_variable (use the name `token` or similar to make it a hidden secret).";
+- Cookies are not carried from one request to the next, and multipart/form-data file uploads are not possible (`form` is url-encoded only).";
 
 #[derive(Debug, Clone)]
 pub struct PlungerMcp {
@@ -82,6 +93,27 @@ pub struct SaveRequestParams {
     /// The request, described like send_request does: method, url, headers, json / body / form, options.
     #[serde(flatten)]
     pub request: SendParams,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct SaveWorkflowParams {
+    /// The workflow's name.
+    pub name: String,
+    /// Replace a workflow that already has this name.
+    #[serde(default)]
+    pub overwrite: Option<bool>,
+    /// The requests, in order. Each is like send_request, plus `extract` (values to keep for later steps) and
+    /// `expect_status` (default: any 2xx).
+    pub steps: Vec<Step>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct RunWorkflowParams {
+    /// The workflow's name (see list_workflows).
+    pub name: String,
+    /// {{variable}} values for every step of this run.
+    #[serde(default)]
+    pub variables: Option<std::collections::BTreeMap<String, String>>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -198,6 +230,35 @@ impl PlungerMcp {
         blocking(move || agent::delete_saved_request(&p.name)).await.map(Json)
     }
 
+    /// Save a workflow: an ordered list of requests where a later one can use values from an earlier response.
+    /// Each step is described like send_request, plus `extract` (for example {name: "token", from: "json:$.access_token"},
+    /// which keeps the value as {{token}} for the steps after it, hidden if it looks like a credential) and
+    /// `expect_status`. Use it for logins, create-then-fetch flows and any sequence you will repeat.
+    #[tool(name = "save_workflow", annotations(title = "Save a workflow", idempotent_hint = true, destructive_hint = false))]
+    async fn save_workflow(&self, Parameters(p): Parameters<SaveWorkflowParams>) -> Result<Json<WorkflowInfo>, String> {
+        blocking(move || workflow::save(&p.name, p.steps, p.overwrite.unwrap_or(false))).await.map(Json)
+    }
+
+    /// Run a saved workflow: its requests are sent in order, values are carried from one response to the next
+    /// (never shown if secret), and it stops at the first step that fails. Returns each step's status and the
+    /// variables it set, plus the last response in full.
+    #[tool(name = "run_workflow", annotations(title = "Run a workflow", open_world_hint = true))]
+    async fn run_workflow(&self, Parameters(p): Parameters<RunWorkflowParams>) -> Result<Json<WorkflowResult>, String> {
+        blocking(move || workflow::run(&p.name, &p.variables.unwrap_or_default(), Source::Mcp)).await.map(Json)
+    }
+
+    /// List the saved workflows with their steps.
+    #[tool(name = "list_workflows", annotations(title = "List workflows", read_only_hint = true))]
+    async fn list_workflows(&self) -> Result<Json<WorkflowList>, String> {
+        blocking(workflow::list).await.map(Json)
+    }
+
+    /// Remove a workflow by name. Returns what was removed.
+    #[tool(name = "delete_workflow", annotations(title = "Delete a workflow", destructive_hint = true))]
+    async fn delete_workflow(&self, Parameters(p): Parameters<NameParams>) -> Result<Json<WorkflowInfo>, String> {
+        blocking(move || workflow::delete(&p.name)).await.map(Json)
+    }
+
     /// Turn a saved request (by name) or a history entry (by id) into a curl command, for CI scripts or tools
     /// that only speak curl. {{variables}} stay as placeholders, so no secret is written out.
     #[tool(name = "export_curl", annotations(title = "Export as curl", read_only_hint = true))]
@@ -209,9 +270,62 @@ impl PlungerMcp {
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for PlungerMcp {
     fn get_info(&self) -> ServerConfig {
-        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().enable_prompts().build())
             .with_server_info(Implementation::new("plunger", env!("CARGO_PKG_VERSION")))
             .with_instructions(INSTRUCTIONS)
+    }
+
+    async fn list_resources(&self, _: Option<PaginatedRequestParams>, _: RequestContext<RoleServer>) -> Result<ListResourcesResult, ErrorData> {
+        let mut resources: Vec<Resource> = mcp_content::RESOURCES
+            .iter()
+            .map(|r| Resource::new(r.uri, r.name).with_description(r.description).with_mime_type(r.mime))
+            .collect();
+        let dynamic = tokio::task::spawn_blocking(mcp_content::dynamic).await.unwrap_or_default();
+        resources.extend(dynamic.into_iter().map(|(uri, name, mime)| Resource::new(uri, name).with_mime_type(mime)));
+        Ok(ListResourcesResult::with_all_items(resources))
+    }
+
+    async fn list_resource_templates(
+        &self,
+        _: Option<PaginatedRequestParams>,
+        _: RequestContext<RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, ErrorData> {
+        let templates = mcp_content::TEMPLATES
+            .iter()
+            .map(|(uri, name, description)| ResourceTemplate::new(*uri, *name).with_description(*description).with_mime_type("application/json"))
+            .collect();
+        Ok(ListResourceTemplatesResult::with_all_items(templates))
+    }
+
+    async fn read_resource(&self, request: ReadResourceRequestParams, _: RequestContext<RoleServer>) -> Result<ReadResourceResponse, ErrorData> {
+        let uri = request.uri;
+        let for_read = uri.clone();
+        let text = blocking(move || mcp_content::read(&for_read, INSTRUCTIONS))
+            .await
+            .map_err(|message| ErrorData::resource_not_found(message, None))?;
+        let mime = if uri == mcp_content::GUIDE_URI { "text/markdown" } else { "application/json" };
+        Ok(ReadResourceResult::new(vec![ResourceContents::text(text, uri).with_mime_type(mime)]).into())
+    }
+
+    async fn list_prompts(&self, _: Option<PaginatedRequestParams>, _: RequestContext<RoleServer>) -> Result<ListPromptsResult, ErrorData> {
+        let prompts = mcp_content::PROMPTS
+            .iter()
+            .map(|p| {
+                let arguments = p
+                    .arguments
+                    .iter()
+                    .map(|(name, description, required)| PromptArgument::new(*name).with_description(*description).with_required(*required))
+                    .collect();
+                Prompt::new(p.name, Some(p.description), Some(arguments))
+            })
+            .collect();
+        Ok(ListPromptsResult::with_all_items(prompts))
+    }
+
+    async fn get_prompt(&self, request: GetPromptRequestParams, _: RequestContext<RoleServer>) -> Result<GetPromptResponse, ErrorData> {
+        let args = request.arguments.unwrap_or_default();
+        let (description, text) = mcp_content::prompt(&request.name, &args).map_err(|m| ErrorData::invalid_params(m, None))?;
+        Ok(GetPromptResult::new(vec![PromptMessage::new_text(Role::User, text)]).with_description(description).into())
     }
 }
 
@@ -243,8 +357,9 @@ mod tests {
         assert_eq!(
             names,
             [
-                "delete_saved_request", "delete_variable", "export_curl", "get_history", "get_saved_request", "import_curl",
-                "list_saved_requests", "list_variables", "save_request", "send_request", "set_variable"
+                "delete_saved_request", "delete_variable", "delete_workflow", "export_curl", "get_history", "get_saved_request",
+                "import_curl", "list_saved_requests", "list_variables", "list_workflows", "run_workflow", "save_request",
+                "save_workflow", "send_request", "set_variable"
             ]
         );
         let send = tools.iter().find(|t| t.name == "send_request").unwrap();

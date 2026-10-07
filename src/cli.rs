@@ -8,6 +8,7 @@
 use crate::agent::{self, SendFailure, SendParams};
 use crate::history::Source;
 use crate::mcp;
+use crate::workflow;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -26,6 +27,8 @@ USAGE
   plunger saved show <name>             One saved request in full (headers, body, variables it needs)
   plunger saved delete <name>           Remove a saved request
   plunger save <name> [send options]    Save a request without sending it (--overwrite replaces)
+  plunger workflow list|show|delete|run|save ...
+                                        Ordered requests where one response feeds the next
   plunger history [--limit N] [--search TEXT]
                                         Recent requests, newest first (default 20);
                                         --search matches URL, method, name or status
@@ -143,6 +146,25 @@ plunger saved show <name>           one saved request in full, including its bod
 plunger saved delete <name>         remove a saved request (history stays)
 plunger save <name> ...             save a request, see `plunger save --help`
 plunger send <name> [options]       send a saved request; any option overrides that part of it
+",
+        "workflow" | "workflows" => "\
+plunger workflow                        list workflows
+plunger workflow show <name>            a workflow's steps
+plunger workflow run <name> [--var name=value ...]
+                                        send the steps in order; stops at the first failure
+plunger workflow save <name> <steps> [--overwrite]
+                                        <steps> is JSON, or @file.json, or @- for standard input
+plunger workflow delete <name>
+
+A workflow is a JSON array of steps. A step is a request (saved_request, or method / url / headers /
+json / body / form) plus:
+  extract        [{\"name\": \"token\", \"from\": \"json:$.access_token\"}]  keep a value as {{name}} for the next steps
+                 `from` is json:$.path, header:Name or status; a name like token or password stays secret
+  expect_status  the status the step must return (default: any 2xx)
+
+Example: [{\"method\":\"POST\",\"url\":\"{{base}}/login\",\"json\":{\"user\":\"{{username}}\",\"password\":\"{{password}}\"},
+          \"extract\":[{\"name\":\"token\",\"from\":\"json:$.token\"}]},
+         {\"url\":\"{{base}}/me\",\"headers\":{\"Authorization\":\"Bearer {{token}}\"}}]
 ",
         "save" => "\
 plunger save <name> [--url] <url> [send options] [--overwrite]
@@ -267,6 +289,53 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
             }
             let name = name.ok_or_else(|| usage_error("Give the request a name"))?;
             print_json(&agent::save_request(&name, overwrite, &opts.params, Source::Cli).map_err(error)?);
+            Ok(EXIT_OK)
+        }
+        "workflow" | "workflows" => {
+            match args.next().as_deref() {
+                None | Some("list") => print_json(&workflow::list().map_err(error)?),
+                Some("show") => print_json(&workflow::get(&args.value("workflow show")?).map_err(error)?),
+                Some("delete") => {
+                    let name = args.value("workflow delete")?;
+                    args.finish()?;
+                    let removed = workflow::delete(&name).map_err(error)?;
+                    print_json(&serde_json::json!({ "deleted": name, "was": removed }));
+                }
+                Some("save") => {
+                    let name = args.value("workflow save")?;
+                    let mut steps = None;
+                    let mut overwrite = false;
+                    while let Some(arg) = args.next() {
+                        if arg == "--overwrite" {
+                            overwrite = true;
+                        } else if steps.is_none() {
+                            steps = Some(arg);
+                        } else {
+                            return Err(usage_error(format!("Unexpected argument `{arg}`")));
+                        }
+                    }
+                    let text = file_or_text(steps.ok_or_else(|| usage_error("Give the steps as JSON, @file.json or @-"))?)?;
+                    let steps: Vec<workflow::Step> =
+                        serde_json::from_str(&text).map_err(|e| usage_error(format!("The steps aren't valid: {e}")))?;
+                    print_json(&workflow::save(&name, steps, overwrite).map_err(error)?);
+                }
+                Some("run") => {
+                    let name = args.value("workflow run")?;
+                    let mut variables = BTreeMap::new();
+                    while let Some(arg) = args.next() {
+                        if arg == "--var" {
+                            let (k, v) = args.pair(&arg)?;
+                            variables.insert(k, v);
+                        } else {
+                            return Err(usage_error(format!("Unexpected argument `{arg}`")));
+                        }
+                    }
+                    let result = workflow::run(&name, &variables, Source::Cli).map_err(error)?;
+                    print_json(&result);
+                    return Ok(if result.ok { EXIT_OK } else { EXIT_HTTP_ERROR });
+                }
+                Some(other) => return Err(usage_error(format!("Unexpected argument `{other}`"))),
+            }
             Ok(EXIT_OK)
         }
         "history" => {
@@ -518,7 +587,7 @@ mod tests {
 
     #[test]
     fn every_command_in_the_usage_has_its_own_help() {
-        for command in ["send", "vars", "saved", "save", "history", "import", "export", "mcp"] {
+        for command in ["send", "vars", "saved", "save", "workflow", "history", "import", "export", "mcp"] {
             assert!(command_help(command).is_some(), "{command}");
         }
         assert!(command_help("nonsense").is_none());

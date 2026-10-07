@@ -4,7 +4,12 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+- Workflows: `save_workflow`, `run_workflow`, `list_workflows` and `delete_workflow` over MCP, and `plunger workflow list|show|run|save|delete` on the command line. A step can `extract` a value from a response (`json:$.path`, `header:Name`, `status`) into a variable for the next steps; credential-like names stay secret and are never shown. A failing step stops the run.
+- MCP resources (`plunger://guide`, variables, saved requests, workflows, history, and one per saved request and workflow) and prompts (`test_endpoint`, `login_workflow`, `debug_failed_request`, `record_workflow`).
+
 ### Changed
+- The code is organised into smaller modules (`engine` and `agent` are folders), with the new `workflow` and `mcp_content` modules.
 - Compact layout: the help paragraphs under the Params and Variables tabs are now hover tips on the tabs. The response's Body/Headers tabs, status, time and size share one row; hovering the time shows TTFB, download and sizes. The status bar no longer repeats the response numbers.
 - The saved-requests list draws only the rows in view (fast with thousands of saved requests).
 
