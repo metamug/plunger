@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 const HISTORY_DEFAULT: i64 = 20;
 const HISTORY_MAX: i64 = 200;
 
-fn open_history() -> Result<History, String> {
+pub(super) fn open_history() -> Result<History, String> {
     History::open().map_err(|e| format!("Couldn't open Plunger's history database: {e}"))
 }
 
@@ -66,7 +66,7 @@ pub struct SendParams {
 }
 
 /// Merges `extra` headers into `headers_text`, replacing same-named ones.
-fn merge_headers(headers_text: &str, extra: &BTreeMap<String, String>) -> String {
+pub(super) fn merge_headers(headers_text: &str, extra: &BTreeMap<String, String>) -> String {
     let mut rows: Vec<(String, String)> = parse_headers(headers_text)
         .into_iter()
         .filter(|(k, _)| !extra.keys().any(|e| e.eq_ignore_ascii_case(k)))
@@ -175,7 +175,7 @@ pub fn send_curl(curl: &str, params: &SendParams, source: Source) -> Result<Agen
     send_prepared(state, params, &session, &history, source)
 }
 
-fn send_prepared(
+pub(super) fn send_prepared(
     state: PersistedState,
     params: &SendParams,
     session: &Session,
@@ -205,272 +205,12 @@ fn send_prepared(
     }
 }
 
-/// The form state for a curl command, exactly as the window's import builds it.
-fn state_from_curl(curl: &str) -> Result<PersistedState, String> {
-    Ok(parse_curl(curl)?.into_state())
-}
 
-/// A curl command parsed into a Plunger request.
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
-pub struct ImportedRequest {
-    pub method: String,
-    pub url: String,
-    pub headers: Vec<NameValue>,
-    /// none, json, form-data or raw.
-    pub body_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub body: Option<String>,
-    /// multipart -F fields: "name=value" or "name=@file".
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub form_fields: Vec<String>,
-    /// {{variables}} the request uses.
-    pub variables_used: Vec<String>,
-    /// Set when saved under `save_as`; it now shows in Plunger's Saved list.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub saved_id: Option<i64>,
-}
+mod requests;
+mod variables;
 
-/// A request in the shape an agent reads: what it sends, and which `{{variables}}` it needs.
-fn imported_from_state(state: &PersistedState, saved_id: Option<i64>) -> ImportedRequest {
-    let body = match state.body_mode {
-        BodyMode::Json => Some(state.json_body.clone()),
-        BodyMode::Raw => Some(state.raw_body.clone()),
-        BodyMode::UrlEncoded => Some(state.urlencoded_body.clone()),
-        _ => None,
-    };
-    ImportedRequest {
-        method: state.method.clone(),
-        url: state.url.clone(),
-        headers: parse_headers(&state.headers_text).into_iter().map(|(name, value)| NameValue { name, value }).collect(),
-        body_type: engine::body_type_name(state.body_mode).to_string(),
-        body,
-        form_fields: state
-            .multipart_fields
-            .iter()
-            .map(|f| match f.kind {
-                FieldKind::Text => format!("{}={}", f.key, f.value),
-                FieldKind::File => format!("{}=@{}", f.key, f.value),
-            })
-            .collect(),
-        variables_used: engine::variables_used(state),
-        saved_id,
-    }
-}
-
-/// Parses a curl command (without sending it), optionally saving it by name.
-pub fn import_curl(curl: &str, save_as: Option<&str>, source: Source) -> Result<ImportedRequest, String> {
-    let state = state_from_curl(curl)?;
-    let saved_id = match save_as.map(str::trim).filter(|n| !n.is_empty()) {
-        Some(name) => Some(
-            open_history()?
-                .save_new_from(&state, name, source)
-                .map_err(|e| format!("Couldn't save the request: {e}"))?,
-        ),
-        None => None,
-    };
-    Ok(imported_from_state(&state, saved_id))
-}
-
-/// Saves the request described by `params` (nothing is sent) under `name`, keeping its
-/// `{{placeholders}}`. An existing name is refused unless `overwrite` is set, which replaces it.
-pub fn save_request(name: &str, overwrite: bool, params: &SendParams, source: Source) -> Result<ImportedRequest, String> {
-    let session = Session::load();
-    let history = open_history()?;
-    let state = params.to_state(&session, &history)?;
-    let id = save_request_in(&history, name, overwrite, &state, source)?;
-    Ok(imported_from_state(&state, Some(id)))
-}
-
-fn save_request_in(history: &History, name: &str, overwrite: bool, state: &PersistedState, source: Source) -> Result<i64, String> {
-    let name = name.trim();
-    if name.is_empty() {
-        return Err("Give the request a name.".into());
-    }
-    let existing = history.list_saved().map_err(|e| e.to_string())?.into_iter().find(|e| e.name.as_deref() == Some(name));
-    match existing {
-        Some(entry) if overwrite => {
-            history.update_request(entry.id, state).map_err(|e| e.to_string())?;
-            Ok(entry.id)
-        }
-        Some(_) => Err(format!("A saved request named \"{name}\" already exists. Pass overwrite: true to replace it, or choose another name.")),
-        None => history.save_new_from(state, name, source).map_err(|e| format!("Couldn't save the request: {e}")),
-    }
-}
-
-/// One saved request in full: method, URL, headers, body and the variables it needs.
-pub fn show_saved_request(name: &str) -> Result<ImportedRequest, String> {
-    let history = open_history()?;
-    let entry = engine::find_saved(&history, name)?;
-    Ok(imported_from_state(&entry.to_persisted_state(), Some(entry.id)))
-}
-
-/// Removes a saved request (its history entries stay) and returns what was removed.
-pub fn delete_saved_request(name: &str) -> Result<ImportedRequest, String> {
-    let history = open_history()?;
-    delete_saved_in(&history, name)
-}
-
-fn delete_saved_in(history: &History, name: &str) -> Result<ImportedRequest, String> {
-    let entry = engine::find_saved(history, name)?;
-    history.set_name(entry.id, None).map_err(|e| e.to_string())?;
-    Ok(imported_from_state(&entry.to_persisted_state(), Some(entry.id)))
-}
-
-pub fn list_saved_requests() -> Result<Vec<StoredRequestInfo>, String> {
-    let saved = open_history()?.list_saved().map_err(|e| e.to_string())?;
-    Ok(saved.iter().map(StoredRequestInfo::from).collect())
-}
-
-pub fn get_history(limit: Option<i64>, search: Option<&str>) -> Result<Vec<HistoryItem>, String> {
-    let limit = limit.unwrap_or(HISTORY_DEFAULT).clamp(1, HISTORY_MAX);
-    let rows = open_history()?.search_recent(search.unwrap_or(""), limit).map_err(|e| e.to_string())?;
-    Ok(rows.iter().map(HistoryItem::from).collect())
-}
-
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
-pub struct VariablesResult {
-    pub variables: Vec<VariableInfo>,
-    /// Always available: {{$uuid}}, {{$timestamp}}, {{$randomInt}}, and {{$env:NAME}} (an environment variable, read when the request is sent).
-    pub built_in: Vec<String>,
-    /// True when a Bearer token is saved in Plunger (send with use_saved_bearer). Its value is never shown.
-    pub saved_bearer_available: bool,
-    /// Problems reading remembered secrets, if any.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub problems: Vec<String>,
-}
-
-pub fn list_variables() -> VariablesResult {
-    let session = Session::load();
-    VariablesResult {
-        variables: session.variables(),
-        built_in: vec!["$uuid".into(), "$timestamp".into(), "$randomInt".into(), "$env:NAME".into()],
-        saved_bearer_available: !session.bearer.is_empty(),
-        problems: session.problems,
-    }
-}
-
-const MAX_VARIABLES: usize = 200;
-const MAX_VARIABLE_BYTES: usize = 64 * 1024;
-const MAX_NAME_LEN: usize = 64;
-
-fn valid_variable_name(name: &str) -> Result<&str, String> {
-    let name = name.trim();
-    let ok = !name.is_empty()
-        && name.len() <= MAX_NAME_LEN
-        && !name.starts_with('$')
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
-    if ok {
-        Ok(name)
-    } else {
-        Err(format!(
-            "`{name}` isn't a valid variable name: use letters, digits, _ - and . (at most {MAX_NAME_LEN} characters, not starting with $)."
-        ))
-    }
-}
-
-/// Sets a variable that later requests can use as `{{name}}`. It is kept between runs and shared
-/// with the window, the command line and the MCP server. A secret (or a name that looks like a
-/// credential) is kept in the system credential store, never in a file, and is masked in results.
-pub fn set_variable(name: &str, value: &str, secret: Option<bool>, source: Source) -> Result<VariableInfo, String> {
-    let session = Session::load();
-    let history = open_history()?;
-    let window: Vec<String> = session.window_variables().iter().map(|v| v.name.trim().to_string()).collect();
-    set_variable_in(&history, &crate::secrets::OsStore::new(), &window, name, value, secret, source)
-}
-
-fn set_variable_in(
-    history: &History,
-    store: &dyn crate::secrets::SecretStore,
-    window_names: &[String],
-    name: &str,
-    value: &str,
-    secret: Option<bool>,
-    source: Source,
-) -> Result<VariableInfo, String> {
-    let name = valid_variable_name(name)?;
-    if value.len() > MAX_VARIABLE_BYTES {
-        return Err(format!("The value is too long ({} bytes; the limit is {MAX_VARIABLE_BYTES}).", value.len()));
-    }
-    if window_names.iter().any(|n| n == name) {
-        return Err(format!(
-            "`{name}` is defined by the user in the Plunger window, and an agent cannot change it. Pick another name, or pass a value for one request in `variables`."
-        ));
-    }
-    let existing = history.list_agent_variables().map_err(|e| e.to_string())?;
-    if existing.len() >= MAX_VARIABLES && !existing.iter().any(|v| v.name == name) {
-        return Err(format!("There are already {MAX_VARIABLES} variables set by agents; delete some first."));
-    }
-    let secret = secret.unwrap_or(false) || is_sensitive_header(name);
-    if secret {
-        store
-            .set(&engine::agent_secret_key(name), value)
-            .map_err(|e| format!("Couldn't keep the secret in the system credential store: {e}"))?;
-        history.set_agent_variable(name, "", true, source).map_err(|e| e.to_string())?;
-    } else {
-        // A plain value replacing a secret of the same name must not leave the old secret behind.
-        let _ = store.delete(&engine::agent_secret_key(name));
-        history.set_agent_variable(name, value, false, source).map_err(|e| e.to_string())?;
-    }
-    Ok(VariableInfo {
-        name: name.to_string(),
-        secret,
-        has_value: !value.is_empty(),
-        remembered: secret,
-        value: (!secret).then(|| value.to_string()),
-        source: "agent".to_string(),
-    })
-}
-
-/// Removes a variable an agent set. The user's own variables can only be removed in the window.
-pub fn delete_variable(name: &str) -> Result<(), String> {
-    let session = Session::load();
-    let history = open_history()?;
-    let window: Vec<String> = session.window_variables().iter().map(|v| v.name.trim().to_string()).collect();
-    delete_variable_in(&history, &crate::secrets::OsStore::new(), &window, name)
-}
-
-fn delete_variable_in(
-    history: &History,
-    store: &dyn crate::secrets::SecretStore,
-    window_names: &[String],
-    name: &str,
-) -> Result<(), String> {
-    let name = name.trim();
-    if window_names.iter().any(|n| n == name) {
-        return Err(format!("`{name}` belongs to the user (it is defined in the Plunger window); delete it there."));
-    }
-    if !history.delete_agent_variable(name).map_err(|e| e.to_string())? {
-        return Err(format!("No variable named `{name}` was set by an agent."));
-    }
-    let _ = store.delete(&engine::agent_secret_key(name));
-    Ok(())
-}
-
-/// Removes every variable agents set; returns how many.
-pub fn clear_variables() -> Result<usize, String> {
-    let history = open_history()?;
-    let store = crate::secrets::OsStore::new();
-    let names = history.clear_agent_variables().map_err(|e| e.to_string())?;
-    for name in &names {
-        let _ = crate::secrets::SecretStore::delete(&store, &engine::agent_secret_key(name));
-    }
-    Ok(names.len())
-}
-
-/// The curl command for a saved request (by name) or a history row (by id).
-/// Placeholders stay placeholders, so no secret is written out.
-pub fn export_curl(saved_request: Option<&str>, history_id: Option<i64>) -> Result<String, String> {
-    let history = open_history()?;
-    let entry = match (saved_request, history_id) {
-        (Some(name), None) => engine::find_saved(&history, name)?,
-        (None, Some(id)) => history
-            .get(id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("No request #{id} in the history or saved requests."))?,
-        _ => return Err("Give exactly one of `saved_request` or `history_id`.".into()),
-    };
-    Ok(to_curl(&entry.to_persisted_state()))
-}
+pub use requests::*;
+pub use variables::*;
 
 #[cfg(test)]
 mod tests {
