@@ -608,12 +608,12 @@ impl ApiTesterApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             self.render_tab_bar(ui);
-            ui.add_space(6.0);
+            ui.add_space(4.0);
             self.render_command_bar(ui);
             self.tab_mut().sync_params_from_url();
-            ui.add_space(12.0);
+            ui.add_space(6.0);
             self.render_request_section(ui);
-            ui.add_space(10.0);
+            ui.add_space(2.0);
             ui.separator();
             self.tab_mut().render_response_section(ui);
         });

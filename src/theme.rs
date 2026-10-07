@@ -289,15 +289,14 @@ pub fn overlay(ui: &mut egui::Ui, salt: impl std::hash::Hash, rect: egui::Rect, 
     child.add(widget)
 }
 
-/// A visually distinct "card" — used to separate sections from the flat
-/// window background.
-pub fn card(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
+/// The rounded panel the request editors sit in, with little padding so the response gets the room.
+pub fn compact_card(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
     let p = palette();
     egui::Frame::none()
         .fill(p.card)
         .stroke(egui::Stroke::new(1.0_f32, p.border))
         .rounding(egui::Rounding::same(8.0))
-        .inner_margin(egui::Margin::same(12.0))
+        .inner_margin(egui::Margin::symmetric(10.0, 8.0))
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             add_contents(ui);

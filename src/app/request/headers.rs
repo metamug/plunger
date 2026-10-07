@@ -48,26 +48,24 @@ fn rows_to_text(rows: &[(String, String)]) -> String {
 }
 
 impl Tab {
-    pub(in crate::app) fn render_headers_tab(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let toggled = icons::toggle(
-                    ui,
-                    &mut self.headers_as_text,
-                    Icon::Code,
-                    "Editing as raw text. Click to go back to the table",
-                    "Edit as raw text (one \"Name: value\" per line)",
-                )
-                .changed();
-                // Back to the table: rebuild the rows from the text, or edits made
-                // in raw mode would be lost (and overwritten on the next table edit).
-                if toggled && !self.headers_as_text {
-                    self.header_rows = parse_headers(&self.state.headers_text);
-                }
-            });
-        });
-        ui.add_space(6.0);
+    /// The switch between the table and raw text, drawn at the end of the tab strip.
+    pub(in crate::app) fn headers_view_toggle(&mut self, ui: &mut egui::Ui) {
+        let toggled = icons::toggle(
+            ui,
+            &mut self.headers_as_text,
+            Icon::Code,
+            "Editing as raw text. Click to go back to the table",
+            "Edit as raw text (one \"Name: value\" per line)",
+        )
+        .changed();
+        // Back to the table: rebuild the rows from the text, or edits made
+        // in raw mode would be lost (and overwritten on the next table edit).
+        if toggled && !self.headers_as_text {
+            self.header_rows = parse_headers(&self.state.headers_text);
+        }
+    }
 
+    pub(in crate::app) fn render_headers_tab(&mut self, ui: &mut egui::Ui) {
         if self.headers_as_text {
             let variables = &self.state.variables;
             let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {

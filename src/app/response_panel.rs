@@ -55,7 +55,7 @@ impl Tab {
             ui.ctx().data_mut(|d| d.insert_temp(scan_id, signature));
         }
 
-        ui.add_space(6.0);
+        ui.add_space(2.0);
         // One row: the Body / Headers tabs, then the status, time and size, then the actions.
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.response_tab, ResponseTab::Body, "Body");

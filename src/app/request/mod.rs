@@ -11,7 +11,7 @@ mod suggest;
 use crate::app::ApiTesterApp;
 use crate::model::{BodyMode, PersistedState, RequestTab};
 use crate::request::parse_headers;
-use crate::theme::card;
+use crate::theme::compact_card;
 use eframe::egui;
 
 /// At most this share of the space below the tabs goes to the request editor;
@@ -43,8 +43,11 @@ impl ApiTesterApp {
             );
             let options_label = if tab.state.insecure_tls { "Options (TLS check off)" } else { "Options" };
             ui.selectable_value(&mut tab.request_tab, RequestTab::Options, options_label);
+            if tab.request_tab == RequestTab::Headers {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| tab.headers_view_toggle(ui));
+            }
         });
-        ui.add_space(4.0);
+        ui.add_space(2.0);
         let mut forget = false;
         let mut delete_agent = None;
         // A long request (40 headers, a big body) scrolls inside its own area
@@ -54,7 +57,7 @@ impl ApiTesterApp {
             .max_height((ui.available_height() * REQUEST_SHARE).max(MIN_REQUEST_HEIGHT))
             .auto_shrink([false, true])
             .show(ui, |ui| {
-                card(ui, |ui| match tab.request_tab {
+                compact_card(ui, |ui| match tab.request_tab {
                     RequestTab::Params => tab.render_params_tab(ui),
                     RequestTab::Variables => {
                         forget = tab.render_variables_tab(ui, self.secrets_error.as_deref(), &self.agent_variables, &mut delete_agent)
