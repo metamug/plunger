@@ -1,0 +1,98 @@
+name: PyPI
+
+# Builds the `plunger-cli` wheels (the compiled binary in a platform wheel) and publishes them to PyPI
+# when a tag like v0.5.1 is pushed. Running it by hand (Actions tab > PyPI > Run workflow) builds and
+# tests the wheels but publishes nothing.
+#
+# Publishing uses PyPI trusted publishing, so there is no token to store. One-time setup on pypi.org:
+# Account > Publishing > add a pending publisher with owner "metamug", repository "plunger",
+# workflow "pypi.yml" and environment "pypi". Also create a GitHub environment named "pypi".
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  wheels:
+    name: Wheel (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { name: linux-x64, os: ubuntu-latest, target: x86_64-unknown-linux-gnu, manylinux: auto }
+          - { name: macos-arm64, os: macos-14, target: aarch64-apple-darwin }
+          - { name: macos-x64, os: macos-13, target: x86_64-apple-darwin }
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Tag must match the version in Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          [ "$tag" = "$version" ] || { echo "Tag v$tag does not match Cargo.toml version $version"; exit 1; }
+
+      - name: Build the wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          args: --release --locked --out dist
+
+      - name: The wheel installs and runs
+        shell: bash
+        run: |
+          python -m venv smoke
+          if [ -d smoke/Scripts ]; then bin=smoke/Scripts; else bin=smoke/bin; fi
+          "$bin/python" -m pip install --no-index --find-links dist plunger-cli
+          "$bin/plunger" --help | head -5
+          "$bin/plunger" vars | head -3
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheel-${{ matrix.name }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  sdist:
+    name: Source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [wheels, sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+      - name: List what is published
+        run: ls -l dist
+      - uses: pypa/gh-action-pypi-publish@release/v1

@@ -1,0 +1,35 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+# Plunger is a Rust program. maturin packs the compiled `plunger` binary into a platform wheel, so
+# `pipx install plunger-cli` or `uvx plunger-cli mcp` puts a `plunger` command on the PATH. There is no
+# Python code in it. The version comes from Cargo.toml.
+[project]
+name = "plunger-cli"
+description = "Plunger: send HTTP requests from a desktop app, the command line or an MCP server for AI agents, with secrets kept out of agent output."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+dynamic = ["version"]
+keywords = ["http", "api", "rest", "mcp", "curl", "agent"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Internet :: WWW/HTTP",
+]
+
+[project.urls]
+Homepage = "https://github.com/metamug/plunger"
+Documentation = "https://github.com/metamug/plunger/blob/main/docs/agents.md"
+Source = "https://github.com/metamug/plunger"
+Issues = "https://github.com/metamug/plunger/issues"
+Changelog = "https://github.com/metamug/plunger/blob/main/CHANGELOG.md"
+
+[tool.maturin]
+bindings = "bin"
+strip = true

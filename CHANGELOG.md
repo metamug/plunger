@@ -4,6 +4,10 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+- `plunger-cli` on PyPI: the compiled program in a platform wheel (Windows, Linux, macOS), so `pipx install plunger-cli` or `uvx plunger-cli mcp` works with nothing else to download. Built with maturin and published from CI with PyPI trusted publishing.
+- macOS builds (Apple Silicon and Intel) attached to each GitHub release as `plunger-macos-arm64.tar.gz` and `plunger-macos-x86_64.tar.gz`. They are not signed or notarized yet.
+
 ## [0.5.0] - 2026-10-07
 
 ### Added

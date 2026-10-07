@@ -150,6 +150,13 @@ scoop bucket add metamug https://github.com/metamug/scoop-bucket
 scoop install plunger
 ```
 
+**pip / uv (Windows, Linux, macOS), from 0.5.1:**
+
+```bash
+pipx install plunger-cli      # puts a `plunger` command on your PATH
+uvx plunger-cli mcp           # or run the MCP server without installing anything
+```
+
 **Zip:**
 
 1. [Download `plunger-windows.zip`](https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip) and unzip it anywhere.
