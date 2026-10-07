@@ -4,23 +4,17 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-07
+
 ### Added
+
 - Workflows: `save_workflow`, `run_workflow`, `list_workflows` and `delete_workflow` over MCP, and `plunger workflow list|show|run|save|delete` on the command line. A step can `extract` a value from a response (`json:$.path`, `header:Name`, `status`) into a variable for the next steps; credential-like names stay secret and are never shown. A failing step stops the run.
 - MCP resources (`plunger://guide`, variables, saved requests, workflows, history, and one per saved request and workflow) and prompts (`test_endpoint`, `login_workflow`, `debug_failed_request`, `record_workflow`).
-
-### Changed
-- The code is organised into smaller modules (`engine` and `agent` are folders), with the new `workflow` and `mcp_content` modules.
-- Compact layout: the help paragraphs under the Params and Variables tabs are now hover tips on the tabs. The response's Body/Headers tabs, status, time and size share one row; hovering the time shows TTFB, download and sizes. The status bar no longer repeats the response numbers.
-- The saved-requests list draws only the rows in view (fast with thousands of saved requests).
-
-### Added
-
 - Agents can set variables. `plunger vars set NAME VALUE` (`--secret`, or `-` to read the value from standard input), `plunger vars unset`, `plunger vars clear`, and the MCP tools `set_variable` / `delete_variable` keep a value for later requests as `{{name}}`. It persists, is shared by the window, the CLI and MCP at once, and shows in the window under "Set by agents" (usable from the window too, with a delete button). A secret or a credential-looking name is kept in the system credential store only and masked in results. An agent cannot change or delete variables the user defined, and the user's win on a clash (#36).
 - Agents can manage saved requests: `plunger save NAME ...` and the MCP `save_request` save a request without sending it, keep `{{placeholders}}`, and `--overwrite` / `overwrite: true` fixes an existing one; `plunger saved show|delete` and the MCP `get_saved_request` / `delete_saved_request` read one in full or remove it.
 - `plunger curl` supports `--retry`, `--retry-delay`, `--retry-max-time` and `--retry-all-errors`: transient failures (timeouts, refused connections, 408, 429, 500, 502, 503, 504) are tried again, waiting for the server's `Retry-After`.
 - Every command has its own help (`plunger vars --help`, ...), and a usage error points at the help of the command that was used.
 - `plunger send --json @file` and `-d @file` (and `@-` for standard input) read the body from a file, which gets a JSON body past PowerShell's quote handling (#138).
-
 - Export a request as a command: **File > Copy as** and **File > Export request...** write curl (bash), curl (Windows cmd), PowerShell `Invoke-RestMethod` or PowerShell `Invoke-WebRequest`, shown with syntax highlighting; **Ctrl+Shift+C** copies in the last format used. `{{variables}}` stay as placeholders, so an exported command never carries a secret (#81).
 - Import reads those same syntaxes: curl for bash, curl for the Windows command prompt (including Chrome's caret-escaped "Copy as cURL (cmd)"), and PowerShell (including Chrome's "Copy as PowerShell" with its `$session` cookies and user agent). The dialog detects the syntax and highlights what you paste.
 - Syntax highlighting where code is shown: in the import and export dialogs, in the raw and form body editors (JSON, XML/HTML or form detected from the text), in the raw headers editor and in plain-text responses; `{{variables}}` in the URL, params, headers and form-data fields are blue when defined and red when undefined.
@@ -29,9 +23,14 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ### Changed
 
+- The code is organised into smaller modules (`engine` and `agent` are folders), with the new `workflow` and `mcp_content` modules.
+- Compact layout: the help paragraphs under the Params and Variables tabs are now hover tips on the tabs. The response's Body/Headers tabs, status, time and size share one row; hovering the time shows TTFB, download and sizes. The status bar no longer repeats the response numbers.
+- The saved-requests list draws only the rows in view (fast with thousands of saved requests).
 - The MCP server's instructions now describe every tool, how variables, secrets, redirects and large bodies behave, and what is not supported yet, so an agent knows the whole surface when it connects. A test fails if a tool is added without being mentioned.
 - The Bearer token field has its own **Auth** tab instead of sitting above the headers, and the sentence that explained it is gone (#79, #83).
 - The request tabs show what they hold: `Headers (2)`, like `Params (n)` and `Variables (n)` already did, and a bullet on `Body •` and `Auth •` when they are set.
+- Less wasted space above the editors: the Headers raw-text switch moved into the tab strip, and the spacing and padding around the request editor are tighter, so the response gets the room.
+- The sidebar shows a request's path and query instead of its host, with a smaller CLI/MCP tag, so rows that hit the same host can be told apart; the full URL is in the tooltip (#87, #91).
 
 ### Fixed
 
@@ -153,7 +152,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 First public release: send requests with params, headers, JSON, form-urlencoded, raw and multipart bodies; `{{variables}}`; secrets kept in Windows Credential Manager on request; curl and HAR import; local history; TLS-skip for local servers.
 
-[Unreleased]: https://github.com/metamug/plunger/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/metamug/plunger/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/metamug/plunger/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/metamug/plunger/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/metamug/plunger/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/metamug/plunger/compare/v0.3.0...v0.4.0
