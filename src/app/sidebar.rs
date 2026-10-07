@@ -209,17 +209,19 @@ fn entry_row(
     let mut url_left = method_pos.x + method_width + 6.0;
     // Requests an agent sent get a small tag, so they stand out from your own.
     if entry.source != Source::Gui {
-        let tag = one_line(ui, &entry.source.as_str().to_ascii_uppercase(), egui::FontId::proportional(9.5), p.accent_text, 40.0);
+        let tag = one_line(ui, &entry.source.as_str().to_ascii_uppercase(), egui::FontId::proportional(8.0), p.accent_text, 30.0);
         let tag_rect = egui::Rect::from_min_size(
             egui::pos2(url_left, line_y - tag.size().y / 2.0 - 1.0),
-            tag.size() + egui::vec2(6.0, 2.0),
+            tag.size() + egui::vec2(4.0, 2.0),
         );
         ui.painter().rect_filled(tag_rect, egui::Rounding::same(3.0), p.accent_soft);
-        ui.painter().galley(tag_rect.min + egui::vec2(3.0, 1.0), tag, p.accent_text);
-        url_left = tag_rect.right() + 6.0;
+        ui.painter().galley(tag_rect.min + egui::vec2(2.0, 1.0), tag, p.accent_text);
+        url_left = tag_rect.right() + 4.0;
     }
+    // The host is usually the same on every row, so show what tells them
+    // apart; the full URL is in the tooltip.
     let url_color = p.text;
-    let url_galley = one_line(ui, &entry.url, small, url_color, inner.left() + text_width - url_left);
+    let url_galley = one_line(ui, url_path(&entry.url), small, url_color, inner.left() + text_width - url_left);
     ui.painter().galley(egui::pos2(url_left, line_y - url_galley.size().y / 2.0), url_galley, weak);
 
     let mut action = None;
@@ -288,9 +290,19 @@ fn entry_row(
     action
 }
 
+/// The path and query of `url`, without the scheme and host. Falls back to
+/// the whole string when it has no scheme (say, an unresolved `{{base}}/x`).
+fn url_path(url: &str) -> &str {
+    let Some((_, rest)) = url.split_once("://") else { return url };
+    match rest.find(['/', '?', '#']) {
+        Some(i) => &rest[i..],
+        None => rest,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::friendly_timestamp;
+    use super::{friendly_timestamp, url_path};
 
     #[test]
     fn rfc3339_timestamps_are_shortened() {
@@ -302,5 +314,13 @@ mod tests {
     fn anything_else_is_left_alone() {
         assert_eq!(friendly_timestamp("t"), "t");
         assert_eq!(friendly_timestamp("2026-09-24 11:33:44"), "2026-09-24 11:33:44");
+    }
+
+    #[test]
+    fn url_path_drops_scheme_and_host() {
+        assert_eq!(url_path("http://127.0.0.1:18090/echo?x=1"), "/echo?x=1");
+        assert_eq!(url_path("https://api.example.com?q=2"), "?q=2");
+        assert_eq!(url_path("https://api.example.com"), "api.example.com");
+        assert_eq!(url_path("{{base}}/users"), "{{base}}/users");
     }
 }
