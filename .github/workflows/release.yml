@@ -113,7 +113,7 @@ jobs:
       matrix:
         include:
           - { os: macos-14, arch: arm64 }
-          - { os: macos-13, arch: x86_64 }
+          - { os: macos-15-intel, arch: x86_64 }
     steps:
       - uses: actions/checkout@v7
       - uses: Swatinem/rust-cache@v2
