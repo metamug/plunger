@@ -336,7 +336,7 @@ impl ApiTesterApp {
             ui.separator();
             return;
         }
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 10.0), egui::Sense::click_and_drag());
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 14.0), egui::Sense::click_and_drag());
         let response = response.on_hover_cursor(egui::CursorIcon::ResizeVertical).on_hover_text("Drag to resize. Double-click to reset");
         if response.dragged() {
             let most = tab.request_shown_height + ui.available_height() - request::MIN_RESPONSE_HEIGHT;
@@ -349,6 +349,14 @@ impl ApiTesterApp {
         let active = response.hovered() || response.dragged();
         let stroke = egui::Stroke::new(if active { 2.0_f32 } else { 1.0_f32 }, if active { theme::palette().accent_text } else { theme::palette().border });
         ui.painter().hline(rect.x_range(), rect.center().y, stroke);
+        // A grip in the middle, so it is clear the line can be pulled; it lights up under the pointer.
+        let grip = egui::Rect::from_center_size(rect.center(), egui::vec2(46.0, 6.0));
+        let grip_color = if active { theme::palette().accent_text } else { theme::palette().text_widget.linear_multiply(0.5) };
+        ui.painter().rect_filled(grip, egui::Rounding::same(3.0), theme::palette().panel);
+        ui.painter().rect_stroke(grip, egui::Rounding::same(3.0), egui::Stroke::new(1.0_f32, grip_color));
+        for dx in [-10.0_f32, 0.0, 10.0] {
+            ui.painter().circle_filled(grip.center() + egui::vec2(dx, 0.0), 1.2, grip_color);
+        }
     }
 
     /// Everything drawn each frame, separate from `update` so it can run headless in tests.

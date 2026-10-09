@@ -25,16 +25,103 @@ fn body_box(ui: &mut egui::Ui, _salt: &str, add: impl FnOnce(&mut egui::Ui)) {
     add(ui);
 }
 
+/// What a JSON body's check says, for the little status chip in the tab strip.
+#[derive(Debug, PartialEq)]
+enum JsonCheck {
+    Empty,
+    /// Too long to parse on every frame, so left unchecked.
+    Large,
+    Valid,
+    Invalid {
+        /// "line 1, column 258" style position and the parser's message.
+        message: String,
+        position: (usize, usize),
+        /// The body has an unquoted `{{variable}}`, which is filled in before sending.
+        has_variable: bool,
+    },
+}
+
+fn check_json(text: &str) -> JsonCheck {
+    if text.len() > crate::highlight::LARGE_TEXT_BYTES {
+        return JsonCheck::Large;
+    }
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return JsonCheck::Empty;
+    }
+    match serde_json::from_str::<serde::de::IgnoredAny>(trimmed) {
+        Ok(_) => JsonCheck::Valid,
+        Err(e) => JsonCheck::Invalid { message: e.to_string(), position: (e.line(), e.column()), has_variable: trimmed.contains("{{") },
+    }
+}
+
+fn mode_label(mode: BodyMode) -> &'static str {
+    match mode {
+        BodyMode::None => "No body",
+        BodyMode::Json => "JSON",
+        BodyMode::Multipart => "form-data",
+        BodyMode::UrlEncoded => "urlencoded",
+        BodyMode::Raw => "Raw",
+    }
+}
+
 impl Tab {
+    /// The body's controls, drawn at the right end of the request tab strip (right to left): Prettify,
+    /// whether the JSON is valid, and the type of body. They live there, not in rows of their own, so the
+    /// editor gets the room.
+    pub(in crate::app) fn body_controls(&mut self, ui: &mut egui::Ui) {
+        if self.state.body_mode == BodyMode::Json {
+            let check = check_json(&self.state.json_body);
+            // Always there, so it can be found; greyed out while the JSON does not parse.
+            let can_prettify = matches!(check, JsonCheck::Valid);
+            let tip = if can_prettify { "Prettify: re-indent the JSON" } else { "Prettify needs valid JSON: fix the error first" };
+            let clicked = ui.add_enabled_ui(can_prettify, |ui| icons::button(ui, Icon::Format, tip).clicked()).inner;
+            if clicked {
+                // Formatting only happens on click, not on every frame.
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&self.state.json_body) {
+                    if let Ok(pretty) = serde_json::to_string_pretty(&value) {
+                        self.state.json_body = pretty;
+                    }
+                }
+            }
+            match check {
+                JsonCheck::Empty => {}
+                JsonCheck::Large => {
+                    ui.label(egui::RichText::new("Large").weak().small()).on_hover_text(format!(
+                        "Large body ({}): colouring and validation are off.",
+                        crate::app::response_panel::format_bytes(self.state.json_body.len())
+                    ));
+                }
+                JsonCheck::Valid => {
+                    ui.label(egui::RichText::new("Valid").color(palette().ok).small()).on_hover_text("The body is valid JSON");
+                }
+                JsonCheck::Invalid { message, position, has_variable } => {
+                    let hint = if has_variable { "\nAn unquoted {{variable}} is not valid JSON as typed, but is filled in when sent." } else { "" };
+                    ui.label(egui::RichText::new(format!("Invalid {}:{}", position.0, position.1)).color(palette().error).small())
+                        .on_hover_text(format!("Invalid JSON: {message}{hint}"));
+                }
+            }
+        }
+        let before = self.state.body_mode;
+        egui::ComboBox::from_id_salt(("body-mode", self.id))
+            .selected_text(mode_label(before))
+            .width(104.0)
+            .show_ui(ui, |ui| {
+                for (mode, label) in [
+                    (BodyMode::None, "No body"),
+                    (BodyMode::Json, "JSON"),
+                    (BodyMode::Multipart, "form-data"),
+                    (BodyMode::UrlEncoded, "x-www-form-urlencoded"),
+                    (BodyMode::Raw, "Raw"),
+                ] {
+                    ui.selectable_value(&mut self.state.body_mode, mode, label);
+                }
+            })
+            .response
+            .on_hover_text("The type of the request body");
+    }
+
     pub(in crate::app) fn render_body_tab(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.state.body_mode, BodyMode::None, "None");
-            ui.selectable_value(&mut self.state.body_mode, BodyMode::Json, "JSON");
-            ui.selectable_value(&mut self.state.body_mode, BodyMode::Multipart, "form-data");
-            ui.selectable_value(&mut self.state.body_mode, BodyMode::UrlEncoded, "x-www-form-urlencoded");
-            ui.selectable_value(&mut self.state.body_mode, BodyMode::Raw, "Raw");
-        });
-        ui.add_space(4.0);
         match self.state.body_mode {
             BodyMode::None => {
                 ui.label(egui::RichText::new("This request has no body.").weak());
@@ -81,7 +168,6 @@ impl Tab {
     }
 
     fn render_json_editor(&mut self, ui: &mut egui::Ui) {
-        let large = self.state.json_body.len() > crate::highlight::LARGE_TEXT_BYTES;
         let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| -> std::sync::Arc<egui::Galley> {
             let mut job = if text.len() > crate::highlight::LARGE_TEXT_BYTES {
                 crate::highlight::plain(text, palette().json[5])
@@ -99,47 +185,6 @@ impl Tab {
                     .desired_width(f32::INFINITY)
                     .layouter(&mut layouter),
             );
-        });
-
-        if large {
-            // Parsing a body this size on every frame would keep a core busy.
-            ui.label(
-                egui::RichText::new(format!(
-                    "Large body ({}): colouring and validation are off.",
-                    crate::app::response_panel::format_bytes(self.state.json_body.len())
-                ))
-                .weak(),
-            );
-            return;
-        }
-        let trimmed = self.state.json_body.trim();
-        if trimmed.is_empty() {
-            return;
-        }
-        let has_variable = trimmed.contains("{{");
-        let verdict = serde_json::from_str::<serde::de::IgnoredAny>(trimmed).map_err(|e| e.to_string());
-        ui.horizontal(|ui| match verdict {
-            Ok(_) => {
-                ui.colored_label(palette().ok, "Valid JSON");
-                if icons::button(ui, Icon::Format, "Prettify: re-indent the JSON").clicked() {
-                    // Formatting only happens on click, not on every frame.
-                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&self.state.json_body) {
-                        if let Ok(pretty) = serde_json::to_string_pretty(&value) {
-                            self.state.json_body = pretty;
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                // An unquoted {{variable}} isn't valid JSON as typed, but is
-                // substituted before sending, so don't leave it as a bare error.
-                let hint = if has_variable {
-                    " (an unquoted {{variable}} is filled in when sent)"
-                } else {
-                    ""
-                };
-                ui.colored_label(palette().error, format!("Invalid JSON: {e}{hint}"));
-            }
         });
     }
 
@@ -218,7 +263,26 @@ impl Tab {
 
 #[cfg(test)]
 mod tests {
-    use super::editor_lines;
+    use super::{check_json, editor_lines, JsonCheck};
+
+    #[test]
+    fn the_json_chip_tells_valid_invalid_empty_and_large_apart() {
+        assert_eq!(check_json("  "), JsonCheck::Empty);
+        assert_eq!(check_json("{\"a\": [1, 2]}"), JsonCheck::Valid);
+        assert_eq!(check_json(&"1".repeat(crate::highlight::LARGE_TEXT_BYTES + 1)), JsonCheck::Large);
+        match check_json("{\"a\": 1,
+  \"b\": }") {
+            JsonCheck::Invalid { position, has_variable, .. } => {
+                assert_eq!(position.0, 2, "the line the parser stopped on");
+                assert!(!has_variable);
+            }
+            other => panic!("expected invalid, got {other:?}"),
+        }
+        match check_json("{\"n\": {{count}}}") {
+            JsonCheck::Invalid { has_variable, .. } => assert!(has_variable, "an unquoted variable is explained, not just an error"),
+            other => panic!("expected invalid, got {other:?}"),
+        }
+    }
 
     #[test]
     fn a_short_body_gets_a_short_box() {

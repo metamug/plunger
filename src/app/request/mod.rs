@@ -81,8 +81,12 @@ impl ApiTesterApp {
                 {
                     tab.pane = if expanded { Pane::Both } else { Pane::RequestExpanded };
                 }
-                if tab.request_tab == RequestTab::Headers && tab.pane != Pane::ResponseExpanded {
-                    tab.headers_view_toggle(ui);
+                if tab.pane != Pane::ResponseExpanded {
+                    match tab.request_tab {
+                        RequestTab::Headers => tab.headers_view_toggle(ui),
+                        RequestTab::Body => tab.body_controls(ui),
+                        _ => {}
+                    }
                 }
             });
         });

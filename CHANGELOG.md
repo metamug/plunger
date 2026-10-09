@@ -5,6 +5,9 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 ## [Unreleased]
 
 ### Changed
+- The body type (a drop-down: No body, JSON, form-data, urlencoded, Raw), a Valid / Invalid chip with the line and column (hover for the message) and a Prettify button now sit at the right end of the request tab strip, as in Bruno. The row of body-type pills and the row under the editor are gone, so the editor gets the room. Prettify is greyed out while the JSON does not parse.
+- The divider between the request and the response has a visible grip, so it is clear it can be pulled.
+- The response's Headers tab shows how many headers there are.
 - Request and response panels: the request panel is as tall as its content (the body editor no longer scrolls inside it) and grows until the response would be squeezed; it folds away when you send, so the response fills the window, and clicking any request tab brings it back. A two-arrow icon on each panel's header expands it, and shows arrows pointing in on the panel that is expanded. Dragging the divider still sets your own split (double-click resets), and a split you dragged is kept when you send.
 - A body editor is as tall as its text plus a spare line (at least four lines) instead of a fixed block of blank lines the cursor could not enter; an expanded request gives the editor the whole surface.
 

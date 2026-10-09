@@ -84,7 +84,8 @@ impl Tab {
         // One row: the Body / Headers tabs, then the status, time and size, then the actions.
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.response_tab, ResponseTab::Body, "Body");
-            ui.selectable_value(&mut self.response_tab, ResponseTab::Headers, "Headers");
+            let headers_label = if resp.headers.is_empty() { "Headers".to_string() } else { format!("Headers ({})", resp.headers.len()) };
+            ui.selectable_value(&mut self.response_tab, ResponseTab::Headers, headers_label);
             ui.add_space(8.0);
             status_badge(ui, resp.status, &resp.status_text);
             let clock = crate::timefmt::clock(&resp.sent_at);
