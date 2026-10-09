@@ -34,7 +34,7 @@ TOOLS
 - save_request / get_saved_request / delete_saved_request: save a request without sending it (same fields as send_request, plus `name`; `overwrite: true` replaces an existing one), read one back in full, or remove one. {{placeholders}} are kept, so Authorization: Bearer {{token}} works when it is sent later.
 - import_curl: parse a curl command into a request, and with `save_as` keep it in the user's Saved list.
 - export_curl: a saved request or a history entry as a curl command.
-- get_history: recent requests, who sent them (gui, cli, mcp), status and time; `search` filters.
+- get_history: recent requests, who sent them (gui, cli, mcp), status and time. Narrow it with `search`, `status` (401, 4xx, 5xx, ok, fail, error), `min_ms` (the slow ones), `source` and `saved_request` (how one saved request has been doing). get_history_entry: one entry in full by id, with the request as sent.
 - save_workflow / run_workflow / list_workflows / delete_workflow: a workflow is an ordered list of steps (each is like send_request, plus `extract` and `expect_status`). `extract` takes a value from the response (`json:$.data.token`, `header:Name` or `status`) and keeps it as a variable for the steps after it, so a login token reaches the next request without you ever seeing it. A step that fails (not 2xx, or not `expect_status`) stops the run. run_workflow takes `variables` that apply to every step.
 
 HOW IT BEHAVES
@@ -130,6 +130,24 @@ pub struct HistoryParams {
     /// Only requests whose URL, method, name or status contains this text (case-insensitive), e.g. "orders" or "500".
     #[serde(default)]
     pub search: Option<String>,
+    /// Only this status: `401`, a class like `4xx` or `5xx`, `ok` (2xx), `fail` (4xx, 5xx or no response), or `error` (no response).
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Only requests that took at least this many milliseconds, e.g. 1000 for the slow ones.
+    #[serde(default)]
+    pub min_ms: Option<i64>,
+    /// Only requests sent by `gui` (the user), `cli` or `mcp` (an agent).
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Only sends of this saved request (same method and URL), to see how it has been doing.
+    #[serde(default)]
+    pub saved_request: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct IdParams {
+    /// A history id, from get_history.
+    pub id: i64,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -183,7 +201,25 @@ impl PlungerMcp {
     /// or to check what was sent earlier.
     #[tool(name = "get_history", annotations(title = "Get request history", read_only_hint = true))]
     async fn get_history(&self, Parameters(p): Parameters<HistoryParams>) -> Result<Json<Vec<HistoryItem>>, String> {
-        blocking(move || agent::get_history(p.limit, p.search.as_deref())).await.map(Json)
+        blocking(move || {
+            agent::query_history(&agent::HistoryQuery {
+                limit: p.limit,
+                search: p.search,
+                status: p.status,
+                min_ms: p.min_ms,
+                source: p.source,
+                saved_request: p.saved_request,
+            })
+        })
+        .await
+        .map(Json)
+    }
+
+    /// One history entry in full: when it was sent, the status and time, and the request as sent (credentials
+    /// blanked, {{placeholders}} kept, so it can be re-sent or saved). The response body is not stored.
+    #[tool(name = "get_history_entry", annotations(title = "Get one history entry", read_only_hint = true))]
+    async fn get_history_entry(&self, Parameters(p): Parameters<IdParams>) -> Result<Json<agent::HistoryDetail>, String> {
+        blocking(move || agent::show_history_entry(p.id)).await.map(Json)
     }
 
     /// List the {{variables}} defined in Plunger. Secret variables are listed by name only (their values are
@@ -357,7 +393,7 @@ mod tests {
         assert_eq!(
             names,
             [
-                "delete_saved_request", "delete_variable", "delete_workflow", "export_curl", "get_history", "get_saved_request",
+                "delete_saved_request", "delete_variable", "delete_workflow", "export_curl", "get_history", "get_history_entry", "get_saved_request",
                 "import_curl", "list_saved_requests", "list_variables", "list_workflows", "run_workflow", "save_request",
                 "save_workflow", "send_request", "set_variable"
             ]
@@ -410,6 +446,8 @@ mod tests {
             selected: None,
             variables_set: vec![],
             problems: vec![],
+            outline: None,
+            hint: None,
         };
         assert_eq!(missing_required_keys(&response), Vec::<String>::new(), "send_request");
 

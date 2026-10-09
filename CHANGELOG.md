@@ -5,19 +5,23 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 ## [Unreleased]
 
 ### Added
+
+- `plunger install` and **File > Set up AI agents...**: register the MCP server in Claude Code, Cursor, Kiro, Codex, Windsurf, VS Code (Copilot) or Gemini CLI, and write the always-on steering (a `CLAUDE.md`/`AGENTS.md`/`GEMINI.md` block, a Claude skill, a Cursor rule, Kiro steering, a Windsurf rule) that tells the agent to send HTTP requests through Plunger instead of curl or Invoke-RestMethod. Existing config is merged, not replaced; a backup is kept; running it twice changes nothing; `--dry-run` shows the plan.
+- A JSON response over `max_body_chars` comes back as an outline (keys, types, array lengths, an example each) with a hint to use `select`, instead of cut-off text.
+- `[*]` in `select` and `extract` paths collects a field from every item of an array (`$.items[*].id`).
+- `get_history` filters: `status` (`401`, `4xx`, `5xx`, `ok`, `fail`, `error`), `min_ms`, `source` and `saved_request`; `plunger history --status 5xx --min-ms 1000`. The new `get_history_entry` tool (and `plunger history show ID`) returns one entry in full, with the request as sent.
 - `extract` on `send_request` (and `plunger send --extract name=json:$.path`): keep a value from the response as a variable in the same call, so a login and its token take one request instead of two. A credential-like name is a hidden secret, and the response that carried it is masked too. `variables_set` lists what was set.
 - `select` on `send_request` (and `plunger send --select PATH`): return only the values you ask for (`$.data[0].id`, `header:Location`, `status`) under `selected`, instead of the whole body, so a big response costs a few tokens. A path that is not in the response is reported under `problems`.
 - The time a request was sent: `sent_at` on every response an agent gets, and in the window the clock time on the response row, with the full date and the timing breakdown on hover (in your own time zone when the system tells us). The sidebar tooltip uses local time too (#159).
 - Hide the request editor to give the response the whole height, or hide the response to give the editor the whole height: two chevrons at the right end of the request tabs (#158).
+- `plunger-cli` on PyPI: the compiled program in a platform wheel (Windows, Linux, macOS), so `pipx install plunger-cli` or `uvx plunger-cli mcp` works with nothing else to download. Built with maturin and published from CI with PyPI trusted publishing.
+- macOS builds (Apple Silicon and Intel) attached to each GitHub release as `plunger-macos-arm64.tar.gz` and `plunger-macos-x86_64.tar.gz`. They are not signed or notarized yet.
 
 ### Fixed
+
 - Saving a response body suggests a real file name: the server's `Content-Disposition` name, then the last part of the URL (`401.jpg`), then `response` with an extension that fits the `Content-Type` (`.png`, `.pdf`, ...), instead of always `response.bin` (#154).
 - A URL with no host, such as `https:///AphiaRecordsByAphiaIDs`, is refused with a clear error. It used to be read as host `AphiaRecordsByAphiaIDs` and sent to the wrong server (#155).
 - The Variables tab counts the variables agents set, so they are not missed when you have none of your own (#157).
-
-### Added
-- `plunger-cli` on PyPI: the compiled program in a platform wheel (Windows, Linux, macOS), so `pipx install plunger-cli` or `uvx plunger-cli mcp` works with nothing else to download. Built with maturin and published from CI with PyPI trusted publishing.
-- macOS builds (Apple Silicon and Intel) attached to each GitHub release as `plunger-macos-arm64.tar.gz` and `plunger-macos-x86_64.tar.gz`. They are not signed or notarized yet.
 
 ## [0.5.0] - 2026-10-07
 

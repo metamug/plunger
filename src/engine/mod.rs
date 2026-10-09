@@ -362,12 +362,35 @@ mod tests {
             body: Body::Text("{{token}}".into()),
             ..Default::default()
         };
-        let sent = send(spec.to_state(&s), "", None, Source::Cli).unwrap();
+        let mut sent = send(spec.to_state(&s), "", None, Source::Cli).unwrap();
         let at = sent.response.body.find("ABCDEFGH").unwrap();
-        // Cut so the limit lands inside the secret.
+        // The text path (a body that is not JSON): cut so the limit lands inside the secret.
+        sent.response.json_value = None;
         let out = AgentResponse::from_sent(&sent, &Scrubber::new(&sent.state, ""), at + 5);
         let body = out.body.unwrap();
         assert!(!body.contains("ABCDE"), "{body}");
+    }
+
+    #[test]
+    fn a_long_json_body_comes_back_as_an_outline_with_secrets_masked() {
+        let base = serve_echo(1);
+        let s = session(vec![var("token", "ABCDEFGHIJKLMNOP", true)]);
+        let rows: Vec<serde_json::Value> = (0..400).map(|i| serde_json::json!({"id": i, "note": "{{token}}", "pad": "p".repeat(80)})).collect();
+        let spec = RequestSpec {
+            method: Some("POST".into()),
+            url: format!("{base}/rows"),
+            body: Body::Json(serde_json::json!({"rows": rows}).to_string()),
+            ..Default::default()
+        };
+        let sent = send(spec.to_state(&s), "", None, Source::Cli).unwrap();
+        let out = AgentResponse::from_sent(&sent, &Scrubber::new(&sent.state, ""), 1_000);
+        assert!(out.body.is_none() && out.json.is_none(), "no cut-off text");
+        assert!(out.body_cut_from_chars.unwrap() > 1_000);
+        let outline = serde_json::to_string(&out.outline.expect("an outline")).unwrap();
+        assert!(outline.len() < 3_000, "{} chars", outline.len());
+        assert!(outline.contains("\"request\":\"string"), "the echo server wraps the request text in one string: {outline}");
+        assert!(!outline.contains("ABCDE"), "{outline}");
+        assert!(out.hint.unwrap().contains("select"));
     }
 
     #[test]
@@ -380,7 +403,8 @@ mod tests {
             body: Body::Text("x".repeat(5_000)),
             ..Default::default()
         };
-        let sent = send(spec.to_state(&s), "", None, Source::Cli).unwrap();
+        let mut sent = send(spec.to_state(&s), "", None, Source::Cli).unwrap();
+        sent.response.json_value = None;
         let out = AgentResponse::from_sent(&sent, &Scrubber::new(&sent.state, ""), 1_000);
         assert!(out.json.is_none());
         assert_eq!(out.body.as_ref().unwrap().chars().count(), 1_000);

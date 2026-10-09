@@ -147,6 +147,13 @@ pub struct AgentResponse {
     /// Things that did not work in `select` or `extract`, such as a path that is not in the response.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub problems: Vec<String>,
+    /// A JSON body too long to return whole: its shape (keys, types, array lengths, one example each)
+    /// instead of cut-off text. Ask for the values you need with `select`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outline: Option<serde_json::Value>,
+    /// What to do next, when the response was too big to return whole.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
@@ -203,9 +210,19 @@ impl AgentResponse {
         redacted.dedup();
 
         let body_chars = r.body.chars().count();
+        let mut outline = None;
+        let mut hint = None;
         let (json, body, body_cut_from_chars) = match &r.json_value {
             _ if r.binary.is_some() => (None, None, None),
             Some(value) if body_chars <= max_body_chars => (Some(scrubber.json(value)), None, None),
+            Some(value) => {
+                // Too long to return whole: the shape is worth more than the first part of it.
+                outline = Some(crate::outline::outline(&scrubber.json(value)));
+                hint = Some(format!(
+                    "The JSON body is {body_chars} characters, so only its outline is returned. Send again with `select` (for example [\"$.data[0].id\", \"$.items[*].name\"]) for the values you need, or a larger `max_body_chars` for the whole body."
+                ));
+                (None, None, Some(body_chars))
+            }
             _ if body_chars <= max_body_chars => (None, Some(scrubber.text(&r.body)), None),
             _ => {
                 // Mask before cutting: a cut through the middle of a secret
@@ -245,6 +262,8 @@ impl AgentResponse {
             selected: None,
             variables_set: Vec::new(),
             problems: Vec::new(),
+            outline,
+            hint,
         }
     }
 }

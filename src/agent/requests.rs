@@ -119,9 +119,81 @@ pub fn list_saved_requests() -> Result<Vec<StoredRequestInfo>, String> {
 }
 
 pub fn get_history(limit: Option<i64>, search: Option<&str>) -> Result<Vec<HistoryItem>, String> {
-    let limit = limit.unwrap_or(HISTORY_DEFAULT).clamp(1, HISTORY_MAX);
-    let rows = open_history()?.search_recent(search.unwrap_or(""), limit).map_err(|e| e.to_string())?;
-    Ok(rows.iter().map(HistoryItem::from).collect())
+    query_history(&HistoryQuery { limit, search: search.map(str::to_string), ..Default::default() })
+}
+
+/// What to look for in the history. Every field narrows the result.
+#[derive(Default, Debug, Clone)]
+pub struct HistoryQuery {
+    pub limit: Option<i64>,
+    /// Text in the URL, method, name or status.
+    pub search: Option<String>,
+    /// `401`, a class (`4xx`, `5xx`), `ok` (2xx), `fail` (4xx, 5xx or no response) or `error` (no response).
+    pub status: Option<String>,
+    /// Only requests that took at least this many milliseconds.
+    pub min_ms: Option<i64>,
+    /// `gui`, `cli` or `mcp`.
+    pub source: Option<String>,
+    /// Only sends of this saved request (same method and URL as it).
+    pub saved_request: Option<String>,
+}
+
+/// Whether `status` fits the filter `spec` (see `HistoryQuery::status`).
+fn status_matches(spec: &str, status: Option<i64>) -> bool {
+    let spec = spec.trim().to_ascii_lowercase();
+    match spec.as_str() {
+        "error" | "none" | "no_response" => status.is_none(),
+        "ok" => status.is_some_and(|s| (200..300).contains(&s)),
+        "fail" | "failed" => status.is_none_or(|s| s >= 400),
+        class if class.len() == 3 && class.ends_with("xx") => {
+            class[..1].parse::<i64>().ok().is_some_and(|d| status.is_some_and(|s| s / 100 == d))
+        }
+        exact => exact.parse::<i64>().ok().is_some_and(|want| status == Some(want)),
+    }
+}
+
+/// The history, newest first, narrowed by `query`. The whole table is searched, not just the newest rows.
+pub fn query_history(query: &HistoryQuery) -> Result<Vec<HistoryItem>, String> {
+    let limit = query.limit.unwrap_or(HISTORY_DEFAULT).clamp(1, HISTORY_MAX) as usize;
+    let history = open_history()?;
+    let same_request = match query.saved_request.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+        Some(name) => {
+            let saved = engine::find_saved(&history, name)?;
+            Some((saved.method.to_ascii_uppercase(), saved.url))
+        }
+        None => None,
+    };
+    let narrowed = query.status.is_some() || query.min_ms.is_some() || query.source.is_some() || same_request.is_some();
+    // Without a filter the database does the limiting; with one, read more rows and filter here.
+    let fetch = if narrowed { 5_000 } else { limit as i64 };
+    let rows = history.search_recent(query.search.as_deref().unwrap_or(""), fetch).map_err(|e| e.to_string())?;
+    let source = query.source.as_deref().map(|s| s.trim().to_ascii_lowercase());
+    Ok(rows
+        .iter()
+        .filter(|e| query.status.as_deref().is_none_or(|spec| status_matches(spec, e.status)))
+        .filter(|e| query.min_ms.is_none_or(|min| e.elapsed_ms.is_some_and(|ms| ms >= min)))
+        .filter(|e| source.as_deref().is_none_or(|s| e.source.as_str() == s))
+        .filter(|e| same_request.as_ref().is_none_or(|(method, url)| e.method.eq_ignore_ascii_case(method) && &e.url == url))
+        .take(limit)
+        .map(HistoryItem::from)
+        .collect())
+}
+
+/// One history row in full: when, how long, the status, and the request as sent (credentials blanked,
+/// `{{placeholders}}` kept). The response body is not stored.
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
+pub struct HistoryDetail {
+    pub item: HistoryItem,
+    pub request: ImportedRequest,
+}
+
+pub fn show_history_entry(id: i64) -> Result<HistoryDetail, String> {
+    let history = open_history()?;
+    let entry = history
+        .get(id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("No request #{id} in the history. See get_history."))?;
+    Ok(HistoryDetail { item: HistoryItem::from(&entry), request: imported_from_state(&entry.to_persisted_state(), entry.name.as_ref().map(|_| entry.id)) })
 }
 
 /// The curl command for a saved request (by name) or a history row (by id).
@@ -139,3 +211,18 @@ pub fn export_curl(saved_request: Option<&str>, history_id: Option<i64>) -> Resu
     Ok(to_curl(&entry.to_persisted_state()))
 }
 
+#[cfg(test)]
+mod history_filter_tests {
+    use super::status_matches;
+
+    #[test]
+    fn status_filters_take_codes_classes_and_words() {
+        assert!(status_matches("401", Some(401)) && !status_matches("401", Some(402)));
+        assert!(status_matches("4xx", Some(404)) && !status_matches("4xx", Some(500)) && !status_matches("4xx", None));
+        assert!(status_matches("5XX", Some(503)));
+        assert!(status_matches("ok", Some(204)) && !status_matches("ok", Some(301)) && !status_matches("ok", None));
+        assert!(status_matches("fail", Some(500)) && status_matches("fail", None) && !status_matches("fail", Some(200)));
+        assert!(status_matches("error", None) && !status_matches("error", Some(200)));
+        assert!(!status_matches("banana", Some(200)));
+    }
+}

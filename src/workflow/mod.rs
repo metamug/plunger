@@ -256,6 +256,8 @@ mod tests {
             selected: None,
             variables_set: Vec::new(),
             problems: Vec::new(),
+            outline: None,
+            hint: None,
         };
         (shaped, raw)
     }

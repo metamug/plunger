@@ -89,6 +89,8 @@ One exe. Human GUI, agent CLI, agent MCP. The same safety guarantees in every mo
 
 <p align="center"><sub>Real Claude Code, using Plunger over MCP, unedited. See <a href="docs/agents.md">docs/agents.md</a> for the setup and a look at the raw protocol traffic.</sub></p>
 
+Run `plunger install` (or **File > Set up AI agents...** in the window) to register the MCP server in Claude Code, Cursor, Kiro, Codex, Windsurf, VS Code or Gemini CLI and write the always-on steering that tells the agent to use Plunger instead of curl. See [docs/agents.md](docs/agents.md).
+
 ### Why not just let the agent run curl?
 
 1. **Undefined-variable safety.** Plunger refuses to send a request with an undefined `{{variable}}`. curl will happily send the placeholder text.

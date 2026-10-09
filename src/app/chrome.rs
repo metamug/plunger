@@ -55,6 +55,10 @@ impl ApiTesterApp {
                         self.open_export_dialog();
                     }
                     ui.separator();
+                    if item(ui, "Set up AI agents\u{2026}", "") {
+                        self.open_agents_dialog();
+                    }
+                    ui.separator();
                     if item(ui, "Clear history", "") {
                         self.clear_history();
                     }

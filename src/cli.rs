@@ -29,6 +29,10 @@ USAGE
   plunger save <name> [send options]    Save a request without sending it (--overwrite replaces)
   plunger workflow list|show|delete|run|save ...
                                         Ordered requests where one response feeds the next
+  plunger install [agent ...] [--scope project|user] [--via exe|uvx] [--dry-run]
+                                        Add Plunger to Claude Code, Cursor, Kiro, Codex, Windsurf,
+                                        VS Code or Gemini CLI, with steering that says to use it
+                                        instead of curl (plunger install --list shows the tools)
   plunger history [--limit N] [--search TEXT]
                                         Recent requests, newest first (default 20);
                                         --search matches URL, method, name or status
@@ -170,6 +174,21 @@ Example: [{\"method\":\"POST\",\"url\":\"{{base}}/login\",\"json\":{\"user\":\"{
           \"extract\":[{\"name\":\"token\",\"from\":\"json:$.token\"}]},
          {\"url\":\"{{base}}/me\",\"headers\":{\"Authorization\":\"Bearer {{token}}\"}}]
 ",
+        "install" => "\
+plunger install [agent ...] [options]
+plunger install --list                 the tools it knows, and which look installed
+
+agent: claude-code, cursor, kiro, codex, windsurf, vscode, gemini, or all (default: the ones found)
+  --scope project|user   a project folder (default) or every project of this user
+  --dir PATH             the project folder (default: the current folder)
+  --via exe|uvx          start the server from this program (default) or with `uvx plunger-cli mcp`
+  --no-mcp               only write the steering          --no-steering   only register the server
+  --dry-run              show what would change, write nothing
+
+Registers `plunger mcp` in each tool's own config and writes always-on steering that tells the agent to
+send HTTP requests through Plunger, not curl or Invoke-RestMethod. Existing settings are kept, a copy is left
+beside anything changed, and running it twice changes nothing.
+",
         "save" => "\
 plunger save <name> [--url] <url> [send options] [--overwrite]
 
@@ -179,6 +198,8 @@ Options are those of `plunger send`: -X, -H, --json, -d, --form, --timeout, --in
 ",
         "history" => "\
 plunger history [--limit N] [--search TEXT]   recent requests, newest first (default 20)
+  --status 401|4xx|5xx|ok|fail|error   --min-ms N (the slow ones)   --source gui|cli|mcp   --saved <name>
+plunger history show <id>           one entry in full, with the request as sent
 ",
         "import" => "\
 plunger import \"<curl command>\" [--save <name>] [--send [send options]]
@@ -295,6 +316,77 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
             print_json(&agent::save_request(&name, overwrite, &opts.params, Source::Cli).map_err(error)?);
             Ok(EXIT_OK)
         }
+        "install" => {
+            use crate::install::{self, Agent, Options, Scope, Via};
+            let (mut names, mut scope, mut dir, mut via) = (Vec::<String>::new(), Scope::Project, None::<String>, None::<Via>);
+            let (mut mcp, mut steering, mut dry_run, mut list) = (true, true, false, false);
+            while let Some(arg) = args.next() {
+                match arg.as_str() {
+                    "--scope" => {
+                        scope = match args.value(&arg)?.as_str() {
+                            "project" => Scope::Project,
+                            "user" => Scope::User,
+                            other => return Err(usage_error(format!("--scope is `project` or `user`, not `{other}`"))),
+                        }
+                    }
+                    "--dir" => dir = Some(args.value(&arg)?),
+                    "--via" => {
+                        via = Some(match args.value(&arg)?.as_str() {
+                            "exe" => install::default_via_exe(),
+                            "uvx" => Via::Uvx,
+                            other => return Err(usage_error(format!("--via is `exe` or `uvx`, not `{other}`"))),
+                        })
+                    }
+                    "--no-mcp" => mcp = false,
+                    "--no-steering" => steering = false,
+                    "--dry-run" => dry_run = true,
+                    "--list" => list = true,
+                    other if other.starts_with('-') => return Err(usage_error(format!("Unexpected argument `{other}`"))),
+                    name => names.push(name.to_string()),
+                }
+            }
+            let home = install::home_dir().ok_or_else(|| error("Couldn't find your home folder."))?;
+            let project = match &dir {
+                Some(d) => std::path::PathBuf::from(d),
+                None => std::env::current_dir().map_err(|e| error(format!("Couldn't read the current folder: {e}")))?,
+            };
+            if list {
+                let tools: Vec<_> = install::ALL
+                    .iter()
+                    .map(|a| serde_json::json!({ "agent": a.id(), "name": a.label(), "found": a.detected(&home) }))
+                    .collect();
+                print_json(&serde_json::json!({ "agents": tools }));
+                return Ok(EXIT_OK);
+            }
+            if !mcp && !steering {
+                return Err(usage_error("--no-mcp and --no-steering together leave nothing to do"));
+            }
+            let agents: Vec<Agent> = if names.is_empty() || names.iter().any(|n| n == "all") {
+                let found: Vec<Agent> = install::ALL.iter().copied().filter(|a| a.detected(&home)).collect();
+                if names.is_empty() && found.is_empty() {
+                    return Err(error("None of the supported tools was found on this computer. Name one (plunger install --list shows them), or use `all`."));
+                }
+                if names.is_empty() { found } else { install::ALL.to_vec() }
+            } else {
+                let mut agents = Vec::new();
+                for n in &names {
+                    agents.push(Agent::parse(n).ok_or_else(|| usage_error(format!("Unknown tool `{n}`. Try: claude-code, cursor, kiro, codex, windsurf, vscode, gemini")))?);
+                }
+                agents
+            };
+            let via = via.unwrap_or_else(install::default_via);
+            let options = Options { scope, via: via.clone(), mcp, steering, dry_run };
+            let changes = install::install(&agents, &home, &project, &options);
+            let failed = changes.iter().any(|c| c.action == "skipped" && c.note.as_deref().is_some_and(|n| n.starts_with("could not write")));
+            print_json(&serde_json::json!({
+                "scope": if scope == Scope::Project { "project" } else { "user" },
+                "project_dir": if scope == Scope::Project { Some(project.display().to_string()) } else { None },
+                "server": match &via { Via::Exe(p) => p.display().to_string(), Via::Uvx => "uvx plunger-cli mcp".to_string() },
+                "dry_run": dry_run,
+                "changes": changes,
+            }));
+            Ok(if failed { EXIT_NOT_SENT } else { EXIT_OK })
+        }
         "workflow" | "workflows" => {
             match args.next().as_deref() {
                 None | Some("list") => print_json(&workflow::list().map_err(error)?),
@@ -343,22 +435,32 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
             Ok(EXIT_OK)
         }
         "history" => {
-            let mut limit = None;
-            let mut search = None;
+            if args.peek_is("show") {
+                args.next();
+                let id: i64 = args.number("history show")?;
+                args.finish()?;
+                print_json(&agent::show_history_entry(id).map_err(error)?);
+                return Ok(EXIT_OK);
+            }
+            let mut query = agent::HistoryQuery::default();
             while let Some(arg) = args.next() {
                 match arg.as_str() {
-                    "--search" | "-s" => search = Some(args.value(&arg)?),
+                    "--search" | "-s" => query.search = Some(args.value(&arg)?),
+                    "--status" => query.status = Some(args.value(&arg)?),
+                    "--min-ms" => query.min_ms = Some(args.number(&arg)?),
+                    "--source" => query.source = Some(args.value(&arg)?),
+                    "--saved" => query.saved_request = Some(args.value(&arg)?),
                     "--limit" | "-n" => {
                         let n = args.number::<i64>(&arg)?;
                         if n < 1 {
                             return Err(usage_error(format!("{arg} needs a number of 1 or more, not `{n}`")));
                         }
-                        limit = Some(n);
+                        query.limit = Some(n);
                     }
                     _ => return Err(usage_error(format!("Unexpected argument `{arg}`"))),
                 }
             }
-            print_json(&agent::get_history(limit, search.as_deref()).map_err(error)?);
+            print_json(&agent::query_history(&query).map_err(error)?);
             Ok(EXIT_OK)
         }
         "vars" | "variables" => {
@@ -507,6 +609,11 @@ impl Args {
         self.items.next()
     }
 
+    /// Whether the next argument is `word`, without taking it.
+    fn peek_is(&self, word: &str) -> bool {
+        self.items.as_slice().first().is_some_and(|a| a == word)
+    }
+
     /// Everything not consumed yet.
     fn rest(&mut self) -> Vec<String> {
         self.items.by_ref().collect()
@@ -596,7 +703,7 @@ mod tests {
 
     #[test]
     fn every_command_in_the_usage_has_its_own_help() {
-        for command in ["send", "vars", "saved", "save", "workflow", "history", "import", "export", "mcp"] {
+        for command in ["send", "vars", "saved", "save", "workflow", "install", "history", "import", "export", "mcp"] {
             assert!(command_help(command).is_some(), "{command}");
         }
         assert!(command_help("nonsense").is_none());

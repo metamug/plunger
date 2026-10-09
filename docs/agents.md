@@ -17,6 +17,41 @@ All three send requests through the same engine as the window's Ctrl+Enter, and 
 - **Structured results.** Status, time, size, headers and the parsed JSON body come back as separate fields, and long bodies are cut to a size a model can read.
 - **An audit trail.** Every agent request lands in Plunger's history, tagged `MCP` or `CLI`, and the window picks it up live.
 
+## Make agents use Plunger, not curl
+
+Registering the server is not enough: an agent still reaches for `curl` or `Invoke-RestMethod` out of habit. `plunger install` does both halves, in each tool's own format:
+
+```bash
+plunger install                       # the tools it finds, for the current project folder
+plunger install claude-code cursor    # or name them: claude-code, cursor, kiro, codex, windsurf, vscode, gemini
+plunger install all --scope user      # every project of this user
+plunger install --dry-run             # show what would change, write nothing
+plunger install --via uvx             # start the server with `uvx plunger-cli mcp` (nothing to keep in place)
+```
+
+In the window, **File > Set up AI agents...** shows the same choices, lists the files it would change, and writes them when you press Install.
+
+| Tool | MCP server registered in | Always-on steering written to |
+|---|---|---|
+| Claude Code | `.mcp.json` (project) or `~/.claude.json` (user) | `CLAUDE.md` block and a `plunger` skill under `.claude/skills/` |
+| Cursor | `.cursor/mcp.json` or `~/.cursor/mcp.json` | `.cursor/rules/plunger.mdc` (`alwaysApply: true`) |
+| Kiro | `.kiro/settings/mcp.json` or `~/.kiro/settings/mcp.json` | `.kiro/steering/plunger.md` (`inclusion: always`) |
+| Codex | `~/.codex/config.toml` | `AGENTS.md` block (project) or `~/.codex/AGENTS.md` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` | `.windsurf/rules/plunger.md` (always on) |
+| VS Code (Copilot) | `.vscode/mcp.json` | `.github/copilot-instructions.md` block |
+| Gemini CLI | `.gemini/settings.json` or `~/.gemini/settings.json` | `GEMINI.md` block |
+
+Existing settings are kept (the config is parsed and merged; a file that is not valid JSON is left alone), a `.plunger-backup` copy is kept beside anything it changes, shared files like `CLAUDE.md` only get a block between `<!-- plunger:start -->` and `<!-- plunger:end -->`, and running it twice changes nothing. The steering text is [docs/steering/plunger.md](steering/plunger.md): copy it into any other tool's rules by hand.
+
+## Why the responses are small
+
+The point of Plunger for an agent is fewer tokens and fewer calls:
+
+- `select` returns only the values asked for (`["$.data[0].id", "$.items[*].name", "status"]`; `[*]` collects a field from every item of an array) instead of the whole body.
+- A JSON body over `max_body_chars` (default 50,000) comes back as an **outline**: its keys, types, array lengths and one example each, in a few hundred tokens, with a hint to use `select`. It no longer returns cut-off text.
+- `extract` keeps a value (a token, an id) as a variable in the same call, so a login and the request after it need no copy and paste.
+- Workflows run a whole sequence in one call.
+
 ## Set it up in Claude Code
 
 Add Plunger to your project's `.mcp.json` (use the path where you unzipped it):
@@ -70,7 +105,8 @@ python scripts/mcp-demo-client.py path\to\plunger.exe
 | `get_saved_request` | One saved request in full: method, URL, headers, body and the variables it needs. |
 | `delete_saved_request` | Removes a saved request (history stays). |
 | `list_saved_requests` | The user's saved requests: name, method, URL, headers, and the `{{variables}}` each one needs (an environment variable shows as `$env:NAME`). |
-| `get_history` | Recent requests, newest first, with who sent each (`gui`, `cli` or `mcp`). Optional `search` narrows it to a URL, method, name or status (for example `orders` or `500`). Credentials are blanked. |
+| `get_history` | Recent requests, newest first, with who sent each (`gui`, `cli` or `mcp`). Narrow it with `search` (URL, method, name or status), `status` (`401`, `4xx`, `5xx`, `ok`, `fail`, `error`), `min_ms` (the slow ones), `source`, and `saved_request` (how one saved request has been doing). Credentials are blanked. |
+| `get_history_entry` | One history entry in full by id: when it was sent, status and time, and the request as sent (credentials blanked, `{{placeholders}}` kept). The response body is not stored. |
 | `list_variables` | Variable names and where each came from (`window` or `agent`); values only for non-secret variables. Also says whether a saved Bearer token is available. |
 | `set_variable` | Keeps a value for later requests as `{{name}}`, for example a token read from a login response. It persists, is shared with the window and the command line, and appears in the window under "Set by agents". A secret, or a name like `token` or `api_key`, is kept in the system credential store and masked in results. |
 | `delete_variable` | Removes a variable an agent set. The user's own variables cannot be changed or removed by an agent. |

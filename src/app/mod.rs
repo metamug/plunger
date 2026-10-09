@@ -5,6 +5,7 @@
 mod chrome;
 mod command_bar;
 mod emboss;
+mod agents_window;
 mod export_window;
 mod import_window;
 mod request;
@@ -122,6 +123,7 @@ pub struct ApiTesterApp {
     agent_variables: Vec<AgentVariable>,
     import: ImportDialog,
     export: Option<export_window::ExportDialog>,
+    agents_dialog: Option<agents_window::AgentsDialog>,
     /// The syntax Ctrl+Shift+C copies in: the one last chosen.
     export_dialect: Dialect,
     /// A short message for the status bar ("Saved …"), and when it was set.
@@ -161,6 +163,7 @@ impl ApiTesterApp {
             agent_variables: Vec::new(),
             import: ImportDialog::default(),
             export: None,
+            agents_dialog: None,
             export_dialect: Dialect::CurlBash,
             notice: None,
             secrets,
@@ -605,6 +608,7 @@ impl ApiTesterApp {
         self.render_sidebar(ctx);
         self.render_import_windows(ctx);
         self.render_export_window(ctx);
+        self.render_agents_window(ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
             self.render_tab_bar(ui);
@@ -874,6 +878,18 @@ mod tests {
                 draw(&mut a);
             }
         }
+    }
+
+    #[test]
+    fn the_agents_dialog_draws_in_both_scopes_without_writing_anything() {
+        let mut a = app(PersistedState::default());
+        a.open_agents_dialog();
+        draw(&mut a);
+        let dialog = a.agents_dialog.as_mut().unwrap();
+        dialog.scope = crate::install::Scope::Project;
+        dialog.plan();
+        draw(&mut a);
+        assert!(a.agents_dialog.is_some());
     }
 
     fn response(body: &str, json: bool, truncated: bool) -> ResponseData {
