@@ -116,6 +116,20 @@ pub struct RunWorkflowParams {
     pub variables: Option<std::collections::BTreeMap<String, String>>,
 }
 
+/// A tool's structured result must be a JSON object (the MCP spec says so, and strict clients reject
+/// an array), so lists are wrapped.
+#[derive(Serialize, JsonSchema)]
+pub struct SavedRequestsResult {
+    /// The saved requests, by name.
+    pub requests: Vec<StoredRequestInfo>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct HistoryResult {
+    /// Matching requests, newest first.
+    pub history: Vec<HistoryItem>,
+}
+
 #[derive(Serialize, JsonSchema)]
 pub struct DeletedVariable {
     /// The variable that was removed.
@@ -192,15 +206,15 @@ impl PlungerMcp {
     /// List the requests the user saved in Plunger, by name, with method, URL, headers and the {{variables}} each
     /// needs. Call this before building a request from scratch: the user may already have the exact call set up.
     #[tool(name = "list_saved_requests", annotations(title = "List saved requests", read_only_hint = true))]
-    async fn list_saved_requests(&self) -> Result<Json<Vec<StoredRequestInfo>>, String> {
-        blocking(agent::list_saved_requests).await.map(Json)
+    async fn list_saved_requests(&self) -> Result<Json<SavedRequestsResult>, String> {
+        blocking(agent::list_saved_requests).await.map(|requests| Json(SavedRequestsResult { requests }))
     }
 
     /// Recent requests from the shared history, newest first: who sent them (gui = the user, cli or mcp = an
     /// agent), method, URL, status and time. Credentials are already blanked. Use it to see what the user tried,
     /// or to check what was sent earlier.
     #[tool(name = "get_history", annotations(title = "Get request history", read_only_hint = true))]
-    async fn get_history(&self, Parameters(p): Parameters<HistoryParams>) -> Result<Json<Vec<HistoryItem>>, String> {
+    async fn get_history(&self, Parameters(p): Parameters<HistoryParams>) -> Result<Json<HistoryResult>, String> {
         blocking(move || {
             agent::query_history(&agent::HistoryQuery {
                 limit: p.limit,
@@ -212,7 +226,7 @@ impl PlungerMcp {
             })
         })
         .await
-        .map(Json)
+        .map(|history| Json(HistoryResult { history }))
     }
 
     /// One history entry in full: when it was sent, the status and time, and the request as sent (credentials
@@ -405,6 +419,12 @@ mod tests {
         }
         assert!(send.description.as_deref().unwrap_or("").contains("instead of curl"));
         assert!(send.output_schema.is_some());
+        // The spec requires a tool's output schema to describe an object; an array breaks strict clients.
+        for tool in &tools {
+            if let Some(schema) = &tool.output_schema {
+                assert_eq!(schema.get("type").and_then(|t| t.as_str()), Some("object"), "{} advertises a non-object output schema", tool.name);
+            }
+        }
         let read_only = tools.iter().find(|t| t.name == "get_history").unwrap().annotations.clone().unwrap();
         assert_eq!(read_only.read_only_hint, Some(true));
     }
@@ -454,6 +474,9 @@ mod tests {
         let imported = crate::agent::import_curl("curl http://h/x", None, Source::Mcp).unwrap();
         assert!(imported.form_fields.is_empty());
         assert_eq!(missing_required_keys(&imported), Vec::<String>::new(), "import_curl");
+
+        assert_eq!(missing_required_keys(&SavedRequestsResult { requests: vec![] }), Vec::<String>::new(), "list_saved_requests");
+        assert_eq!(missing_required_keys(&HistoryResult { history: vec![] }), Vec::<String>::new(), "get_history");
 
         let variables = crate::agent::VariablesResult {
             variables: vec![],

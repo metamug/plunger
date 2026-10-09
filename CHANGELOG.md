@@ -9,6 +9,7 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 - A body editor is as tall as its text plus a spare line (at least four lines) instead of a fixed block of blank lines the cursor could not enter; an expanded request gives the editor the whole surface.
 
 ### Fixed
+- MCP: `list_saved_requests` and `get_history` advertised an array as their output schema, which the MCP spec does not allow (strict clients reject it). They now return an object: `{"requests": [...]}` and `{"history": [...]}`. A test checks that every tool's output schema is an object (#97). The command line still prints plain arrays.
 - `extract` and `select` mistakes (an empty or unknown source, a bad variable name, a malformed path) are reported before the request is sent, so a POST is not fired and then fails to extract; `plunger workflow save` checks the same. `plunger history --status banana` is an error, not an empty list.
 - The macOS release builds failed their smoke test because `scripts/smoke-cli.sh` used GNU-only `date +%s%N` and `timeout`; it now works on macOS. The macOS tarballs for 0.5.2 were attached afterwards (the release workflow can attach them to an existing release).
 
