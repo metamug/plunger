@@ -4,6 +4,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-09
+
 ### Added
 
 - `plunger install` and **File > Set up AI agents...**: register the MCP server in Claude Code, Cursor, Kiro, Codex, Windsurf, VS Code (Copilot) or Gemini CLI, and write the always-on steering (a `CLAUDE.md`/`AGENTS.md`/`GEMINI.md` block, a Claude skill, a Cursor rule, Kiro steering, a Windsurf rule) that tells the agent to send HTTP requests through Plunger instead of curl or Invoke-RestMethod. Existing config is merged, not replaced; a backup is kept; running it twice changes nothing; `--dry-run` shows the plan.
@@ -171,7 +173,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 First public release: send requests with params, headers, JSON, form-urlencoded, raw and multipart bodies; `{{variables}}`; secrets kept in Windows Credential Manager on request; curl and HAR import; local history; TLS-skip for local servers.
 
-[Unreleased]: https://github.com/metamug/plunger/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/metamug/plunger/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/metamug/plunger/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/metamug/plunger/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/metamug/plunger/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/metamug/plunger/compare/v0.4.0...v0.4.1
