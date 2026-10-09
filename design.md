@@ -1,6 +1,6 @@
 # Plunger: architecture and design
 
-How Plunger is built and why. This describes the code as of version 0.5.1. For using it, see the [README](README.md); for the agent interface in detail, see [docs/agents.md](docs/agents.md).
+How Plunger is built and why. This describes the code as of version 0.5.2. For using it, see the [README](README.md); for the agent interface in detail, see [docs/agents.md](docs/agents.md).
 
 ## 1. What it is, and what it refuses to be
 
@@ -71,22 +71,26 @@ Details that matter:
 | Layer | Module | Responsibility |
 |---|---|---|
 | Entry | `main.rs` | Mode selection, crash log, window options and startup. |
-| GUI | `app/mod.rs` | `ApiTesterApp`: tabs, sidebar lists, import dialogs, shortcuts, per-frame update, saving state. |
-| | `app/tab.rs` | `Tab`: one open request, its response, and its in-flight send. |
-| | `app/chrome.rs`, `sidebar.rs`, `command_bar.rs`, `import_window.rs`, `response_panel.rs`, `request/*` | Menu bar, status bar and tab strip; Saved and History lists; the URL bar; import dialogs; the response view; the Params, Headers, Body, Variables and Options editors. |
-| | `theme.rs`, `icons.rs`, `json_view.rs` | Dark and light palettes and styling; hand-painted vector icons; JSON tree and syntax colouring. |
+| GUI | `app/mod.rs` | `ApiTesterApp`: the struct, startup, saving state, the per-frame `update` and the layout of the central panel (including the draggable divider). |
+| | `app/tabs.rs`, `lists.rs`, `shortcuts.rs` | Opening, closing and switching tabs; the sidebar lists, the variables agents set and the database poll; keyboard shortcuts. |
+| | `app/tab.rs` | `Tab`: one open request, its response, its in-flight send, and its layout (`Pane`, dragged height). |
+| | `app/chrome.rs`, `sidebar.rs`, `command_bar.rs`, `response_panel.rs`, `response_search.rs`, `request/*` | Menu bar, status bar and tab strip; Saved and History lists; the URL bar; the response view and its search; the Params, Auth, Headers, Body, Variables and Options editors. |
+| | `app/import_window.rs`, `export_window.rs`, `agents_window.rs` | The import, export and "Set up AI agents" dialogs. |
+| | `theme.rs`, `icons.rs`, `json_view.rs`, `highlight.rs`, `timefmt.rs` | Palettes and styling; hand-painted vector icons; JSON tree and syntax colouring; local time. |
 | Core | `model.rs` | `PersistedState` (a request form), `ResponseData`, `ParsedRequest`, `Variable`. |
 | | `request.rs` | Builds the request that will be sent from the form: variable substitution, body assembly, headers. `prepare_to_send` is the one "press Send" step. |
 | | `vars.rs` | The `{{variable}}` resolver; built-ins `$uuid`, `$timestamp`, `$randomInt`; refuses undefined names. |
 | | `http.rs` | Sends the request (blocking reqwest) and turns the reply into `ResponseData`. |
 | | `query.rs` | URL and Params table in two-way sync, and percent-encoding. |
-| | `curl_import.rs`, `curl_export.rs` | curl and HAR to a request, and a request back to curl. |
-| | `redact.rs` | Which headers and parameters are credentials; blanking them. |
-| Storage | `history.rs` | SQLite: history and saved requests. |
+| | `curl_import.rs`, `curl_export.rs`, `commands/*` | curl, HAR, Windows cmd and PowerShell to a request, and a request back to each. |
+| | `redact.rs`, `filename.rs`, `outline.rs` | Which headers and parameters are credentials; the file name suggested when saving a response; the outline of a big JSON body. |
+| Storage | `history.rs` | SQLite: history, saved requests, agent variables, workflows. |
 | | `secrets.rs` | Remembered secrets in the OS credential store. |
-| Agents | `engine.rs` | Session (variables, remembered secrets), send with history, the `Scrubber`, agent-shaped results. |
-| | `agent.rs` | The six operations, shared by the CLI and MCP. |
-| | `cli.rs`, `mcp.rs` | Argument parsing, output and exit codes; MCP tool definitions. |
+| Agents | `engine/` | `session.rs` (variables, remembered secrets), `mod.rs` (send with history), `response.rs` (the `Scrubber` and agent-shaped results). |
+| | `agent/` | `mod.rs` (send), `requests.rs` (saved requests, history, curl), `variables.rs`: the operations shared by the CLI and MCP. |
+| | `workflow/` | Saved sequences of requests, and pulling a value out of a response (`extract.rs`). |
+| | `install.rs` | `plunger install`: MCP config and steering files for each AI tool. |
+| | `cli.rs`, `curl_cli.rs`, `mcp.rs`, `mcp_content.rs` | Argument parsing, output and exit codes; `plunger curl`; MCP tool definitions; MCP resources and prompts. |
 
 Dependencies only point downward: the GUI and the agent layer use the core; the core knows nothing about either.
 
@@ -127,7 +131,7 @@ Built with egui/eframe (immediate mode, glow renderer). State lives in `ApiTeste
 - **Request lifecycle** is one enum, `RequestStatus { Idle, InFlight { rx, sent } }`, so "loading", "who to poll" and "what was sent" can't disagree. The `sent` snapshot is what goes into history, even if the form is edited before the response arrives.
 - **Theme.** A `Palette` struct with `DARK` and `LIGHT` constants and `palette()` for the current one; nothing hard-codes a colour. The choice is pinned so the OS light/dark setting can't override it.
 - **Icons are painted, not glyphs**, so they can't show as missing-character boxes on any system font.
-- **Layout guards.** Hover-only controls are drawn in an overlay (`theme::overlay`) that takes no layout space, so rows don't jump. A long request scrolls in its own area capped at 45% of the window, so the response stays visible.
+- **Layout guards.** Hover-only controls are drawn in an overlay (`theme::overlay`) that takes no layout space, so rows don't jump. The request editor scrolls in its own area (one scroll bar; the body editors do not scroll separately). Its height follows what you are doing: most of the window before there is a response, less once there is one, and whatever you drag the divider to (double-click resets). Expanding the request folds it back when you send.
 - **Headless UI tests.** `render_ui` runs without a window, so tests draw every state (both themes, dialogs, agent-tagged rows) and catch panics.
 
 ## 7. Data and persistence

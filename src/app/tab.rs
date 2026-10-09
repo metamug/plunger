@@ -88,6 +88,23 @@ pub(super) struct Tab {
     /// The formatted XML/HTML view of the response on screen.
     pub markup_cache: Option<super::response_panel::MarkupView>,
     pub pane: Pane,
+    /// The height the user dragged the divider to; None lets the window decide from what is on screen.
+    pub request_height: Option<f32>,
+    /// How tall the request editor was drawn last frame, so a drag starts from what the user sees.
+    pub request_shown_height: f32,
+    /// Lines the body editors ask for: a few normally, more when the editor has been given the room.
+    pub editor_rows: usize,
+    /// Set when this tab was opened from a history row: when it was sent and how it went (the
+    /// response itself is not stored).
+    pub opened_from: Option<HistoryMeta>,
+}
+
+/// What the history knows about a request that was sent earlier.
+pub struct HistoryMeta {
+    pub created_at: String,
+    pub status: Option<i64>,
+    pub elapsed_ms: Option<i64>,
+    pub source: crate::history::Source,
 }
 
 impl Tab {
@@ -116,6 +133,10 @@ impl Tab {
             response_search_cache: Default::default(),
             markup_cache: None,
             pane: Pane::Both,
+            request_height: None,
+            request_shown_height: 0.0,
+            editor_rows: 8,
+            opened_from: None,
         }
     }
 
@@ -130,6 +151,12 @@ impl Tab {
         tab.name = entry.name.clone();
         tab.saved_id = entry.name.as_ref().map(|_| entry.id);
         tab.history_id = Some(entry.id);
+        tab.opened_from = Some(HistoryMeta {
+            created_at: entry.created_at.clone(),
+            status: entry.status,
+            elapsed_ms: entry.elapsed_ms,
+            source: entry.source,
+        });
         tab
     }
 
@@ -203,6 +230,11 @@ impl Tab {
     /// `agent_variables` are the ones agents set; they count as defined for this request only and
     /// are never added to the tab's own variables (which are saved with the window state).
     pub fn send(&mut self, bearer_token: &str, agent_variables: &[Variable]) {
+        // An expanded request folds back when it is sent, so the answer is what you see.
+        if self.pane == Pane::ResponseHidden {
+            self.pane = Pane::Both;
+        }
+        self.opened_from = None;
         let own = self.state.variables.len();
         for var in agent_variables {
             if !self.state.variables.iter().any(|v| v.name.trim() == var.name) {
@@ -282,6 +314,41 @@ mod tests {
         let mut named = tab("https://h.com/a");
         named.name = Some("Fixtures".into());
         assert_eq!(named.title(), "Fixtures");
+    }
+
+    #[test]
+    fn sending_folds_an_expanded_request_back_and_forgets_the_history_note() {
+        let mut tab = Tab::new(1, PersistedState { url: "http://127.0.0.1:1/x".into(), ..Default::default() });
+        tab.pane = Pane::ResponseHidden;
+        tab.opened_from = Some(HistoryMeta { created_at: "2026-10-09T06:11:03Z".into(), status: Some(200), elapsed_ms: Some(5), source: crate::history::Source::Mcp });
+        tab.send("", &[]);
+        assert_eq!(tab.pane, Pane::Both, "the response is what you see after a send");
+        assert!(tab.opened_from.is_none());
+        tab.cancel();
+    }
+
+    #[test]
+    fn a_tab_opened_from_history_remembers_how_that_request_went() {
+        let entry = crate::history::HistoryEntry {
+            id: 4,
+            name: None,
+            created_at: "2026-10-09T06:11:03Z".into(),
+            method: "GET".into(),
+            url: "http://h/x".into(),
+            headers_text: String::new(),
+            body_mode: crate::model::BodyMode::None,
+            json_body: String::new(),
+            urlencoded_body: String::new(),
+            raw_body: String::new(),
+            params: vec![],
+            multipart_fields: vec![],
+            status: Some(404),
+            elapsed_ms: Some(12),
+            source: crate::history::Source::Cli,
+        };
+        let tab = Tab::from_entry(1, &entry, &PersistedState::default());
+        let meta = tab.opened_from.expect("opened from history");
+        assert_eq!((meta.status, meta.elapsed_ms, meta.source), (Some(404), Some(12), crate::history::Source::Cli));
     }
 
     #[test]

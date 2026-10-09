@@ -93,7 +93,7 @@ impl HistoryEntry {
     /// Rebuild the request-shape part of app state from this history row, so
     /// clicking a sidebar entry can load it straight back into the form.
     pub fn to_persisted_state(&self) -> PersistedState {
-        PersistedState {
+        let mut state = PersistedState {
             method: self.method.clone(),
             url: self.url.clone(),
             headers_text: self.headers_text.clone(),
@@ -105,7 +105,10 @@ impl HistoryEntry {
             multipart_fields: self.multipart_fields.clone(),
             // Session-wide settings are overlaid by callers with `with_session_from`.
             ..PersistedState::default()
-        }
+        };
+        // A raw body that is JSON, sent as JSON, opens in the JSON editor.
+        state.infer_json_body();
+        state
     }
 }
 
@@ -561,6 +564,19 @@ impl History {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_raw_json_body_comes_back_in_the_json_editor() {
+        let h = history();
+        let mut s = state("http://a/raw", BodyMode::Raw);
+        s.headers_text = "Content-Type: application/json".into();
+        s.raw_body = "{\"k\": 1}".into();
+        h.insert(&s, Some(200), Some(1)).unwrap();
+        let restored = h.search_recent("", 5).unwrap()[0].to_persisted_state();
+        assert!(restored.body_mode == BodyMode::Json);
+        assert_eq!(restored.json_body, "{\"k\": 1}");
+        assert!(restored.raw_body.is_empty());
+    }
 
     fn history() -> History {
         History::with_connection(Connection::open_in_memory().unwrap()).unwrap()

@@ -30,12 +30,37 @@ impl Tab {
                         + ui.text_style_height(&egui::TextStyle::Body)
                         + ui.text_style_height(&egui::TextStyle::Small)
                         + 2.0 * gap;
-                    ui.add_space(((ui.available_height() - content) / 2.0).max(16.0));
+                    // With little room left (the request editor is tall), skip the picture and keep the words.
+                    let roomy = ui.available_height() > content + 70.0;
+                    ui.add_space(if roomy { ((ui.available_height() - content) / 2.0).max(16.0) } else { 8.0 });
                     ui.vertical_centered(|ui| {
-                        super::emboss::plunger(ui);
-                        ui.add_space(10.0);
-                        ui.label(egui::RichText::new("Send a request to see the response here").weak());
-                        ui.label(egui::RichText::new("Ctrl+Enter sends from anywhere").weak().small());
+                        if roomy {
+                            super::emboss::plunger(ui);
+                            ui.add_space(10.0);
+                        }
+                        if let Some(meta) = &self.opened_from {
+                            // Opened from the history: say how it went; the response itself is not stored.
+                            ui.horizontal(|ui| {
+                                // Centre the line: the badge, then who sent it and when.
+                                ui.add_space(((ui.available_width() - 330.0) / 2.0).max(0.0));
+                                if let Some(status) = meta.status {
+                                    status_badge(ui, status as u16, "");
+                                } else {
+                                    ui.label(egui::RichText::new("no response").color(crate::theme::palette().error));
+                                }
+                                let by = match meta.source {
+                                    crate::history::Source::Gui => "you",
+                                    crate::history::Source::Cli => "the CLI",
+                                    crate::history::Source::Mcp => "an agent (MCP)",
+                                };
+                                let time = meta.elapsed_ms.map(|ms| format!(" · {ms} ms")).unwrap_or_default();
+                                ui.label(egui::RichText::new(format!("Sent by {by} {}{time}", crate::timefmt::full(&meta.created_at))).weak());
+                            });
+                            ui.label(egui::RichText::new("The response is not stored. Ctrl+Enter sends it again").weak().small());
+                        } else {
+                            ui.label(egui::RichText::new("Send a request to see the response here").weak());
+                            ui.label(egui::RichText::new("Ctrl+Enter sends from anywhere").weak().small());
+                        }
                     });
                 }
                 return;

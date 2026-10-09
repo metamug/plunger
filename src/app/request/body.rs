@@ -7,17 +7,10 @@ use crate::model::{BodyMode, FieldKind, FormField};
 use crate::theme::{self, palette};
 use eframe::egui;
 
-/// Body boxes start short, grow with their content, and scroll past this height,
-/// so a small body doesn't waste space and a pasted one doesn't push the response away.
-const BODY_MAX_HEIGHT: f32 = 300.0;
-const BODY_MIN_ROWS: usize = 3;
-
-fn body_box(ui: &mut egui::Ui, salt: &str, add: impl FnOnce(&mut egui::Ui)) {
-    egui::ScrollArea::vertical()
-        .id_salt(salt)
-        .max_height(BODY_MAX_HEIGHT)
-        .auto_shrink([false, true])
-        .show(ui, add);
+/// A body editor is not wrapped in a scroll area of its own: the request pane scrolls, so there is one
+/// scroll bar, and the editor can use all the room the pane has instead of stopping at a fixed height.
+fn body_box(ui: &mut egui::Ui, _salt: &str, add: impl FnOnce(&mut egui::Ui)) {
+    add(ui);
 }
 
 impl Tab {
@@ -43,10 +36,11 @@ impl Tab {
                     job.wrap.max_width = wrap_width;
                     ui.fonts(|fonts| fonts.layout_job(job))
                 };
+                let rows = self.editor_rows;
                 body_box(ui, "body-urlencoded", |ui| {
                     ui.add(
                         theme::area(&mut self.state.urlencoded_body)
-                            .desired_rows(BODY_MIN_ROWS)
+                            .desired_rows(rows)
                             .desired_width(f32::INFINITY)
                             .font(egui::TextStyle::Monospace)
                             .layouter(&mut layouter),
@@ -60,10 +54,11 @@ impl Tab {
                     job.wrap.max_width = wrap_width;
                     ui.fonts(|fonts| fonts.layout_job(job))
                 };
+                let rows = self.editor_rows;
                 body_box(ui, "body-raw", |ui| {
                     ui.add(
                         theme::area(&mut self.state.raw_body)
-                            .desired_rows(BODY_MIN_ROWS)
+                            .desired_rows(rows)
                             .desired_width(f32::INFINITY)
                             .font(egui::TextStyle::Monospace)
                             .layouter(&mut layouter),
@@ -84,10 +79,11 @@ impl Tab {
             job.wrap.max_width = wrap_width;
             ui.fonts(|f| f.layout_job(job))
         };
+        let rows = self.editor_rows;
         body_box(ui, "body-json", |ui| {
             ui.add(
                 theme::area(&mut self.state.json_body)
-                    .desired_rows(BODY_MIN_ROWS)
+                    .desired_rows(rows)
                     .desired_width(f32::INFINITY)
                     .layouter(&mut layouter),
             );

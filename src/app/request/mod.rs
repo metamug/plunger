@@ -9,6 +9,7 @@ mod rows;
 mod suggest;
 
 use crate::app::tab::Pane;
+use crate::model::Outcome;
 use crate::app::ApiTesterApp;
 use crate::icons::{self, Icon};
 use crate::model::{BodyMode, PersistedState, RequestTab};
@@ -16,10 +17,17 @@ use crate::request::parse_headers;
 use crate::theme::compact_card;
 use eframe::egui;
 
-/// At most this share of the space below the tabs goes to the request editor;
-/// the response gets the rest.
-const REQUEST_SHARE: f32 = 0.45;
-const MIN_REQUEST_HEIGHT: f32 = 160.0;
+/// How much of the space below the tabs the request editor may take. Before there is a response the
+/// request is what you are working on, so it gets most of it; once a response is on screen, the
+/// response is. Dragging the divider overrides both.
+const SHARE_BEFORE_RESPONSE: f32 = 0.72;
+const SHARE_WITH_RESPONSE: f32 = 0.38;
+pub(in crate::app) const MIN_REQUEST_HEIGHT: f32 = 150.0;
+/// Room kept for the response header row when the editor is dragged as far as it goes.
+pub(in crate::app) const MIN_RESPONSE_HEIGHT: f32 = 120.0;
+const LINE_HEIGHT: f32 = 17.0;
+/// Space the editor needs besides its text lines: the body mode row, margins, the scroll bar.
+const EDITOR_CHROME: f32 = 110.0;
 
 impl ApiTesterApp {
     /// The Params / Headers / Body / Variables / Options strip and the
@@ -52,8 +60,8 @@ impl ApiTesterApp {
                     ui,
                     &mut hide_response,
                     Icon::ChevronDown,
-                    "The response is hidden. Click to show it again",
-                    "Hide the response to give the request the whole height",
+                    "The request is expanded. Click to show the response again (it folds back when you send)",
+                    "Expand the request editor to the whole height (it folds back when you send)",
                 )
                 .changed()
                 {
@@ -84,12 +92,21 @@ impl ApiTesterApp {
         let mut delete_agent = None;
         // A long request (40 headers, a big body) scrolls inside its own area
         // rather than pushing the response off the bottom of the window.
-        let (height, fill) = match tab.pane {
+        let available = ui.available_height();
+        let has_response = !matches!(tab.outcome, Outcome::Empty);
+        let (height, fill) = match (tab.pane, tab.request_height) {
             // Leave room for the line that says the response is folded away.
-            Pane::ResponseHidden => ((ui.available_height() - 36.0).max(MIN_REQUEST_HEIGHT), true),
-            _ => ((ui.available_height() * REQUEST_SHARE).max(MIN_REQUEST_HEIGHT), false),
+            (Pane::ResponseHidden, _) => ((available - 50.0).max(MIN_REQUEST_HEIGHT), true),
+            // A height the user dragged to is kept, within what the window can hold.
+            (_, Some(dragged)) => (dragged.clamp(MIN_REQUEST_HEIGHT, (available - MIN_RESPONSE_HEIGHT).max(MIN_REQUEST_HEIGHT)), true),
+            _ => {
+                let share = if has_response { SHARE_WITH_RESPONSE } else { SHARE_BEFORE_RESPONSE };
+                ((available * share).max(MIN_REQUEST_HEIGHT), false)
+            }
         };
-        egui::ScrollArea::vertical()
+        // Body editors take the lines the room allows, so a JSON body is not squeezed into three rows.
+        tab.editor_rows = if fill { (((height - EDITOR_CHROME) / LINE_HEIGHT) as usize).max(8) } else { 8 };
+        let shown = egui::ScrollArea::vertical()
             .id_salt(("request-section", tab.id))
             .max_height(height)
             .min_scrolled_height(if fill { height } else { 0.0 })
@@ -106,6 +123,7 @@ impl ApiTesterApp {
                     RequestTab::Options => tab.render_options_tab(ui),
                 });
             });
+        tab.request_shown_height = shown.inner_rect.height();
         if forget {
             self.forget_secrets();
         }

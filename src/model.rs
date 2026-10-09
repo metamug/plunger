@@ -153,6 +153,22 @@ impl Default for PersistedState {
 }
 
 impl PersistedState {
+    /// A raw body that parses as JSON, sent with a JSON `Content-Type`, belongs in the JSON editor: it
+    /// is highlighted, validated and can be formatted there. Anything else is left as it is.
+    pub fn infer_json_body(&mut self) {
+        if self.body_mode != BodyMode::Raw || self.raw_body.trim().is_empty() {
+            return;
+        }
+        let json_type = crate::request::parse_headers(&self.headers_text).iter().any(|(name, value)| {
+            let value = value.to_ascii_lowercase();
+            name.eq_ignore_ascii_case("content-type") && (value.contains("application/json") || value.contains("+json"))
+        });
+        if json_type && serde_json::from_str::<serde_json::Value>(&self.raw_body).is_ok() {
+            self.body_mode = BodyMode::Json;
+            self.json_body = std::mem::take(&mut self.raw_body);
+        }
+    }
+
     /// Session-wide settings (timeout, redirects, TLS, variables) belong to the
     /// session, not to a request, so loading a history entry must not change them.
     pub fn with_session_from(mut self, current: &PersistedState) -> Self {
@@ -277,6 +293,24 @@ impl ParsedRequest {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_json_body_sent_as_raw_text_opens_in_the_json_editor() {
+        let infer = |headers: &str, body: &str| {
+            let mut s = super::PersistedState { body_mode: super::BodyMode::Raw, raw_body: body.into(), headers_text: headers.into(), ..Default::default() };
+            s.infer_json_body();
+            s
+        };
+        let s = infer("Content-Type: application/json
+Accept: */*", "{\"a\": 1}");
+        assert!(s.body_mode == super::BodyMode::Json && s.json_body == "{\"a\": 1}" && s.raw_body.is_empty());
+        assert!(infer("content-type: application/vnd.api+json; charset=utf-8", "[1]").body_mode == super::BodyMode::Json);
+        // not JSON, not a JSON type, or nothing to show: left exactly as it was
+        assert!(infer("Content-Type: application/json", "{ not json").body_mode == super::BodyMode::Raw);
+        assert!(infer("Content-Type: text/plain", "{\"a\": 1}").body_mode == super::BodyMode::Raw);
+        assert!(infer("Accept: application/json", "{\"a\": 1}").body_mode == super::BodyMode::Raw, "only Content-Type counts");
+        assert!(infer("Content-Type: application/json", "  ").body_mode == super::BodyMode::Raw);
+    }
+
     use super::*;
 
     #[test]

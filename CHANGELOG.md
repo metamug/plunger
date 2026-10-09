@@ -4,6 +4,17 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-09
+
+### Added
+- The request editor and the response share the window more sensibly: before there is a response the request gets most of the height, and the JSON body editor shows more lines with a single scroll bar; once there is a response, the response gets the room. Drag the line between them to set your own split (double-click to reset). The expand chevron now makes the request fill the window and folds it back when you send, so the response is what you see (#158, #125).
+- A request opened from the history says when it was sent, by whom, and how it went (status and time) where the response would be, since the response itself is not stored (#159).
+- A raw body that is JSON, sent with a JSON `Content-Type`, opens in the JSON tab when a request is opened from the history or sent by an agent.
+- `docs/architecture.md`: a map of the code for contributors (#146).
+
+### Changed
+- The window code is split into smaller files: tabs, lists, shortcuts and the tests are no longer in `app/mod.rs`.
+
 ## [0.5.1] - 2026-10-09
 
 ### Added
@@ -173,7 +184,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 First public release: send requests with params, headers, JSON, form-urlencoded, raw and multipart bodies; `{{variables}}`; secrets kept in Windows Credential Manager on request; curl and HAR import; local history; TLS-skip for local servers.
 
-[Unreleased]: https://github.com/metamug/plunger/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/metamug/plunger/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/metamug/plunger/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/metamug/plunger/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/metamug/plunger/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/metamug/plunger/compare/v0.4.1...v0.4.2
