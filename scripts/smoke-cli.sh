@@ -44,6 +44,10 @@ set -e
 init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}'
 note='{"jsonrpc":"2.0","method":"notifications/initialized"}'
 list='{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
-resp=$( { printf '%s\n%s\n%s\n' "$init" "$note" "$list"; sleep 2; } | timeout 10 "$BIN" mcp || true)
+# The server stops when its input closes; a time limit is only a safety net where `timeout` exists
+# (it does not on macOS).
+limit=""
+if command -v timeout >/dev/null 2>&1; then limit="timeout 10"; elif command -v gtimeout >/dev/null 2>&1; then limit="gtimeout 10"; fi
+resp=$( { printf '%s\n%s\n%s\n' "$init" "$note" "$list"; sleep 2; } | $limit "$BIN" mcp || true)
 echo "$resp" | grep -q send_request || { echo "mcp: tools/list has no send_request"; echo "$resp"; exit 1; }
 echo "smoke test passed"
