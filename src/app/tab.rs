@@ -16,6 +16,17 @@ pub(super) type CopiedFlash = Option<(Instant, &'static str)>;
 
 /// The request lifecycle as one value, so "loading", "who to poll" and "what
 /// was sent" can't drift out of sync with each other.
+/// How the window's height is shared between the request editor and the response.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum Pane {
+    #[default]
+    Both,
+    /// The editor is folded away: the response gets the whole height.
+    RequestHidden,
+    /// The response is folded away: the editor gets the whole height.
+    ResponseHidden,
+}
+
 pub(super) enum RequestStatus {
     Idle,
     InFlight {
@@ -76,6 +87,7 @@ pub(super) struct Tab {
     pub response_search_cache: super::response_search::Cache,
     /// The formatted XML/HTML view of the response on screen.
     pub markup_cache: Option<super::response_panel::MarkupView>,
+    pub pane: Pane,
 }
 
 impl Tab {
@@ -103,6 +115,7 @@ impl Tab {
             response_search_scroll: 0,
             response_search_cache: Default::default(),
             markup_cache: None,
+            pane: Pane::Both,
         }
     }
 

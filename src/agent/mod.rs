@@ -63,6 +63,15 @@ pub struct SendParams {
     /// Longest body to return, in characters (default 50000). Longer bodies are cut and marked.
     #[serde(default)]
     pub max_body_chars: Option<usize>,
+    /// Keep values from the response as variables for later requests, e.g.
+    /// [{"name": "token", "from": "json:$.access_token"}]. `from` is `json:$.path`, `header:Name` or `status`.
+    /// A name like token or password is kept as a hidden secret.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extract: Vec<crate::workflow::Extract>,
+    /// Return only these values instead of the whole body, e.g. ["$.data[0].id", "header:Location", "status"].
+    /// Saves context on a big response; `json` and `body` are then left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<Vec<String>>,
 }
 
 /// Merges `extra` headers into `headers_text`, replacing same-named ones.
@@ -162,7 +171,41 @@ pub fn send_request(params: &SendParams, source: Source) -> Result<AgentResponse
     let session = Session::load();
     let history = open_history().map_err(SendFailure::NotSent)?;
     let state = params.to_state(&session, &history).map_err(SendFailure::NotSent)?;
-    send_prepared(state, params, &session, &history, source)
+    let (mut shaped, raw) = send_prepared_raw(state, params, &session, &history, source)?;
+    for e in &params.extract {
+        let stored = crate::workflow::extract::extract(&raw, &e.from).and_then(|value| set_variable(e.name.trim(), &value, e.secret, source).map(|info| (info, value)));
+        match stored {
+            Ok((info, value)) => {
+                // The response that carried a new secret must not show it either.
+                if info.secret {
+                    if let Some(scrubber) = Scrubber::only(&info.name, &value) {
+                        shaped.mask_with(&scrubber);
+                    }
+                }
+                shaped.variables_set.push(info);
+            }
+            Err(err) => shaped.problems.push(format!("could not set `{}` from `{}`: {err}", e.name, e.from)),
+        }
+    }
+    Ok(shaped)
+}
+
+/// Replaces `json` and `body` with just the values asked for, so a big response costs a few tokens.
+/// Values come from the response as sent and are masked like the rest of the output.
+fn apply_select(shaped: &mut AgentResponse, raw: &ResponseData, paths: &[String], scrubber: &Scrubber) {
+    let mut selected = BTreeMap::new();
+    for path in paths {
+        match crate::workflow::extract::select(raw, path) {
+            Ok(value) => {
+                selected.insert(path.clone(), scrubber.json(&value));
+            }
+            Err(err) => shaped.problems.push(format!("could not select `{path}`: {err}")),
+        }
+    }
+    shaped.selected = Some(selected);
+    shaped.json = None;
+    shaped.body = None;
+    shaped.body_cut_from_chars = None;
 }
 
 /// Sends a curl command (parsed, never run as a program); `params` supplies
@@ -206,7 +249,13 @@ fn send_prepared_raw(
     let bearer = if params.use_saved_bearer.unwrap_or(false) { session.bearer.as_str() } else { "" };
     let max_body_chars = params.max_body_chars.unwrap_or(DEFAULT_MAX_BODY_CHARS);
     match engine::send(state, bearer, Some(history), source) {
-        Ok(sent) => Ok((AgentResponse::from_sent(&sent, &scrubber, max_body_chars), sent.response)),
+        Ok(sent) => {
+            let mut shaped = AgentResponse::from_sent(&sent, &scrubber, max_body_chars);
+            if let Some(paths) = &params.select {
+                apply_select(&mut shaped, &sent.response, paths, &scrubber);
+            }
+            Ok((shaped, sent.response))
+        }
         Err(SendError::Refused(msg)) => {
             // The window's advice ("define it in the Variables tab") isn't
             // something an agent can do; say how it can supply one instead.

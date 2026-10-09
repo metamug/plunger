@@ -615,7 +615,13 @@ impl ApiTesterApp {
             self.render_request_section(ui);
             ui.add_space(2.0);
             ui.separator();
-            self.tab_mut().render_response_section(ui);
+            if self.tab().pane == tab::Pane::ResponseHidden {
+                if ui.small_button("Show the response").on_hover_text("Give the response its space back").clicked() {
+                    self.tab_mut().pane = tab::Pane::Both;
+                }
+            } else {
+                self.tab_mut().render_response_section(ui);
+            }
         });
     }
 }
@@ -854,8 +860,25 @@ mod tests {
         }
     }
 
+    #[test]
+    fn every_pane_layout_draws_with_and_without_a_response() {
+        use crate::app::tab::Pane;
+        let mut a = app(busy_state());
+        for pane in [Pane::Both, Pane::RequestHidden, Pane::ResponseHidden] {
+            for request_tab in [RequestTab::Params, RequestTab::Headers, RequestTab::Body, RequestTab::Variables] {
+                a.tab_mut().pane = pane;
+                a.tab_mut().request_tab = request_tab;
+                a.tab_mut().outcome = Outcome::Empty;
+                draw(&mut a);
+                a.tab_mut().outcome = Outcome::Response(Box::new(response("{\"a\": 1}", true, false)));
+                draw(&mut a);
+            }
+        }
+    }
+
     fn response(body: &str, json: bool, truncated: bool) -> ResponseData {
         ResponseData {
+            sent_at: "2026-10-09T06:11:03Z".into(),
             status: 200,
             status_text: "OK".into(),
             ttfb_ms: 1,

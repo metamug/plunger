@@ -525,6 +525,7 @@ mod tests {
     fn a_binary_response_is_flagged_and_its_bytes_are_not_returned() {
         let sent = Sent {
             response: ResponseData {
+                sent_at: String::new(),
                 status: 200,
                 status_text: "OK".into(),
                 ttfb_ms: 1,

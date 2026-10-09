@@ -64,7 +64,7 @@ python scripts/mcp-demo-client.py path\to\plunger.exe
 
 | Tool | What it does |
 |---|---|
-| `send_request` | Sends a request and returns `status`, `ok`, `elapsed_ms`, `size_bytes`, `headers`, and the body (`json` when it parses, otherwise `body`). Send a saved request by name with `saved_request`, or describe one with `method`, `url`, `headers`, and one of `json`, `body` or `form`. `variables` adds or overrides `{{variables}}` for this request only. |
+| `send_request` | Sends a request and returns `status`, `ok`, `elapsed_ms`, `size_bytes`, `headers`, and the body (`json` when it parses, otherwise `body`). Send a saved request by name with `saved_request`, or describe one with `method`, `url`, `headers`, and one of `json`, `body` or `form`. `variables` adds or overrides `{{variables}}` for this request only. `extract` keeps values from the response as variables (`[{"name": "token", "from": "json:$.access_token"}]`; `from` is `json:$.path`, `header:Name` or `status`), so a login and its token take one call. `select` (`["$.data[0].id", "header:Location"]`) returns just those values under `selected` instead of the whole body. `request.sent_at` is when it was fired. |
 | `import_curl` | Parses a curl command into a request without sending it. With `save_as`, adds it to the Saved list. |
 | `save_request` | Saves a request without sending it, described like `send_request` plus a `name`. `{{placeholders}}` (even in `Authorization: Bearer {{token}}`) are kept. An existing name is refused unless `overwrite` is true, so a mistake can be fixed. |
 | `get_saved_request` | One saved request in full: method, URL, headers, body and the variables it needs. |

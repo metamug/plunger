@@ -26,6 +26,7 @@ mod request;
 #[cfg(test)]
 mod test_server;
 mod theme;
+mod timefmt;
 mod vars;
 
 use app::{ApiTesterApp, OpenTabs, Settings};

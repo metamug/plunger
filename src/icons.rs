@@ -37,6 +37,10 @@ pub enum Icon {
     Plus,
     /// Close a tab (not a delete — that is always the trash can).
     Close,
+    /// Fold a pane away, upwards.
+    ChevronUp,
+    /// Fold a pane away, downwards.
+    ChevronDown,
 }
 
 pub const SIZE: f32 = 28.0;
@@ -194,5 +198,7 @@ pub fn paint(painter: &egui::Painter, r: egui::Rect, icon: Icon, color: egui::Co
             line(vec![p(2.5, 2.5), p(11.5, 11.5)]);
             line(vec![p(11.5, 2.5), p(2.5, 11.5)]);
         }
+        Icon::ChevronUp => line(vec![p(1.5, 9.5), p(7.0, 4.0), p(12.5, 9.5)]),
+        Icon::ChevronDown => line(vec![p(1.5, 4.5), p(7.0, 10.0), p(12.5, 4.5)]),
     }
 }

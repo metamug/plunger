@@ -32,6 +32,24 @@ pub fn extract(response: &ResponseData, from: &str) -> Result<String, String> {
     Err(format!("`{from}` is not a source: use `json:$.path`, `header:Name` or `status`"))
 }
 
+/// The value `spec` points at, keeping its JSON type: `$.a.b[0]` or `json:$.a`, `header:Name`, `status`.
+pub fn select(response: &ResponseData, spec: &str) -> Result<Value, String> {
+    let spec = spec.trim();
+    if spec.starts_with("header:") || spec == "status" {
+        return extract(response, spec).map(|text| {
+            if spec == "status" {
+                text.parse::<u16>().map(Value::from).unwrap_or(Value::String(text))
+            } else {
+                Value::String(text)
+            }
+        });
+    }
+    let path = spec.strip_prefix("json:").unwrap_or(spec);
+    let text = response.raw_text.as_deref().unwrap_or(&response.body);
+    let value: Value = serde_json::from_str(text).map_err(|_| "the response body is not JSON".to_string())?;
+    json_path(&value, path).cloned()
+}
+
 /// One step of a path.
 #[derive(Debug, PartialEq)]
 enum Segment {
@@ -141,6 +159,17 @@ mod tests {
         assert!(extract(&r, "header:nope").is_err());
         assert!(extract(&r, "cookie:x").unwrap_err().contains("not a source"));
         assert!(extract(&response("plain"), "json:$.a").unwrap_err().contains("not JSON"));
+    }
+
+    #[test]
+    fn select_keeps_the_json_type() {
+        let r = response(r#"{"data": [{"id": 7, "tags": ["a"]}], "ok": true}"#);
+        assert_eq!(select(&r, "$.data[0].id").unwrap(), serde_json::json!(7));
+        assert_eq!(select(&r, "json:$.data[0].tags").unwrap(), serde_json::json!(["a"]));
+        assert_eq!(select(&r, "$.ok").unwrap(), serde_json::json!(true));
+        assert_eq!(select(&r, "status").unwrap(), serde_json::json!(201));
+        assert_eq!(select(&r, "header:X-Request-Id").unwrap(), serde_json::json!("abc"));
+        assert!(select(&r, "$.nope").is_err());
     }
 
     #[test]

@@ -122,6 +122,10 @@ plunger send <url> | --url <url> [options]
   -X, --method M   -H \"Name: value\" (repeatable)   --json <JSON|@file|@->   -d <TEXT|@file|@->
   --form k=v (repeatable)   --var name=value (repeatable)   --use-saved-bearer
   --timeout SECONDS   --insecure   --no-follow   --max-body CHARS   --fail
+  --extract name=FROM (repeatable)   keep a value from the response as {{name}} for later requests;
+                    FROM is json:$.path, header:Name or status (a name like token stays secret)
+  --select PATH (repeatable)         print only these values (\"$.data[0].id\", header:Location, status)
+                    instead of the whole body
 
 {{variables}} in the URL, headers and body are filled in; {{$env:NAME}} reads an environment variable.
 Output is JSON: status, timing, headers, and `json` (parsed) or `body` (text).
@@ -464,6 +468,11 @@ impl SendOptions {
                 let (k, v) = args.pair(arg)?;
                 p.variables.get_or_insert_with(BTreeMap::new).insert(k, v);
             }
+            "--extract" => {
+                let (name, from) = args.pair(arg)?;
+                p.extract.push(crate::workflow::Extract { name, from, secret: None });
+            }
+            "--select" => p.select.get_or_insert_with(Vec::new).push(args.value(arg)?),
             "--use-saved-bearer" => p.use_saved_bearer = Some(true),
             "--timeout" => p.timeout_secs = Some(args.number(arg)?),
             "--insecure" | "-k" => p.insecure_tls = Some(true),

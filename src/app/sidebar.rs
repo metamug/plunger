@@ -19,9 +19,18 @@ enum RowAction {
     Unsave,
 }
 
+/// A timestamp for a tooltip: in the user's time zone when the system says what it is, else UTC.
+fn friendly_timestamp(ts: &str) -> String {
+    let local = crate::timefmt::full(ts);
+    if local != ts {
+        return local;
+    }
+    utc_timestamp(ts)
+}
+
 /// "2026-09-24T11:33:44.5515843Z" -> "2026-09-24 11:33:44 UTC". Anything that
 /// doesn't look like an RFC 3339 timestamp is shown as-is.
-fn friendly_timestamp(ts: &str) -> String {
+fn utc_timestamp(ts: &str) -> String {
     match (ts.get(..10), ts.get(11..19)) {
         (Some(date), Some(time)) if ts.as_bytes().get(10) == Some(&b'T') => format!("{date} {time} UTC"),
         _ => ts.to_string(),
@@ -307,12 +316,12 @@ fn url_path(url: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::{friendly_timestamp, url_path};
+    use super::{friendly_timestamp, url_path, utc_timestamp};
 
     #[test]
     fn rfc3339_timestamps_are_shortened() {
-        assert_eq!(friendly_timestamp("2026-09-24T11:33:44.5515843Z"), "2026-09-24 11:33:44 UTC");
-        assert_eq!(friendly_timestamp("2026-09-24T11:33:44Z"), "2026-09-24 11:33:44 UTC");
+        assert_eq!(utc_timestamp("2026-09-24T11:33:44.5515843Z"), "2026-09-24 11:33:44 UTC");
+        assert_eq!(utc_timestamp("2026-09-24T11:33:44Z"), "2026-09-24 11:33:44 UTC");
     }
 
     #[test]

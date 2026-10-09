@@ -8,7 +8,9 @@ mod params;
 mod rows;
 mod suggest;
 
+use crate::app::tab::Pane;
 use crate::app::ApiTesterApp;
+use crate::icons::{self, Icon};
 use crate::model::{BodyMode, PersistedState, RequestTab};
 use crate::request::parse_headers;
 use crate::theme::compact_card;
@@ -43,19 +45,55 @@ impl ApiTesterApp {
             );
             let options_label = if tab.state.insecure_tls { "Options (TLS check off)" } else { "Options" };
             ui.selectable_value(&mut tab.request_tab, RequestTab::Options, options_label);
-            if tab.request_tab == RequestTab::Headers {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| tab.headers_view_toggle(ui));
-            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // From the right: fold the response away, fold this editor away, then the Headers view switch.
+                let mut hide_response = tab.pane == Pane::ResponseHidden;
+                if icons::toggle(
+                    ui,
+                    &mut hide_response,
+                    Icon::ChevronDown,
+                    "The response is hidden. Click to show it again",
+                    "Hide the response to give the request the whole height",
+                )
+                .changed()
+                {
+                    tab.pane = if hide_response { Pane::ResponseHidden } else { Pane::Both };
+                }
+                let mut hide_request = tab.pane == Pane::RequestHidden;
+                if icons::toggle(
+                    ui,
+                    &mut hide_request,
+                    Icon::ChevronUp,
+                    "The request editor is hidden. Click to show it again",
+                    "Hide the request editor to give the response the whole height",
+                )
+                .changed()
+                {
+                    tab.pane = if hide_request { Pane::RequestHidden } else { Pane::Both };
+                }
+                if tab.request_tab == RequestTab::Headers && tab.pane != Pane::RequestHidden {
+                    tab.headers_view_toggle(ui);
+                }
+            });
         });
+        if tab.pane == Pane::RequestHidden {
+            return;
+        }
         ui.add_space(2.0);
         let mut forget = false;
         let mut delete_agent = None;
         // A long request (40 headers, a big body) scrolls inside its own area
         // rather than pushing the response off the bottom of the window.
+        let (height, fill) = match tab.pane {
+            // Leave room for the line that says the response is folded away.
+            Pane::ResponseHidden => ((ui.available_height() - 36.0).max(MIN_REQUEST_HEIGHT), true),
+            _ => ((ui.available_height() * REQUEST_SHARE).max(MIN_REQUEST_HEIGHT), false),
+        };
         egui::ScrollArea::vertical()
             .id_salt(("request-section", tab.id))
-            .max_height((ui.available_height() * REQUEST_SHARE).max(MIN_REQUEST_HEIGHT))
-            .auto_shrink([false, true])
+            .max_height(height)
+            .min_scrolled_height(if fill { height } else { 0.0 })
+            .auto_shrink([false, !fill])
             .show(ui, |ui| {
                 compact_card(ui, |ui| match tab.request_tab {
                     RequestTab::Params => tab.render_params_tab(ui),

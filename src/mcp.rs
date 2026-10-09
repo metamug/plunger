@@ -30,7 +30,7 @@ TOOLS
 - list_saved_requests: the requests the user saved, by name. Check it before building a request from scratch.
 - list_variables: the {{variables}} in use (secrets by name only; `source` says whether the user defined it in the window or an agent set it), the built-ins ($uuid, $timestamp, $randomInt, $env:NAME) and whether a Bearer token is saved.
 - set_variable / delete_variable: keep a value for later requests as {{name}} (for example a token from a login response). It persists, and the user sees it in the window. A secret (or a name like token, password, api_key) goes to the system credential store and is masked in results. You cannot change or delete variables the user defined.
-- send_request: send a request, or a saved one by name (`saved_request`) with overrides. Use `json`, `body` or `form` for the body; `headers` is an object like {\"Accept\": \"application/json\"}.
+- send_request: send a request, or a saved one by name (`saved_request`) with overrides. Use `json`, `body` or `form` for the body; `headers` is an object like {\"Accept\": \"application/json\"}. `select: [\"$.data[0].id\", \"header:Location\"]` returns only those values (under `selected`) instead of the whole body, so a big response costs a few tokens. `extract: [{\"name\": \"token\", \"from\": \"json:$.access_token\"}]` keeps a value from the response as {{token}} for later requests in the same call (hidden if it looks like a credential); `variables_set` lists what was set and `problems` anything that did not work. `request.sent_at` is when it was fired.
 - save_request / get_saved_request / delete_saved_request: save a request without sending it (same fields as send_request, plus `name`; `overwrite: true` replaces an existing one), read one back in full, or remove one. {{placeholders}} are kept, so Authorization: Bearer {{token}} works when it is sent later.
 - import_curl: parse a curl command into a request, and with `save_as` keep it in the user's Saved list.
 - export_curl: a saved request or a history entry as a curl command.
@@ -405,8 +405,11 @@ mod tests {
             truncated_at_10mb: false,
             binary: false,
             headers: vec![],
-            request: SentRequest { method: "GET".into(), url: "http://h/".into(), history_id: None },
+            request: SentRequest { method: "GET".into(), url: "http://h/".into(), history_id: None, sent_at: String::new() },
             redacted: vec![],
+            selected: None,
+            variables_set: vec![],
+            problems: vec![],
         };
         assert_eq!(missing_required_keys(&response), Vec::<String>::new(), "send_request");
 

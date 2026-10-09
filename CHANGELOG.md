@@ -4,6 +4,12 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+- `extract` on `send_request` (and `plunger send --extract name=json:$.path`): keep a value from the response as a variable in the same call, so a login and its token take one request instead of two. A credential-like name is a hidden secret, and the response that carried it is masked too. `variables_set` lists what was set.
+- `select` on `send_request` (and `plunger send --select PATH`): return only the values you ask for (`$.data[0].id`, `header:Location`, `status`) under `selected`, instead of the whole body, so a big response costs a few tokens. A path that is not in the response is reported under `problems`.
+- The time a request was sent: `sent_at` on every response an agent gets, and in the window the clock time on the response row, with the full date and the timing breakdown on hover (in your own time zone when the system tells us). The sidebar tooltip uses local time too (#159).
+- Hide the request editor to give the response the whole height, or hide the response to give the editor the whole height: two chevrons at the right end of the request tabs (#158).
+
 ### Fixed
 - Saving a response body suggests a real file name: the server's `Content-Disposition` name, then the last part of the URL (`401.jpg`), then `response` with an extension that fits the `Content-Type` (`.png`, `.pdf`, ...), instead of always `response.bin` (#154).
 - A URL with no host, such as `https:///AphiaRecordsByAphiaIDs`, is refused with a clear error. It used to be read as host `AphiaRecordsByAphiaIDs` and sent to the wrong server (#155).

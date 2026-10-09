@@ -93,6 +93,9 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
         OutgoingBody::Multipart(fields) => builder.multipart(multipart_form(fields)?),
     };
 
+    let sent_at = time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_default();
     let start = Instant::now();
     let res = builder.send().map_err(|e| describe_error(&e))?;
     let ttfb_ms = start.elapsed().as_millis();
@@ -147,6 +150,7 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
     };
 
     Ok(ResponseData {
+        sent_at,
         status,
         status_text,
         ttfb_ms,

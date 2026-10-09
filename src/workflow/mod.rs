@@ -3,7 +3,7 @@
 //! response into variables (`{{name}}`) for the steps after it. A value named like a credential
 //! (`token`, `password`...) is kept as a secret: it is used in later requests but never shown.
 
-mod extract;
+pub(crate) mod extract;
 
 use crate::agent::{self, SendFailure, SendParams};
 use crate::engine::{AgentResponse, VariableInfo};
@@ -35,9 +35,6 @@ pub struct Step {
     /// The request, described like send_request does: saved_request, method, url, headers, json / body / form, options.
     #[serde(flatten)]
     pub request: SendParams,
-    /// Values to keep from the response for the steps after this one.
-    #[serde(default)]
-    pub extract: Vec<Extract>,
     /// The status this step must return. Without it any 2xx passes; a step that fails stops the workflow.
     #[serde(default)]
     pub expect_status: Option<u16>,
@@ -97,7 +94,7 @@ fn check(steps: &[Step]) -> Result<(), String> {
         if step.request.saved_request.is_none() && step.request.url.as_deref().is_none_or(|u| u.trim().is_empty()) {
             return Err(format!("Step {} needs a `url` or a `saved_request`.", i + 1));
         }
-        for e in &step.extract {
+        for e in &step.request.extract {
             if e.name.trim().is_empty() || e.from.trim().is_empty() {
                 return Err(format!("Step {}: every `extract` needs a `name` and a `from`.", i + 1));
             }
@@ -205,7 +202,7 @@ fn run_steps(
                     result.error = Some(format!("expected {want}, got {}", shaped.status));
                 } else {
                     result.ok = true;
-                    for e in &step.extract {
+                    for e in &step.request.extract {
                         let stored = extract::extract(&raw, &e.from).and_then(|value| set(e.name.trim(), &value, e.secret));
                         match stored {
                             Ok(info) => result.set.push(info),
@@ -237,7 +234,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn step(url: &str) -> Step {
-        Step { label: None, request: SendParams { url: Some(url.into()), ..Default::default() }, extract: vec![], expect_status: None }
+        Step { label: None, request: SendParams { url: Some(url.into()), ..Default::default() }, expect_status: None }
     }
 
     fn reply(status: u16, body: &str) -> (AgentResponse, ResponseData) {
@@ -254,8 +251,11 @@ mod tests {
             truncated_at_10mb: false,
             binary: false,
             headers: vec![],
-            request: crate::engine::SentRequest { method: "GET".into(), url: "http://x".into(), history_id: None },
+            request: crate::engine::SentRequest { method: "GET".into(), url: "http://x".into(), history_id: None, sent_at: String::new() },
             redacted: vec![],
+            selected: None,
+            variables_set: Vec::new(),
+            problems: Vec::new(),
         };
         (shaped, raw)
     }
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn a_value_from_one_response_is_set_for_the_next_request() {
         let mut login = step("http://h/login");
-        login.extract = vec![Extract { name: "token".into(), from: "json:$.token".into(), secret: None }];
+        login.request.extract = vec![Extract { name: "token".into(), from: "json:$.token".into(), secret: None }];
         let steps = vec![login, step("http://h/me")];
         let mut set_calls: Vec<(String, String)> = Vec::new();
         let mut sent = Vec::new();
@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn a_value_that_is_not_there_fails_the_step_and_says_why() {
         let mut s = step("http://h/a");
-        s.extract = vec![Extract { name: "id".into(), from: "json:$.data.id".into(), secret: None }];
+        s.request.extract = vec![Extract { name: "id".into(), from: "json:$.data.id".into(), secret: None }];
         let result = run_steps("w", &[s], &BTreeMap::new(), |_| Ok(reply(200, r#"{"data": {}}"#)), |n, _, _| Ok(info(n)));
         assert!(!result.ok);
         let error = result.steps[0].error.as_deref().unwrap();
@@ -337,7 +337,7 @@ mod tests {
     #[test]
     fn a_workflow_without_a_request_is_refused() {
         assert!(check(&[]).is_err());
-        let empty = Step { label: None, request: SendParams::default(), extract: vec![], expect_status: None };
+        let empty = Step { label: None, request: SendParams::default(), expect_status: None };
         assert!(check(&[empty]).unwrap_err().contains("Step 1"));
         assert!(check(&[step("http://h")]).is_ok());
     }
@@ -347,7 +347,7 @@ mod tests {
         let json = r#"[{"label":"log in","method":"POST","url":"http://h/login","json":{"u":"a"},"extract":[{"name":"token","from":"json:$.token"}],"expect_status":200}]"#;
         let steps = parse_steps(json).unwrap();
         assert_eq!(steps[0].request.method.as_deref(), Some("POST"));
-        assert_eq!(steps[0].extract[0].from, "json:$.token");
+        assert_eq!(steps[0].request.extract[0].from, "json:$.token");
         assert_eq!(steps[0].expect_status, Some(200));
         let again = parse_steps(&serde_json::to_string(&steps).unwrap()).unwrap();
         assert_eq!(again[0].request.url.as_deref(), Some("http://h/login"));

@@ -62,8 +62,13 @@ impl Tab {
             ui.selectable_value(&mut self.response_tab, ResponseTab::Headers, "Headers");
             ui.add_space(8.0);
             status_badge(ui, resp.status, &resp.status_text);
-            ui.label(egui::RichText::new(format!("{} ms · {}", resp.elapsed_ms, format_bytes(resp.size_bytes))).weak())
-                .on_hover_ui(|ui| timing_details(ui, resp));
+            let clock = crate::timefmt::clock(&resp.sent_at);
+            let summary = if clock.is_empty() {
+                format!("{} ms · {}", resp.elapsed_ms, format_bytes(resp.size_bytes))
+            } else {
+                format!("{clock} · {} ms · {}", resp.elapsed_ms, format_bytes(resp.size_bytes))
+            };
+            ui.label(egui::RichText::new(summary).weak()).on_hover_ui(|ui| timing_details(ui, resp));
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if icons::button(ui, Icon::Download, "Save response body to a file").clicked() {
@@ -388,6 +393,9 @@ fn timing_details(ui: &mut egui::Ui, resp: &crate::model::ResponseData) {
             ui.label(value);
             ui.end_row();
         };
+        if !resp.sent_at.is_empty() {
+            row(ui, "Sent at", crate::timefmt::full(&resp.sent_at));
+        }
         row(ui, "Waiting (TTFB)", format!("{} ms", resp.ttfb_ms));
         row(ui, "Download", format!("{} ms", resp.elapsed_ms.saturating_sub(resp.ttfb_ms)));
         row(ui, "Total", format!("{} ms", resp.elapsed_ms));

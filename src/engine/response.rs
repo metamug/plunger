@@ -1,7 +1,7 @@
 //! What an agent is told about a response: secrets masked, the body cut to a readable size,
 //! and the structured shapes the CLI and MCP tools return.
 
-use super::{percent_encode_all, Sent, MIN_MASKED_LEN};
+use super::{percent_encode_all, Sent, VariableInfo, MIN_MASKED_LEN};
 use crate::history::HistoryEntry;
 use crate::model::{BodyMode, PersistedState};
 use crate::redact::{is_sensitive_header, redact_url};
@@ -55,6 +55,24 @@ impl Scrubber {
         // Longest first, so a secret that contains another is masked whole.
         secrets.sort_by_key(|(_, value)| std::cmp::Reverse(value.len()));
         Self { secrets }
+    }
+
+    /// A scrubber for one value that became a secret after the scrubber for the request was built
+    /// (a token the response itself carried and `extract` just stored).
+    pub fn only(name: &str, value: &str) -> Option<Self> {
+        if value.trim().len() < MIN_MASKED_LEN {
+            return None;
+        }
+        let value = value.trim().to_string();
+        let mut secrets = vec![(name.to_string(), value.clone())];
+        for encoded in [crate::query::encode_value(&value), percent_encode_all(&value)] {
+            if encoded != value {
+                secrets.push((name.to_string(), encoded));
+            }
+        }
+        secrets.dedup();
+        secrets.sort_by_key(|(_, v)| std::cmp::Reverse(v.len()));
+        Some(Self { secrets })
     }
 
     pub fn text(&self, text: &str) -> String {
@@ -120,6 +138,15 @@ pub struct AgentResponse {
     /// `[redacted:<name>]`. Names only, never values.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub redacted: Vec<String>,
+    /// With `select`: just the values asked for, by the path given. `json` and `body` are then left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+    /// With `extract`: the variables that were set from this response (secrets by name only).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variables_set: Vec<VariableInfo>,
+    /// Things that did not work in `select` or `extract`, such as a path that is not in the response.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub problems: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
@@ -130,9 +157,42 @@ pub struct SentRequest {
     /// Row in the shared history, visible in the Plunger window.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub history_id: Option<i64>,
+    /// When the request was fired, RFC 3339 in UTC.
+    #[serde(default)]
+    pub sent_at: String,
 }
 
 impl AgentResponse {
+    /// Masks one more secret in everything an agent will read, and records its name.
+    pub fn mask_with(&mut self, scrubber: &Scrubber) {
+        let mut found = Vec::new();
+        if let Some(json) = &self.json {
+            found.extend(scrubber.found_in(&json.to_string()));
+            self.json = Some(scrubber.json(json));
+        }
+        if let Some(body) = &self.body {
+            found.extend(scrubber.found_in(body));
+            self.body = Some(scrubber.text(body));
+        }
+        if let Some(selected) = &mut self.selected {
+            for value in selected.values_mut() {
+                found.extend(scrubber.found_in(&value.to_string()));
+                *value = scrubber.json(value);
+            }
+        }
+        for header in &mut self.headers {
+            found.extend(scrubber.found_in(&header.value));
+            header.value = scrubber.text(&header.value);
+        }
+        found.sort();
+        found.dedup();
+        for name in found {
+            if !self.redacted.contains(&name) {
+                self.redacted.push(name);
+            }
+        }
+    }
+
     pub fn from_sent(sent: &Sent, scrubber: &Scrubber, max_body_chars: usize) -> Self {
         let r = &sent.response;
         let mut redacted = scrubber.found_in(&r.body);
@@ -179,8 +239,12 @@ impl AgentResponse {
                 method: sent.state.method.clone(),
                 url: scrubber.text(&redact_url(&sent.state.url)),
                 history_id: sent.history_id,
+                sent_at: r.sent_at.clone(),
             },
             redacted,
+            selected: None,
+            variables_set: Vec::new(),
+            problems: Vec::new(),
         }
     }
 }
@@ -304,3 +368,26 @@ fn collect_names(text: &str, names: &mut Vec<String>) {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_token_the_response_carried_is_masked_once_it_becomes_a_secret() {
+        let mut shaped: AgentResponse = serde_json::from_value(serde_json::json!({
+            "ok": true, "status": 200, "status_text": "OK", "elapsed_ms": 1, "size_bytes": 10, "truncated_at_10mb": false,
+            "json": {"token": "tok_secret_1", "user": {"id": 7}},
+            "selected": {"$.token": "tok_secret_1", "$.user.id": 7},
+            "headers": [{"name": "X-Echo", "value": "tok_secret_1"}],
+            "request": {"method": "POST", "url": "http://h/login"}
+        }))
+        .unwrap();
+        shaped.mask_with(&Scrubber::only("token", "tok_secret_1").unwrap());
+        let text = serde_json::to_string(&shaped).unwrap();
+        assert!(!text.contains("tok_secret_1"), "{text}");
+        assert!(text.contains("[redacted:token]") && text.contains("\"user\":{\"id\":7}"));
+        assert_eq!(shaped.redacted, vec!["token".to_string()]);
+        assert!(Scrubber::only("t", "ab").is_none(), "a value too short to mask is left alone");
+    }
+}
