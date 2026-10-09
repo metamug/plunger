@@ -9,6 +9,7 @@ mod curl_export;
 mod curl_import;
 mod engine;
 mod fallback_fonts;
+mod filename;
 mod highlight;
 mod history;
 mod workflow;

@@ -26,7 +26,7 @@ impl ApiTesterApp {
     pub(in crate::app) fn render_request_section(&mut self, ui: &mut egui::Ui) {
         let tab = &mut self.tabs[self.active];
         ui.horizontal(|ui| {
-            let labels = tab_labels(&tab.state, !self.bearer_token.is_empty());
+            let labels = tab_labels(&tab.state, !self.bearer_token.is_empty(), self.agent_variables.len());
             ui.selectable_value(&mut tab.request_tab, RequestTab::Params, &labels.params)
                 .on_hover_text("Query parameters. They mirror the URL's query string: edit either one. Untick a row to leave it out of the URL.");
             ui.selectable_value(&mut tab.request_tab, RequestTab::Auth, &labels.auth)
@@ -87,7 +87,7 @@ struct TabLabels {
     variables: String,
 }
 
-fn tab_labels(state: &PersistedState, has_bearer: bool) -> TabLabels {
+fn tab_labels(state: &PersistedState, has_bearer: bool, agent_variables: usize) -> TabLabels {
     let count = |label: &str, n: usize| if n > 0 { format!("{label} ({n})") } else { label.to_string() };
     let marked = |label: &str, on: bool| if on { format!("{label} •") } else { label.to_string() };
     let has_body = match state.body_mode {
@@ -102,7 +102,7 @@ fn tab_labels(state: &PersistedState, has_bearer: bool) -> TabLabels {
         auth: marked("Auth", has_bearer),
         headers: count("Headers", parse_headers(&state.headers_text).iter().filter(|(k, _)| !k.trim().is_empty()).count()),
         body: marked("Body", has_body),
-        variables: count("Variables", state.variables.iter().filter(|v| !v.name.is_empty()).count()),
+        variables: count("Variables", state.variables.iter().filter(|v| !v.name.is_empty()).count() + agent_variables),
     }
 }
 
@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn empty_tabs_have_plain_titles_and_filled_ones_show_what_they_hold() {
-        let empty = tab_labels(&PersistedState::default(), false);
+        let empty = tab_labels(&PersistedState::default(), false, 0);
         assert_eq!(
             [&empty.params, &empty.auth, &empty.headers, &empty.body, &empty.variables],
             ["Params", "Auth", "Headers", "Body", "Variables"]
@@ -124,12 +124,13 @@ mod tests {
             json_body: "{}".into(),
             ..Default::default()
         };
-        let labels = tab_labels(&state, true);
+        let labels = tab_labels(&state, true, 0);
         assert_eq!(labels.headers, "Headers (2)");
         assert_eq!(labels.body, "Body •");
         assert_eq!(labels.auth, "Auth •");
 
         let blank_body = PersistedState { body_mode: BodyMode::Json, json_body: "  ".into(), ..Default::default() };
-        assert_eq!(tab_labels(&blank_body, false).body, "Body");
+        assert_eq!(tab_labels(&blank_body, false, 0).body, "Body");
+        assert_eq!(tab_labels(&PersistedState::default(), false, 3).variables, "Variables (3)", "variables agents set count too");
     }
 }

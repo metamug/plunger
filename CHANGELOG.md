@@ -4,6 +4,11 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed
+- Saving a response body suggests a real file name: the server's `Content-Disposition` name, then the last part of the URL (`401.jpg`), then `response` with an extension that fits the `Content-Type` (`.png`, `.pdf`, ...), instead of always `response.bin` (#154).
+- A URL with no host, such as `https:///AphiaRecordsByAphiaIDs`, is refused with a clear error. It used to be read as host `AphiaRecordsByAphiaIDs` and sent to the wrong server (#155).
+- The Variables tab counts the variables agents set, so they are not missed when you have none of your own (#157).
+
 ### Added
 - `plunger-cli` on PyPI: the compiled program in a platform wheel (Windows, Linux, macOS), so `pipx install plunger-cli` or `uvx plunger-cli mcp` works with nothing else to download. Built with maturin and published from CI with PyPI trusted publishing.
 - macOS builds (Apple Silicon and Intel) attached to each GitHub release as `plunger-macos-arm64.tar.gz` and `plunger-macos-x86_64.tar.gz`. They are not signed or notarized yet.

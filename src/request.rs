@@ -76,6 +76,20 @@ fn is_local_host(host: &str) -> bool {
     }
 }
 
+/// Refuses `https:///path`: the URL parser quietly reads it as host `path`, so the request would go
+/// to the wrong server instead of failing.
+fn check_has_host(url: &str) -> Result<(), String> {
+    let Some((scheme, rest)) = url.split_once("://") else { return Ok(()) };
+    let authority = rest.split(['/', '?', '#', '\\']).next().unwrap_or("");
+    let has_credentials_only = authority.rsplit('@').next().unwrap_or("").is_empty();
+    if authority.is_empty() || has_credentials_only {
+        return Err(format!(
+            "Invalid URL \"{url}\": there is no host after \"{scheme}://\". A URL has exactly two slashes there, then the host (for example {scheme}://example.com/path)."
+        ));
+    }
+    Ok(())
+}
+
 /// Adds `name: value` unless a header with that name (any case) is present.
 pub fn ensure_header(headers: &mut Vec<(String, String)>, name: &str, value: &str) {
     if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case(name)) {
@@ -184,6 +198,7 @@ pub fn build_request(state: &PersistedState, bearer_token: &str) -> Result<Outgo
     if url_text.is_empty() {
         return Err("Enter a URL.".to_string());
     }
+    check_has_host(&url_text)?;
     let url = reqwest::Url::parse(&url_text).map_err(|e| format!("Invalid URL \"{url_text}\": {e}"))?;
 
     if reqwest::Method::from_bytes(state.method.as_bytes()).is_err() {
@@ -413,6 +428,20 @@ mod tests {
         assert_eq!(build_request(&s, "").err().unwrap(), "Enter a URL.");
         s.url = "http://".into();
         assert!(build_request(&s, "").err().unwrap().starts_with("Invalid URL"));
+    }
+
+    #[test]
+    fn a_url_with_no_host_is_refused_not_sent_to_the_first_path_segment() {
+        let mut s = state();
+        for bad in ["https:///AphiaRecordsByAphiaIDs", "http:///x?y=1", "https://?q=1", "https://user@/path", "https:///"] {
+            s.url = bad.into();
+            let err = build_request(&s, "").err().unwrap_or_else(|| panic!("{bad} was accepted"));
+            assert!(err.starts_with("Invalid URL") && err.contains("no host"), "{bad}: {err}");
+        }
+        for good in ["https://example.com/a", "http://localhost:3000", "https://user:pw@example.com/x", "http://[::1]:8080/"] {
+            s.url = good.into();
+            assert!(build_request(&s, "").is_ok(), "{good} should be accepted");
+        }
     }
 
     #[test]

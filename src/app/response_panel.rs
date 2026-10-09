@@ -67,11 +67,7 @@ impl Tab {
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if icons::button(ui, Icon::Download, "Save response body to a file").clicked() {
-                    let name = match (&resp.binary, &resp.json_value) {
-                        (Some(_), _) => "response.bin",
-                        (None, Some(_)) => "response.json",
-                        (None, None) => "response.txt",
-                    };
+                    let name = crate::filename::suggested(&self.state.url, &resp.headers, resp.json_value.is_some(), resp.binary.is_some());
                     if let Some(path) = rfd::FileDialog::new().set_file_name(name).save_file() {
                         let bytes = resp.binary.as_deref().unwrap_or(resp.body.as_bytes());
                         self.save_error = std::fs::write(&path, bytes)
