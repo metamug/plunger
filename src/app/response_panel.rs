@@ -96,6 +96,17 @@ impl Tab {
             ui.label(egui::RichText::new(summary).weak()).on_hover_ui(|ui| timing_details(ui, resp));
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let expanded = self.pane == super::tab::Pane::ResponseExpanded;
+                if icons::panel_toggle(
+                    ui,
+                    expanded,
+                    "The response fills the window. Click to show the request again",
+                    "Expand the response to the whole window",
+                )
+                .clicked()
+                {
+                    self.pane = if expanded { super::tab::Pane::Both } else { super::tab::Pane::ResponseExpanded };
+                }
                 if icons::button(ui, Icon::Download, "Save response body to a file").clicked() {
                     let name = crate::filename::suggested(&self.state.url, &resp.headers, resp.json_value.is_some(), resp.binary.is_some());
                     if let Some(path) = rfd::FileDialog::new().set_file_name(name).save_file() {

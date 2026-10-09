@@ -4,7 +4,12 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed
+- Request and response panels: the request panel is as tall as its content (the body editor no longer scrolls inside it) and grows until the response would be squeezed; it folds away when you send, so the response fills the window, and clicking any request tab brings it back. A two-arrow icon on each panel's header expands it, and shows arrows pointing in on the panel that is expanded. Dragging the divider still sets your own split (double-click resets), and a split you dragged is kept when you send.
+- A body editor is as tall as its text plus a spare line (at least four lines) instead of a fixed block of blank lines the cursor could not enter; an expanded request gives the editor the whole surface.
+
 ### Fixed
+- `extract` and `select` mistakes (an empty or unknown source, a bad variable name, a malformed path) are reported before the request is sent, so a POST is not fired and then fails to extract; `plunger workflow save` checks the same. `plunger history --status banana` is an error, not an empty list.
 - The macOS release builds failed their smoke test because `scripts/smoke-cli.sh` used GNU-only `date +%s%N` and `timeout`; it now works on macOS. The macOS tarballs for 0.5.2 were attached afterwards (the release workflow can attach them to an existing release).
 
 ## [0.5.2] - 2026-10-09

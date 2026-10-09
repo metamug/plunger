@@ -37,10 +37,10 @@ pub enum Icon {
     Plus,
     /// Close a tab (not a delete — that is always the trash can).
     Close,
-    /// Fold a pane away, upwards.
-    ChevronUp,
-    /// Fold a pane away, downwards.
-    ChevronDown,
+    /// Two arrows pointing apart: make this panel fill the window.
+    Expand,
+    /// Two arrows pointing in: this panel fills the window; click to share it again.
+    Collapse,
 }
 
 pub const SIZE: f32 = 28.0;
@@ -91,6 +91,25 @@ pub fn toggle(ui: &mut egui::Ui, on: &mut bool, icon: Icon, tooltip_on: &str, to
     }
     let tooltip = if *on { tooltip_on } else { tooltip_off };
     response.on_hover_text(tooltip).on_disabled_hover_text(tooltip)
+}
+
+/// The two-arrow expand icon of a panel: arrows apart while it shares the window, arrows pointing in,
+/// tinted, while it is the one that fills it.
+pub fn panel_toggle(ui: &mut egui::Ui, expanded: bool, tooltip_expanded: &str, tooltip_shared: &str) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(SIZE, SIZE), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let visuals = ui.style().interact(&response);
+        let rounding = egui::Rounding::same(5.0);
+        if expanded {
+            ui.painter().rect_filled(rect, rounding, palette().accent_soft);
+        } else if response.hovered() || response.has_focus() {
+            ui.painter().rect_filled(rect, rounding, palette().hover);
+        }
+        let color = if expanded { palette().accent_text } else { visuals.fg_stroke.color.linear_multiply(0.7) };
+        paint(ui.painter(), rect.shrink(7.0), if expanded { Icon::Collapse } else { Icon::Expand }, color);
+    }
+    let tooltip = if expanded { tooltip_expanded } else { tooltip_shared };
+    response.on_hover_text(tooltip)
 }
 
 /// Draws `icon` inside `r`, designed on a 14×14 grid.
@@ -198,7 +217,17 @@ pub fn paint(painter: &egui::Painter, r: egui::Rect, icon: Icon, color: egui::Co
             line(vec![p(2.5, 2.5), p(11.5, 11.5)]);
             line(vec![p(11.5, 2.5), p(2.5, 11.5)]);
         }
-        Icon::ChevronUp => line(vec![p(1.5, 9.5), p(7.0, 4.0), p(12.5, 9.5)]),
-        Icon::ChevronDown => line(vec![p(1.5, 4.5), p(7.0, 10.0), p(12.5, 4.5)]),
+        Icon::Expand => {
+            line(vec![p(8.0, 6.0), p(13.0, 1.0)]);
+            line(vec![p(9.0, 1.0), p(13.0, 1.0), p(13.0, 5.0)]);
+            line(vec![p(6.0, 8.0), p(1.0, 13.0)]);
+            line(vec![p(1.0, 9.0), p(1.0, 13.0), p(5.0, 13.0)]);
+        }
+        Icon::Collapse => {
+            line(vec![p(13.0, 1.0), p(8.0, 6.0)]);
+            line(vec![p(8.0, 2.0), p(8.0, 6.0), p(12.0, 6.0)]);
+            line(vec![p(1.0, 13.0), p(6.0, 8.0)]);
+            line(vec![p(6.0, 12.0), p(6.0, 8.0), p(2.0, 8.0)]);
+        }
     }
 }

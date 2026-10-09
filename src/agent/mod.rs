@@ -168,6 +168,8 @@ impl std::fmt::Display for SendFailure {
 /// Sends a request exactly like the window's Ctrl+Enter and records it in the
 /// shared history. The result never contains a secret value.
 pub fn send_request(params: &SendParams, source: Source) -> Result<AgentResponse, SendFailure> {
+    // A mistake in `extract` or `select` is reported now, not after the request has already had its effect.
+    check_reading_instructions(params).map_err(SendFailure::NotSent)?;
     let session = Session::load();
     let history = open_history().map_err(SendFailure::NotSent)?;
     let state = params.to_state(&session, &history).map_err(SendFailure::NotSent)?;
@@ -188,6 +190,18 @@ pub fn send_request(params: &SendParams, source: Source) -> Result<AgentResponse
         }
     }
     Ok(shaped)
+}
+
+/// Checks `extract` and `select` before anything is sent.
+pub(crate) fn check_reading_instructions(params: &SendParams) -> Result<(), String> {
+    for e in &params.extract {
+        variables::valid_variable_name(&e.name).map_err(|m| format!("`extract` name: {m}"))?;
+        crate::workflow::extract::check_source(&e.from, false).map_err(|m| format!("`extract` for `{}`: {m}", e.name.trim()))?;
+    }
+    for path in params.select.iter().flatten() {
+        crate::workflow::extract::check_source(path, true).map_err(|m| format!("`select` `{path}`: {m}"))?;
+    }
+    Ok(())
 }
 
 /// Replaces `json` and `body` with just the values asked for, so a big response costs a few tokens.

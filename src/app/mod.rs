@@ -368,7 +368,7 @@ impl ApiTesterApp {
             ui.add_space(6.0);
             self.render_request_section(ui);
             self.render_divider(ui);
-            if self.tab().pane == tab::Pane::ResponseHidden {
+            if self.tab().pane == tab::Pane::RequestExpanded {
                 if ui.small_button("Show the response").on_hover_text("Give the response its space back").clicked() {
                     self.tab_mut().pane = tab::Pane::Both;
                 }

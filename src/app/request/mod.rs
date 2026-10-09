@@ -9,19 +9,15 @@ mod rows;
 mod suggest;
 
 use crate::app::tab::Pane;
-use crate::model::Outcome;
 use crate::app::ApiTesterApp;
-use crate::icons::{self, Icon};
+use crate::icons;
 use crate::model::{BodyMode, PersistedState, RequestTab};
 use crate::request::parse_headers;
 use crate::theme::compact_card;
 use eframe::egui;
 
-/// How much of the space below the tabs the request editor may take. Before there is a response the
-/// request is what you are working on, so it gets most of it; once a response is on screen, the
-/// response is. Dragging the divider overrides both.
-const SHARE_BEFORE_RESPONSE: f32 = 0.72;
-const SHARE_WITH_RESPONSE: f32 = 0.38;
+/// The request panel is as tall as its content and grows until the response would be squeezed below
+/// `MIN_RESPONSE_HEIGHT`. Dragging the divider overrides that.
 pub(in crate::app) const MIN_REQUEST_HEIGHT: f32 = 150.0;
 /// Room kept for the response header row when the editor is dragged as far as it goes.
 pub(in crate::app) const MIN_RESPONSE_HEIGHT: f32 = 120.0;
@@ -29,83 +25,89 @@ const LINE_HEIGHT: f32 = 17.0;
 /// Space the editor needs besides its text lines: the body mode row, margins, the scroll bar.
 const EDITOR_CHROME: f32 = 110.0;
 
+/// A request tab pill; true when it was clicked (even if it was already the selected one).
+fn request_tab_pill(ui: &mut egui::Ui, current: &mut RequestTab, value: RequestTab, label: &str, tip: &str) -> bool {
+    ui.selectable_value(current, value, label).on_hover_text(tip).clicked()
+}
+
 impl ApiTesterApp {
-    /// The Params / Headers / Body / Variables / Options strip and the
-    /// selected panel. Headers and Variables also touch app-wide things (the
-    /// shared Bearer token, the credential store), passed in explicitly.
+    /// The Params / Auth / Headers / Body / Variables / Options strip and the selected panel. The
+    /// panel grows with what is in it, up to the room there is (the response keeps a minimum), and is
+    /// folded away when a request is sent so the response gets the room. Clicking a tab brings it back.
     pub(in crate::app) fn render_request_section(&mut self, ui: &mut egui::Ui) {
         let tab = &mut self.tabs[self.active];
+        let mut clicked_tab = false;
         ui.horizontal(|ui| {
             let labels = tab_labels(&tab.state, !self.bearer_token.is_empty(), self.agent_variables.len());
-            ui.selectable_value(&mut tab.request_tab, RequestTab::Params, &labels.params)
-                .on_hover_text("Query parameters. They mirror the URL's query string: edit either one. Untick a row to leave it out of the URL.");
-            ui.selectable_value(&mut tab.request_tab, RequestTab::Auth, &labels.auth)
-                .on_hover_text("A Bearer token, sent as Authorization: Bearer <token> on every request from every tab.");
-            ui.selectable_value(&mut tab.request_tab, RequestTab::Headers, &labels.headers)
-                .on_hover_text("Request headers. {{variables}} work in the values.");
-            ui.selectable_value(&mut tab.request_tab, RequestTab::Body, &labels.body)
-                .on_hover_text("The request body: JSON, form-data, url-encoded or raw text.");
-            ui.selectable_value(&mut tab.request_tab, RequestTab::Variables, &labels.variables).on_hover_text(
+            let current = &mut tab.request_tab;
+            clicked_tab |= request_tab_pill(
+                ui,
+                current,
+                RequestTab::Params,
+                &labels.params,
+                "Query parameters. They mirror the URL's query string: edit either one. Untick a row to leave it out of the URL.",
+            );
+            clicked_tab |= request_tab_pill(
+                ui,
+                current,
+                RequestTab::Auth,
+                &labels.auth,
+                "A Bearer token, sent as Authorization: Bearer <token> on every request from every tab.",
+            );
+            clicked_tab |= request_tab_pill(ui, current, RequestTab::Headers, &labels.headers, "Request headers. {{variables}} work in the values.");
+            clicked_tab |= request_tab_pill(ui, current, RequestTab::Body, &labels.body, "The request body: JSON, form-data, url-encoded or raw text.");
+            clicked_tab |= request_tab_pill(
+                ui,
+                current,
+                RequestTab::Variables,
+                &labels.variables,
                 "Use {{name}} in the URL, params, headers, body, form fields or the Bearer token.\n\
                  Built-ins: {{$uuid}}, {{$timestamp}}, {{$randomInt}} and {{$env:NAME}} (an environment variable).\n\n\
                  Secret values (lock on, or a name like token, secret, password or key) are never written to a file. \
                  Turn on the key to keep one in the system credential store; otherwise it is blank after a restart.",
             );
             let options_label = if tab.state.insecure_tls { "Options (TLS check off)" } else { "Options" };
-            ui.selectable_value(&mut tab.request_tab, RequestTab::Options, options_label);
+            clicked_tab |= ui.selectable_value(&mut tab.request_tab, RequestTab::Options, options_label).clicked();
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // From the right: fold the response away, fold this editor away, then the Headers view switch.
-                let mut hide_response = tab.pane == Pane::ResponseHidden;
-                if icons::toggle(
+                // The two-arrow icon says which panel is expanded: arrows pointing in on the one that is.
+                let expanded = tab.pane == Pane::RequestExpanded;
+                if icons::panel_toggle(
                     ui,
-                    &mut hide_response,
-                    Icon::ChevronDown,
-                    "The request is expanded. Click to show the response again (it folds back when you send)",
-                    "Expand the request editor to the whole height (it folds back when you send)",
+                    expanded,
+                    "The request fills the window. Click to share it with the response again (it folds away when you send)",
+                    "Expand the request to the whole window (it folds away when you send)",
                 )
-                .changed()
+                .clicked()
                 {
-                    tab.pane = if hide_response { Pane::ResponseHidden } else { Pane::Both };
+                    tab.pane = if expanded { Pane::Both } else { Pane::RequestExpanded };
                 }
-                let mut hide_request = tab.pane == Pane::RequestHidden;
-                if icons::toggle(
-                    ui,
-                    &mut hide_request,
-                    Icon::ChevronUp,
-                    "The request editor is hidden. Click to show it again",
-                    "Hide the request editor to give the response the whole height",
-                )
-                .changed()
-                {
-                    tab.pane = if hide_request { Pane::RequestHidden } else { Pane::Both };
-                }
-                if tab.request_tab == RequestTab::Headers && tab.pane != Pane::RequestHidden {
+                if tab.request_tab == RequestTab::Headers && tab.pane != Pane::ResponseExpanded {
                     tab.headers_view_toggle(ui);
                 }
             });
         });
-        if tab.pane == Pane::RequestHidden {
+        // A tab clicked while the editor is folded away brings it back.
+        if clicked_tab && tab.pane == Pane::ResponseExpanded {
+            tab.pane = Pane::Both;
+        }
+        if tab.pane == Pane::ResponseExpanded {
             return;
         }
         ui.add_space(2.0);
         let mut forget = false;
         let mut delete_agent = None;
-        // A long request (40 headers, a big body) scrolls inside its own area
-        // rather than pushing the response off the bottom of the window.
         let available = ui.available_height();
-        let has_response = !matches!(tab.outcome, Outcome::Empty);
         let (height, fill) = match (tab.pane, tab.request_height) {
             // Leave room for the line that says the response is folded away.
-            (Pane::ResponseHidden, _) => ((available - 50.0).max(MIN_REQUEST_HEIGHT), true),
+            (Pane::RequestExpanded, _) => ((available - 50.0).max(MIN_REQUEST_HEIGHT), true),
             // A height the user dragged to is kept, within what the window can hold.
             (_, Some(dragged)) => (dragged.clamp(MIN_REQUEST_HEIGHT, (available - MIN_RESPONSE_HEIGHT).max(MIN_REQUEST_HEIGHT)), true),
-            _ => {
-                let share = if has_response { SHARE_WITH_RESPONSE } else { SHARE_BEFORE_RESPONSE };
-                ((available * share).max(MIN_REQUEST_HEIGHT), false)
-            }
+            // Otherwise the panel is as tall as what is in it, and grows until the response would be squeezed.
+            _ => ((available - MIN_RESPONSE_HEIGHT).max(MIN_REQUEST_HEIGHT), false),
         };
-        // Body editors take the lines the room allows, so a JSON body is not squeezed into three rows.
-        tab.editor_rows = if fill { (((height - EDITOR_CHROME) / LINE_HEIGHT) as usize).max(8) } else { 8 };
+        // Body editors: the whole surface when the panel is given the room, else just their text.
+        tab.editor_fill = fill;
+        tab.editor_rows = if fill { (((height - EDITOR_CHROME) / LINE_HEIGHT) as usize).max(8) } else { 60 };
         let shown = egui::ScrollArea::vertical()
             .id_salt(("request-section", tab.id))
             .max_height(height)

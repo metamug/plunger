@@ -94,11 +94,7 @@ fn check(steps: &[Step]) -> Result<(), String> {
         if step.request.saved_request.is_none() && step.request.url.as_deref().is_none_or(|u| u.trim().is_empty()) {
             return Err(format!("Step {} needs a `url` or a `saved_request`.", i + 1));
         }
-        for e in &step.request.extract {
-            if e.name.trim().is_empty() || e.from.trim().is_empty() {
-                return Err(format!("Step {}: every `extract` needs a `name` and a `from`.", i + 1));
-            }
-        }
+        agent::check_reading_instructions(&step.request).map_err(|m| format!("Step {}: {m}", i + 1))?;
     }
     Ok(())
 }

@@ -7,6 +7,18 @@ use crate::model::{BodyMode, FieldKind, FormField};
 use crate::theme::{self, palette};
 use eframe::egui;
 
+/// How many lines a body editor asks for: its text plus a spare line to click into, never fewer than
+/// four and never more than `room` (what the pane can hold). A short body gets a short box, not a block
+/// of blank lines the cursor cannot enter; a long one grows as far as the pane allows.
+fn editor_lines(text: &str, room: usize, fill: bool) -> usize {
+    if fill {
+        return room.max(MIN_EDITOR_LINES);
+    }
+    (text.split('\n').count() + 1).clamp(MIN_EDITOR_LINES, room.max(MIN_EDITOR_LINES))
+}
+
+const MIN_EDITOR_LINES: usize = 4;
+
 /// A body editor is not wrapped in a scroll area of its own: the request pane scrolls, so there is one
 /// scroll bar, and the editor can use all the room the pane has instead of stopping at a fixed height.
 fn body_box(ui: &mut egui::Ui, _salt: &str, add: impl FnOnce(&mut egui::Ui)) {
@@ -36,7 +48,7 @@ impl Tab {
                     job.wrap.max_width = wrap_width;
                     ui.fonts(|fonts| fonts.layout_job(job))
                 };
-                let rows = self.editor_rows;
+                let rows = editor_lines(&self.state.urlencoded_body, self.editor_rows, self.editor_fill);
                 body_box(ui, "body-urlencoded", |ui| {
                     ui.add(
                         theme::area(&mut self.state.urlencoded_body)
@@ -54,7 +66,7 @@ impl Tab {
                     job.wrap.max_width = wrap_width;
                     ui.fonts(|fonts| fonts.layout_job(job))
                 };
-                let rows = self.editor_rows;
+                let rows = editor_lines(&self.state.raw_body, self.editor_rows, self.editor_fill);
                 body_box(ui, "body-raw", |ui| {
                     ui.add(
                         theme::area(&mut self.state.raw_body)
@@ -79,7 +91,7 @@ impl Tab {
             job.wrap.max_width = wrap_width;
             ui.fonts(|f| f.layout_job(job))
         };
-        let rows = self.editor_rows;
+        let rows = editor_lines(&self.state.json_body, self.editor_rows, self.editor_fill);
         body_box(ui, "body-json", |ui| {
             ui.add(
                 theme::area(&mut self.state.json_body)
@@ -201,5 +213,25 @@ impl Tab {
                 remove
             },
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::editor_lines;
+
+    #[test]
+    fn a_short_body_gets_a_short_box() {
+        assert_eq!(editor_lines("", 30, false), 4, "never fewer than four lines");
+        assert_eq!(editor_lines("{\"a\": 1}", 30, false), 4);
+        assert_eq!(editor_lines("a\nb\nc\nd\ne", 30, false), 6, "the text and one spare line");
+        assert_eq!(editor_lines("a", 30, true), 30, "an expanded editor is the whole surface");
+    }
+
+    #[test]
+    fn a_long_body_grows_only_as_far_as_the_pane_allows() {
+        let long = "x\n".repeat(100);
+        assert_eq!(editor_lines(&long, 12, false), 12);
+        assert_eq!(editor_lines("a", 2, false), 4, "a tiny pane does not push it below four lines");
     }
 }

@@ -19,12 +19,14 @@ pub(super) type CopiedFlash = Option<(Instant, &'static str)>;
 /// How the window's height is shared between the request editor and the response.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub enum Pane {
+    /// Both are shown: the request as tall as its content, the response gets the rest.
     #[default]
     Both,
-    /// The editor is folded away: the response gets the whole height.
-    RequestHidden,
-    /// The response is folded away: the editor gets the whole height.
-    ResponseHidden,
+    /// The request fills the window; the response is folded away until you ask for it.
+    RequestExpanded,
+    /// The response fills the window; the request editor is folded away (its tabs stay). This is what
+    /// you see after sending, and clicking a request tab brings the editor back.
+    ResponseExpanded,
 }
 
 pub(super) enum RequestStatus {
@@ -94,6 +96,8 @@ pub(super) struct Tab {
     pub request_shown_height: f32,
     /// Lines the body editors ask for: a few normally, more when the editor has been given the room.
     pub editor_rows: usize,
+    /// The body editors fill the panel (it was expanded or dragged) rather than hugging their text.
+    pub editor_fill: bool,
     /// Set when this tab was opened from a history row: when it was sent and how it went (the
     /// response itself is not stored).
     pub opened_from: Option<HistoryMeta>,
@@ -136,6 +140,7 @@ impl Tab {
             request_height: None,
             request_shown_height: 0.0,
             editor_rows: 8,
+            editor_fill: false,
             opened_from: None,
         }
     }
@@ -230,10 +235,9 @@ impl Tab {
     /// `agent_variables` are the ones agents set; they count as defined for this request only and
     /// are never added to the tab's own variables (which are saved with the window state).
     pub fn send(&mut self, bearer_token: &str, agent_variables: &[Variable]) {
-        // An expanded request folds back when it is sent, so the answer is what you see.
-        if self.pane == Pane::ResponseHidden {
-            self.pane = Pane::Both;
-        }
+        // The request folds away when it is sent, so the answer is what you see. A split the user dragged
+        // to is theirs and stays.
+        self.pane = if self.request_height.is_some() { Pane::Both } else { Pane::ResponseExpanded };
         self.opened_from = None;
         let own = self.state.variables.len();
         for var in agent_variables {
@@ -317,13 +321,19 @@ mod tests {
     }
 
     #[test]
-    fn sending_folds_an_expanded_request_back_and_forgets_the_history_note() {
+    fn sending_folds_the_request_away_and_forgets_the_history_note() {
         let mut tab = Tab::new(1, PersistedState { url: "http://127.0.0.1:1/x".into(), ..Default::default() });
-        tab.pane = Pane::ResponseHidden;
+        tab.pane = Pane::RequestExpanded;
         tab.opened_from = Some(HistoryMeta { created_at: "2026-10-09T06:11:03Z".into(), status: Some(200), elapsed_ms: Some(5), source: crate::history::Source::Mcp });
         tab.send("", &[]);
-        assert_eq!(tab.pane, Pane::Both, "the response is what you see after a send");
+        assert_eq!(tab.pane, Pane::ResponseExpanded, "the response is what you see after a send");
         assert!(tab.opened_from.is_none());
+        tab.cancel();
+        // a split the user dragged to is kept
+        tab.pane = Pane::Both;
+        tab.request_height = Some(300.0);
+        tab.send("", &[]);
+        assert_eq!(tab.pane, Pane::Both);
         tab.cancel();
     }
 

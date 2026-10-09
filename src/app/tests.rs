@@ -236,7 +236,7 @@ fn invalid_and_variable_json_bodies_draw() {
 fn every_pane_layout_draws_with_and_without_a_response() {
     use crate::app::tab::Pane;
     let mut a = app(busy_state());
-    for pane in [Pane::Both, Pane::RequestHidden, Pane::ResponseHidden] {
+    for pane in [Pane::Both, Pane::RequestExpanded, Pane::ResponseExpanded] {
         for request_tab in [RequestTab::Params, RequestTab::Headers, RequestTab::Body, RequestTab::Variables] {
             a.tab_mut().pane = pane;
             a.tab_mut().request_tab = request_tab;
@@ -268,11 +268,11 @@ fn a_dragged_divider_and_a_history_note_draw_and_double_click_resets() {
     // the editor is given more lines when it is given the room
     a.tab_mut().request_height = Some(500.0);
     draw(&mut a);
-    assert!(a.tab().editor_rows > 8, "{} rows", a.tab().editor_rows);
+    assert!(a.tab().editor_rows > 8 && a.tab().editor_fill, "{} rows", a.tab().editor_rows);
     a.tab_mut().request_height = None;
     a.tab_mut().pane = Pane::Both;
     draw(&mut a);
-    assert_eq!(a.tab().editor_rows, 8);
+    assert!(!a.tab().editor_fill);
 }
 
 #[test]

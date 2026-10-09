@@ -32,6 +32,28 @@ pub fn extract(response: &ResponseData, from: &str) -> Result<String, String> {
     Err(format!("`{from}` is not a source: use `json:$.path`, `header:Name` or `status`"))
 }
 
+/// Whether `spec` names something that can be read from a response, so a mistake is reported before a
+/// request is sent (and has its effect) rather than after. `bare_json` allows `$.a.b` without `json:`.
+pub fn check_source(spec: &str, bare_json: bool) -> Result<(), String> {
+    let spec = spec.trim();
+    if spec.is_empty() {
+        return Err("it is empty: give `json:$.path`, `header:Name` or `status`".into());
+    }
+    if spec == "status" {
+        return Ok(());
+    }
+    if let Some(name) = spec.strip_prefix("header:") {
+        return if name.trim().is_empty() { Err("`header:` needs a header name".into()) } else { Ok(()) };
+    }
+    if let Some(path) = spec.strip_prefix("json:") {
+        return parse_path(path).map(|_| ());
+    }
+    if bare_json && (spec.starts_with('$') || spec.starts_with('[')) {
+        return parse_path(spec).map(|_| ());
+    }
+    Err(format!("`{spec}` is not a source: use `json:$.path`, `header:Name` or `status`"))
+}
+
 /// The value `spec` points at, keeping its JSON type: `$.a.b[0]` or `json:$.a`, `header:Name`, `status`.
 pub fn select(response: &ResponseData, spec: &str) -> Result<Value, String> {
     let spec = spec.trim();
@@ -193,6 +215,19 @@ mod tests {
         assert!(extract(&r, "header:nope").is_err());
         assert!(extract(&r, "cookie:x").unwrap_err().contains("not a source"));
         assert!(extract(&response("plain"), "json:$.a").unwrap_err().contains("not JSON"));
+    }
+
+    #[test]
+    fn mistakes_in_a_source_are_found_before_anything_is_sent() {
+        for good in ["status", "header:Location", "json:$.a.b[0]", "json:$.items[*].id"] {
+            assert!(check_source(good, false).is_ok(), "{good}");
+        }
+        assert!(check_source("$.a.b", true).is_ok());
+        assert!(check_source("$.a.b", false).is_err(), "extract needs the json: prefix");
+        for bad in ["", "  ", "bogus", "header:", "json:$.items[", "json:$.a[x]", "cookie:x"] {
+            assert!(check_source(bad, false).is_err(), "{bad:?}");
+        }
+        assert!(check_source("", true).unwrap_err().contains("empty"));
     }
 
     #[test]

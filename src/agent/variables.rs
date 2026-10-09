@@ -28,7 +28,7 @@ pub(super) const MAX_VARIABLES: usize = 200;
 pub(super) const MAX_VARIABLE_BYTES: usize = 64 * 1024;
 const MAX_NAME_LEN: usize = 64;
 
-pub(super) fn valid_variable_name(name: &str) -> Result<&str, String> {
+pub(crate) fn valid_variable_name(name: &str) -> Result<&str, String> {
     let name = name.trim();
     let ok = !name.is_empty()
         && name.len() <= MAX_NAME_LEN

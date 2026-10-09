@@ -152,9 +152,20 @@ fn status_matches(spec: &str, status: Option<i64>) -> bool {
     }
 }
 
+/// Whether `spec` is a status filter `status_matches` understands.
+fn valid_status_filter(spec: &str) -> bool {
+    let spec = spec.trim().to_ascii_lowercase();
+    matches!(spec.as_str(), "error" | "none" | "no_response" | "ok" | "fail" | "failed")
+        || (spec.len() == 3 && spec.ends_with("xx") && spec[..1].parse::<u8>().is_ok_and(|d| (1..=5).contains(&d)))
+        || spec.parse::<u16>().is_ok_and(|code| (100..600).contains(&code))
+}
+
 /// The history, newest first, narrowed by `query`. The whole table is searched, not just the newest rows.
 pub fn query_history(query: &HistoryQuery) -> Result<Vec<HistoryItem>, String> {
     let limit = query.limit.unwrap_or(HISTORY_DEFAULT).clamp(1, HISTORY_MAX) as usize;
+    if let Some(spec) = query.status.as_deref().filter(|s| !valid_status_filter(s)) {
+        return Err(format!("`{spec}` is not a status filter: use a code like 401, a class like 4xx or 5xx, or ok, fail or error."));
+    }
     let history = open_history()?;
     let same_request = match query.saved_request.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
         Some(name) => {
@@ -214,6 +225,16 @@ pub fn export_curl(saved_request: Option<&str>, history_id: Option<i64>) -> Resu
 #[cfg(test)]
 mod history_filter_tests {
     use super::status_matches;
+
+    #[test]
+    fn only_real_status_filters_are_accepted() {
+        for good in ["401", "404", "4xx", "5XX", "ok", "fail", "error", " 200 "] {
+            assert!(super::valid_status_filter(good), "{good}");
+        }
+        for bad in ["banana", "", "99", "700", "6xx", "0xx", "4x", "okay"] {
+            assert!(!super::valid_status_filter(bad), "{bad:?}");
+        }
+    }
 
     #[test]
     fn status_filters_take_codes_classes_and_words() {
