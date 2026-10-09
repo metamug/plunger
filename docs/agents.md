@@ -73,7 +73,7 @@ Or from a terminal:
 claude mcp add plunger -- "C:\Tools\plunger\plunger.exe" mcp
 ```
 
-With Python installed (from 0.5.1), there is nothing to download: `claude mcp add plunger -- uvx plunger-cli mcp`, or in `.mcp.json` use `"command": "uvx", "args": ["plunger-cli", "mcp"]`. The `plunger-cli` package on PyPI is just the compiled program in a platform wheel (Windows, Linux, macOS), with no Python code in it.
+With Python installed (from 0.5.1), `pip install plunger-cli` (or `pipx install plunger-cli`) gives you the `plunger` command, and with uv there is nothing to download: `claude mcp add plunger -- uvx plunger-cli mcp`, or in `.mcp.json` use `"command": "uvx", "args": ["plunger-cli", "mcp"]`. The `plunger-cli` package on PyPI is just the compiled program in a platform wheel (Windows, Linux, macOS), with no Python code in it.
 
 Any MCP client that can launch a stdio server works the same way: the command is `plunger.exe` and the only argument is `mcp`.
 

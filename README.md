@@ -155,7 +155,8 @@ scoop install plunger
 **pip / uv (Windows, Linux, macOS), from 0.5.1:**
 
 ```bash
-pipx install plunger-cli      # puts a `plunger` command on your PATH
+pip install plunger-cli       # puts a `plunger` command on your PATH
+pipx install plunger-cli      # same, in its own environment (use this if pip says "externally-managed-environment")
 uvx plunger-cli mcp           # or run the MCP server without installing anything
 ```
 
