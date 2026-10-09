@@ -7,6 +7,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Attach the macOS builds to this existing release (for example v0.5.2). Leave empty for a dry run."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -116,6 +121,13 @@ jobs:
           - { os: macos-15-intel, arch: x86_64 }
     steps:
       - uses: actions/checkout@v7
+
+      - name: The release to attach to must be this version
+        if: inputs.release_tag != ''
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          [ "${{ inputs.release_tag }}" = "v$version" ] || { echo "Release ${{ inputs.release_tag }} does not match Cargo.toml version $version"; exit 1; }
+
       - uses: Swatinem/rust-cache@v2
       - name: Test
         run: cargo test --locked
@@ -139,7 +151,7 @@ jobs:
           if-no-files-found: error
 
       - name: Attach to the GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" dist/plunger-macos-${{ matrix.arch }}.tar.gz dist/plunger-macos-${{ matrix.arch }}.tar.gz.sha256 --clobber
+        run: gh release upload "${{ inputs.release_tag || github.ref_name }}" dist/plunger-macos-${{ matrix.arch }}.tar.gz dist/plunger-macos-${{ matrix.arch }}.tar.gz.sha256 --clobber

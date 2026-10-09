@@ -4,6 +4,9 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed
+- The macOS release builds failed their smoke test because `scripts/smoke-cli.sh` used GNU-only `date +%s%N` and `timeout`; it now works on macOS. The macOS tarballs for 0.5.2 were attached afterwards (the release workflow can attach them to an existing release).
+
 ## [0.5.2] - 2026-10-09
 
 ### Added

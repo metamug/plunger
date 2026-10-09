@@ -14,11 +14,13 @@ for _ in $(seq 1 50); do curl -sf http://127.0.0.1:18080/ok.json >/dev/null && b
 
 # Keep a deliberately loose startup budget: this is a regression tripwire for
 # order-of-magnitude slowdowns, not a benchmark of shared CI runners.
+# Milliseconds from python3: `date +%s%N` and `timeout` are GNU-only and missing on macOS.
+now_ms() { python3 -c 'import time; print(int(time.time() * 1000))'; }
 best_ms=
 for _ in $(seq 1 3); do
-  start_ns=$(date +%s%N)
+  start_ms=$(now_ms)
   "$BIN" --version >/dev/null
-  elapsed_ms=$(( ($(date +%s%N) - start_ns) / 1000000 ))
+  elapsed_ms=$(( $(now_ms) - start_ms ))
   if [ -z "$best_ms" ] || [ "$elapsed_ms" -lt "$best_ms" ]; then best_ms=$elapsed_ms; fi
 done
 echo "best startup: $best_ms ms"
