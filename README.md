@@ -34,8 +34,8 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/mcp-claude-code-demo.gif" alt="Claude Code calling Plunger's send_request tool three times; each call shows up live in Plunger's history, tagged MCP." width="960"><br>
-  <sub>Real Claude Code, unedited: every request the agent sends appears in your window, tagged <code>MCP</code>. <a href="docs/agents.md">Setup and details</a>.</sub>
+  <img src="docs/images/plunger-ui-demo.gif" alt="Sending a request from Plunger's window, then an AI agent calling the API over MCP: each call appears live in the history tagged MCP, the token it saved stays hidden, and Authorization: Bearer {{token}} keeps its placeholder." width="960"><br>
+  <sub>The real app: every request an agent sends appears in your window, tagged <code>MCP</code>, with secrets kept hidden. <a href="docs/agents.md">Setup and details</a>.</sub>
 </p>
 
 ## Why?
