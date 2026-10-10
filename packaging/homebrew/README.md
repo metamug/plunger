@@ -2,22 +2,21 @@
 
 `plunger.rb` is the cask for Plunger. A cask lives in a *tap*, a GitHub repository named `homebrew-<name>`.
 
-## One-time setup
+## The tap
 
-1. Create the repository `metamug/homebrew-tap` (public).
-2. Add `Casks/plunger.rb` from this folder, with the real `version` and `sha256` of the latest
-   `Plunger-<version>-macos.dmg` on the release page (the `.sha256` file next to it has the value).
-3. People can then install with:
+The tap is live at [metamug/homebrew-tap](https://github.com/metamug/homebrew-tap):
 
-   ```bash
-   brew install --cask metamug/tap/plunger
-   ```
+```bash
+brew install --cask metamug/tap/plunger
+```
 
-   which puts `Plunger.app` in `/Applications` and a `plunger` command on the PATH.
+which puts `Plunger.app` in `/Applications` and a `plunger` command on the PATH. Its workflow installs the
+cask on a macOS runner on every push (and weekly) and runs `plunger --version`.
 
 ## Each release
 
-Change `version` and `sha256` and push. (A small workflow in the tap repository can do this on each release.)
+Change `version` and `sha256` in the tap's `Casks/plunger.rb` (the `.sha256` file next to the `.dmg` on the
+release page has the value) and push; keep `packaging/homebrew/plunger.rb` here in step, as the template.
 
 ## Check it before publishing
 

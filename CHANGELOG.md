@@ -4,6 +4,9 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+- Homebrew: `brew install --cask metamug/tap/plunger` installs `Plunger.app` and a `plunger` command (the tap is metamug/homebrew-tap, tested on a macOS runner on every push).
+
 ## [0.5.3] - 2026-10-10
 
 ### Added

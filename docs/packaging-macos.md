@@ -8,6 +8,7 @@ Each release has, for macOS:
 |---|---|
 | `Plunger-<version>-macos.dmg` | A disk image with `Plunger.app` (one app for Apple Silicon and Intel) and a shortcut to Applications. Drag the app across. |
 | `plunger-macos-arm64.tar.gz`, `plunger-macos-x86_64.tar.gz` | The bare `plunger` program for one kind of Mac, for the command line, scripts and MCP servers. |
+| `brew install --cask metamug/tap/plunger` | The same app through Homebrew (the tap is [metamug/homebrew-tap](https://github.com/metamug/homebrew-tap)), plus a `plunger` command on the PATH. |
 | `pip install plunger-cli` | The same program as a Python package (`pipx` and `uvx` work too). |
 
 macOS 11 (Big Sur) or later.
