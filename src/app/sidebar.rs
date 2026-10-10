@@ -39,6 +39,9 @@ fn utc_timestamp(ts: &str) -> String {
 
 impl ApiTesterApp {
     pub(super) fn render_sidebar(&mut self, ctx: &egui::Context) {
+        if !self.settings.show_sidebar {
+            return;
+        }
         egui::SidePanel::left("sidebar")
             .resizable(true)
             .default_width(260.0)

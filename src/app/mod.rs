@@ -5,6 +5,7 @@
 mod chrome;
 mod command_bar;
 mod emboss;
+mod actions;
 mod agents_window;
 mod export_window;
 mod import_window;
@@ -12,7 +13,6 @@ mod lists;
 mod request;
 mod response_panel;
 mod response_search;
-mod shortcuts;
 mod sidebar;
 mod tab;
 mod tabs;
@@ -42,10 +42,19 @@ const DB_POLL: Duration = Duration::from_millis(1500);
 pub const TABS_KEY: &str = "tabs";
 pub const SETTINGS_KEY: &str = "settings";
 
-#[derive(Serialize, Deserialize, Clone, Copy, Default)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 #[serde(default)]
 pub struct Settings {
     pub theme: ThemeChoice,
+    /// The interface scale (View > Zoom), 1.0 being normal.
+    pub zoom: f32,
+    pub show_sidebar: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self { theme: ThemeChoice::default(), zoom: 1.0, show_sidebar: true }
+    }
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -127,6 +136,9 @@ pub struct ApiTesterApp {
     import: ImportDialog,
     export: Option<export_window::ExportDialog>,
     agents_dialog: Option<agents_window::AgentsDialog>,
+    /// Help > Keyboard shortcuts and Help > About are open.
+    shortcuts_open: bool,
+    about_open: bool,
     /// The syntax Ctrl+Shift+C copies in: the one last chosen.
     export_dialect: Dialect,
     /// A short message for the status bar ("Saved …"), and when it was set.
@@ -167,6 +179,8 @@ impl ApiTesterApp {
             import: ImportDialog::default(),
             export: None,
             agents_dialog: None,
+            shortcuts_open: false,
+            about_open: false,
             export_dialect: Dialect::CurlBash,
             notice: None,
             secrets,
@@ -287,6 +301,9 @@ impl eframe::App for ApiTesterApp {
         if !theme::is_applied(ctx, self.settings.theme) {
             theme::apply_theme(ctx, self.settings.theme);
         }
+        if (ctx.zoom_factor() - self.settings.zoom).abs() > 0.001 {
+            ctx.set_zoom_factor(self.settings.zoom);
+        }
         self.poll_responses(ctx);
         self.poll_database(ctx);
         self.handle_shortcuts(ctx);
@@ -367,6 +384,7 @@ impl ApiTesterApp {
         self.render_import_windows(ctx);
         self.render_export_window(ctx);
         self.render_agents_window(ctx);
+        self.render_help_windows(ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
             self.render_tab_bar(ui);

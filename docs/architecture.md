@@ -32,6 +32,7 @@ form or agent input
 |---|---|
 | How a request is built or sent | `request.rs`, `http.rs`, `vars.rs`, `query.rs` |
 | Something in the window | `src/app/`; each editor tab is a file in `src/app/request/` |
+| A menu entry or a keyboard shortcut | `app/actions.rs`: one table of actions drives the menus, the keyboard and Help > Keyboard shortcuts |
 | Layout of request and response | `app/request/mod.rs` (heights), `app/mod.rs` (`render_divider`), `app/tab.rs` (`Pane`) |
 | What an agent gets back | `engine/response.rs` (`AgentResponse`, `Scrubber`), `outline.rs`, `workflow/extract.rs` (`select`) |
 | An MCP tool | `mcp.rs`; its logic is in `agent/` |

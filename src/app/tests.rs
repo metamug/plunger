@@ -276,6 +276,71 @@ fn a_dragged_divider_and_a_history_note_draw_and_double_click_resets() {
 }
 
 #[test]
+fn every_menu_action_runs_and_the_window_still_draws() {
+    use super::actions::Action;
+    let mut a = app(busy_state());
+    a.tab_mut().outcome = Outcome::Response(Box::new(response("{\"a\": 1}", true, false)));
+    let ctx = egui::Context::default();
+    for action in Action::all() {
+        // a file chooser would wait for a person
+        if action == Action::ImportHar {
+            continue;
+        }
+        a.run_action(&ctx, action);
+        draw(&mut a);
+    }
+    assert!(!a.tabs.is_empty());
+}
+
+#[test]
+fn zoom_stays_in_range_and_the_sidebar_toggles() {
+    use super::actions::Action;
+    let mut a = app(PersistedState::default());
+    let ctx = egui::Context::default();
+    for _ in 0..40 {
+        a.run_action(&ctx, Action::ZoomIn);
+    }
+    assert!(a.settings.zoom <= 2.5 + 0.001, "{}", a.settings.zoom);
+    for _ in 0..40 {
+        a.run_action(&ctx, Action::ZoomOut);
+    }
+    assert!(a.settings.zoom >= 0.6 - 0.001, "{}", a.settings.zoom);
+    a.run_action(&ctx, Action::ZoomReset);
+    assert!((a.settings.zoom - 1.0).abs() < 0.001);
+    assert!(a.settings.show_sidebar);
+    a.run_action(&ctx, Action::ToggleSidebar);
+    assert!(!a.settings.show_sidebar);
+    draw(&mut a);
+    a.run_action(&ctx, Action::ToggleSidebar);
+    assert!(a.settings.show_sidebar);
+}
+
+#[test]
+fn request_menu_entries_open_their_tab_and_bring_back_a_folded_editor() {
+    use super::actions::Action;
+    use super::tab::Pane;
+    let mut a = app(PersistedState::default());
+    let ctx = egui::Context::default();
+    a.tab_mut().pane = Pane::ResponseExpanded;
+    a.run_action(&ctx, Action::ShowAuth);
+    assert!(a.tab().request_tab == RequestTab::Auth);
+    assert_eq!(a.tab().pane, Pane::Both);
+    a.run_action(&ctx, Action::ExpandRequest);
+    assert_eq!(a.tab().pane, Pane::RequestExpanded);
+    a.run_action(&ctx, Action::RestoreLayout);
+    assert_eq!(a.tab().pane, Pane::Both);
+    let before = a.tabs.len();
+    a.run_action(&ctx, Action::DuplicateTab);
+    assert_eq!(a.tabs.len(), before + 1);
+}
+
+#[test]
+fn old_saved_settings_without_zoom_or_sidebar_load_with_defaults() {
+    let s = Settings::default();
+    assert!((s.zoom - 1.0).abs() < 0.001 && s.show_sidebar);
+}
+
+#[test]
 fn the_agents_dialog_draws_in_both_scopes_without_writing_anything() {
     let mut a = app(PersistedState::default());
     a.open_agents_dialog();

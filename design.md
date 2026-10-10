@@ -72,7 +72,8 @@ Details that matter:
 |---|---|---|
 | Entry | `main.rs` | Mode selection, crash log, window options and startup. |
 | GUI | `app/mod.rs` | `ApiTesterApp`: the struct, startup, saving state, the per-frame `update` and the layout of the central panel (including the draggable divider). |
-| | `app/tabs.rs`, `lists.rs`, `shortcuts.rs` | Opening, closing and switching tabs; the sidebar lists, the variables agents set and the database poll; keyboard shortcuts. |
+| | `app/actions.rs` | Every action the window can do, with its menu and shortcut, in one table; the menus, the keyboard handler and Help > Keyboard shortcuts are built from it. |
+| | `app/tabs.rs`, `lists.rs` | Opening, closing and switching tabs; the sidebar lists, the variables agents set and the database poll. |
 | | `app/tab.rs` | `Tab`: one open request, its response, its in-flight send, and its layout (`Pane`, dragged height). |
 | | `app/chrome.rs`, `sidebar.rs`, `command_bar.rs`, `response_panel.rs`, `response_search.rs`, `request/*` | Menu bar, status bar and tab strip; Saved and History lists; the URL bar; the response view and its search; the Params, Auth, Headers, Body, Variables and Options editors. |
 | | `app/import_window.rs`, `export_window.rs`, `agents_window.rs` | The import, export and "Set up AI agents" dialogs. |

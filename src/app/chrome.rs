@@ -3,10 +3,9 @@
 
 use super::tab::Tab;
 use super::{ApiTesterApp, NOTICE_FOR};
-use crate::commands::Dialect;
 use crate::icons::{self, Icon};
 use crate::model::Outcome;
-use crate::theme::{self, one_line, palette, ThemeChoice, ACCENT};
+use crate::theme::{self, one_line, palette, ACCENT};
 use eframe::egui;
 
 const TAB_HEIGHT: f32 = 32.0;
@@ -20,60 +19,7 @@ enum TabAction {
 impl ApiTesterApp {
     pub(super) fn render_menu_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if item(ui, "New tab", "Ctrl+T") {
-                        self.new_tab();
-                    }
-                    if item(ui, "Save request", "Ctrl+S") {
-                        self.save_active();
-                    }
-                    if item(ui, "Close tab", "Ctrl+W") {
-                        self.close_tab(self.active);
-                    }
-                    ui.separator();
-                    if item(ui, "Import a command\u{2026}", "") {
-                        self.open_curl_dialog();
-                    }
-                    if item(ui, "Import a HAR file\u{2026}", "") {
-                        self.open_har_file();
-                    }
-                    ui.separator();
-                    let last = self.export_dialect;
-                    if item(ui, &format!("Copy as {}", last.label()), "Ctrl+Shift+C") {
-                        self.copy_request_as(ui.ctx(), last);
-                    }
-                    ui.menu_button("Copy as", |ui| {
-                        for dialect in Dialect::ALL {
-                            if ui.button(dialect.label()).clicked() {
-                                self.copy_request_as(ui.ctx(), dialect);
-                                ui.close_menu();
-                            }
-                        }
-                    });
-                    if item(ui, "Export request\u{2026}", "") {
-                        self.open_export_dialog();
-                    }
-                    ui.separator();
-                    if item(ui, "Set up AI agents\u{2026}", "") {
-                        self.open_agents_dialog();
-                    }
-                    ui.separator();
-                    if item(ui, "Clear history", "") {
-                        self.clear_history();
-                    }
-                });
-                ui.menu_button("Settings", |ui| {
-                    ui.label(egui::RichText::new("Theme").weak().small());
-                    let mut choice = self.settings.theme;
-                    ui.radio_value(&mut choice, ThemeChoice::Dark, "Dark");
-                    ui.radio_value(&mut choice, ThemeChoice::Light, "Light");
-                    if choice != self.settings.theme {
-                        self.set_theme(ui.ctx(), choice);
-                        ui.close_menu();
-                    }
-                });
-            });
+            egui::menu::bar(ui, |ui| self.render_menus(ui));
         });
     }
 
@@ -103,11 +49,7 @@ impl ApiTesterApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     small(ui, format!("v{}", env!("CARGO_PKG_VERSION")), None);
                     ui.separator();
-                    small(
-                        ui,
-                        "Ctrl+L edit URL  \u{b7}  Ctrl+Enter send  \u{b7}  Esc cancel  \u{b7}  Ctrl+S save  \u{b7}  Ctrl+T new tab  \u{b7}  Ctrl+Tab cycle tabs".to_string(),
-                        None,
-                    );
+                    small(ui, "F1 shortcuts".to_string(), None);
                     if tab.state.insecure_tls {
                         ui.separator();
                         small(ui, "TLS certificate check off".to_string(), Some(p.amber));
@@ -155,15 +97,6 @@ impl ApiTesterApp {
             self.new_tab();
         }
     }
-}
-
-/// A menu entry with its keyboard shortcut shown on the right. Closes the menu when clicked.
-fn item(ui: &mut egui::Ui, label: &str, shortcut: &str) -> bool {
-    let clicked = ui.add(egui::Button::new(label).shortcut_text(shortcut)).clicked();
-    if clicked {
-        ui.close_menu();
-    }
-    clicked
 }
 
 fn small(ui: &mut egui::Ui, text: String, color: Option<egui::Color32>) {
