@@ -386,6 +386,17 @@ fn workflows_are_listed_with_their_last_run_and_open_in_a_window() {
     a.run_action(&ctx, Action::ShowWorkflows);
     assert!(a.workflow_view.is_some());
 
+    // deleting asks first: nothing is removed until it is confirmed
+    a.apply_workflow_action(&ctx, super::workflows::ListAction::Delete("saved only".to_string()));
+    draw(&mut a);
+    assert_eq!(a.workflow_delete.as_deref(), Some("saved only"));
+    assert_eq!(a.workflows.len(), 2);
+    a.delete_workflow("saved only");
+    assert!(a.workflow_delete.is_none());
+    assert_eq!(a.workflows.len(), 1);
+    a.history.as_ref().unwrap().save_workflow("saved only", r#"[{"saved_request":"Orders list"}]"#).unwrap();
+    a.refresh_lists();
+
     // a workflow deleted behind the window's back closes it
     a.history.as_ref().unwrap().delete_workflow("shop").unwrap();
     a.history.as_ref().unwrap().delete_workflow("saved only").unwrap();

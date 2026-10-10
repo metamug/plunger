@@ -58,7 +58,7 @@ impl ApiTesterApp {
                 }
                 let mut actions: Vec<(HistoryEntry, &'static str, RowAction)> = Vec::new();
                 let mut clear = false;
-                let mut open_workflow: Option<String> = None;
+                let mut workflow_action: Option<super::workflows::ListAction> = None;
                 let workflow_selected = self.workflow_view.as_ref().map(|v| v.name.clone());
                 // Each list highlights its own link: the saved request being
                 // edited, and the history row this tab last came from or sent.
@@ -95,7 +95,7 @@ impl ApiTesterApp {
                     }
 
                     if !filtering {
-                        open_workflow = super::workflows::sidebar_section(ui, &self.workflows, &mut self.workflows_open, workflow_selected.as_deref());
+                        workflow_action = super::workflows::sidebar_section(ui, &self.workflows, &mut self.workflows_open, workflow_selected.as_deref());
                     }
 
                     ui.add_space(8.0);
@@ -133,8 +133,8 @@ impl ApiTesterApp {
                 if clear {
                     self.clear_history();
                 }
-                if let Some(name) = open_workflow {
-                    self.open_workflow(&name);
+                if let Some(action) = workflow_action {
+                    self.apply_workflow_action(&ui.ctx().clone(), action);
                 }
                 for (entry, list, action) in actions {
                     match action {

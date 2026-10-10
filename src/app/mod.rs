@@ -142,6 +142,8 @@ pub struct ApiTesterApp {
     workflows_open: bool,
     workflow_view: Option<workflows::WorkflowView>,
     workflow_run: Option<workflows::WorkflowRun>,
+    /// A workflow waiting for the person to confirm its deletion.
+    workflow_delete: Option<String>,
     /// Help > Keyboard shortcuts and Help > About are open.
     shortcuts_open: bool,
     about_open: bool,
@@ -189,6 +191,7 @@ impl ApiTesterApp {
             workflows_open: true,
             workflow_view: None,
             workflow_run: None,
+            workflow_delete: None,
             shortcuts_open: false,
             about_open: false,
             export_dialect: Dialect::CurlBash,
@@ -402,6 +405,7 @@ impl ApiTesterApp {
         self.render_agents_window(ctx);
         self.render_help_windows(ctx);
         self.render_workflow_window(ctx);
+        self.render_workflow_delete_dialog(ctx);
 
         egui::CentralPanel::default().show(ui, |ui| {
             self.render_tab_bar(ui);

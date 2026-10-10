@@ -82,8 +82,16 @@ fn step_title(step: &Step) -> (String, String) {
     }
 }
 
-/// The sidebar section. Returns the name of the workflow that was clicked.
-pub(super) fn sidebar_section(ui: &mut egui::Ui, items: &[WorkflowItem], open: &mut bool, selected: Option<&str>) -> Option<String> {
+/// What was chosen on a workflow row in the sidebar.
+pub(super) enum ListAction {
+    Open(String),
+    Run(String),
+    Copy(String),
+    Delete(String),
+}
+
+/// The sidebar section. Returns what was chosen on a row: a click opens it, the context menu has the rest.
+pub(super) fn sidebar_section(ui: &mut egui::Ui, items: &[WorkflowItem], open: &mut bool, selected: Option<&str>) -> Option<ListAction> {
     if items.is_empty() {
         return None;
     }
@@ -128,9 +136,29 @@ pub(super) fn sidebar_section(ui: &mut egui::Ui, items: &[WorkflowItem], open: &
                 ),
                 None => format!("{}\nNever run", item.name),
             };
-            if response.on_hover_text(tip).clicked() {
-                clicked = Some(item.name.clone());
+            let response = response.on_hover_text(tip);
+            if response.clicked() {
+                clicked = Some(ListAction::Open(item.name.clone()));
             }
+            response.context_menu(|ui| {
+                if ui.button("Open").clicked() {
+                    clicked = Some(ListAction::Open(item.name.clone()));
+                    ui.close();
+                }
+                if ui.button("Run").clicked() {
+                    clicked = Some(ListAction::Run(item.name.clone()));
+                    ui.close();
+                }
+                if ui.button("Copy as JSON").clicked() {
+                    clicked = Some(ListAction::Copy(item.name.clone()));
+                    ui.close();
+                }
+                ui.separator();
+                if ui.button("Delete\u{2026}").clicked() {
+                    clicked = Some(ListAction::Delete(item.name.clone()));
+                    ui.close();
+                }
+            });
         }
     }
     clicked
@@ -174,6 +202,79 @@ impl ApiTesterApp {
             final_response: None,
             error: None,
         });
+    }
+
+    /// A row's context menu in the sidebar, or a click on it.
+    pub(super) fn apply_workflow_action(&mut self, ctx: &egui::Context, action: ListAction) {
+        match action {
+            ListAction::Open(name) => self.open_workflow(&name),
+            ListAction::Run(name) => {
+                if self.workflow_is_running() {
+                    self.notify("A workflow is already running");
+                } else {
+                    self.open_workflow(&name);
+                    self.start_workflow_run(ctx);
+                }
+            }
+            ListAction::Copy(name) => self.copy_workflow(ctx, &name),
+            ListAction::Delete(name) => self.workflow_delete = Some(name),
+        }
+    }
+
+    fn copy_workflow(&mut self, ctx: &egui::Context, name: &str) {
+        let Some(steps) = self.workflows.iter().find(|w| w.name == name).map(|w| w.steps.clone()) else { return };
+        ctx.copy_text(serde_json::to_string_pretty(&steps).unwrap_or_default());
+        self.notify("Copied the steps as JSON");
+    }
+
+    /// Asks before a workflow and its recorded runs are removed for good.
+    pub(super) fn render_workflow_delete_dialog(&mut self, ctx: &egui::Context) {
+        let Some(name) = self.workflow_delete.clone() else { return };
+        let runs = self.history.as_ref().and_then(|h| h.workflow_runs(&name, WORKFLOW_RUNS_KEPT).ok()).map_or(0, |r| r.len());
+        let (mut delete, mut keep) = (false, false);
+        egui::Window::new("Delete workflow")
+            .id(egui::Id::new("workflow-delete"))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.label(format!("Delete \"{name}\"?"));
+                let what = if runs == 0 {
+                    "Its steps will be removed.".to_string()
+                } else {
+                    format!("Its steps and {runs} recorded run{} will be removed.", if runs == 1 { "" } else { "s" })
+                };
+                ui.label(egui::RichText::new(what).weak());
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Delete").clicked() {
+                        delete = true;
+                    }
+                    if ui.button("Keep").clicked() {
+                        keep = true;
+                    }
+                });
+            });
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) || keep {
+            self.workflow_delete = None;
+        }
+        if delete {
+            self.delete_workflow(&name);
+        }
+    }
+
+    /// Removes a workflow and its runs (after the person confirmed), stopping a run of it first.
+    pub(super) fn delete_workflow(&mut self, name: &str) {
+        self.workflow_delete = None;
+        if self.workflow_run.as_ref().is_some_and(|r| r.name == name) {
+            self.cancel_workflow_run();
+        }
+        match self.history.as_ref().map(|h| h.delete_workflow(name)) {
+            Some(Ok(_)) => self.notify(format!("Deleted workflow {name}")),
+            Some(Err(e)) => self.notify(format!("Could not delete {name}: {e}")),
+            None => {}
+        }
+        self.refresh_workflows();
     }
 
     pub(super) fn workflow_is_running(&self) -> bool {
@@ -307,7 +408,7 @@ impl ApiTesterApp {
         });
 
         let mut open = true;
-        let (mut run, mut cancel, mut copy) = (false, false, false);
+        let (mut run, mut cancel, mut copy, mut delete) = (false, false, false, false);
         let mut open_step: Option<usize> = None;
         let mut select_run: Option<i64> = None;
         egui::Window::new(format!("Workflow: {name}"))
@@ -331,6 +432,9 @@ impl ApiTesterApp {
                     }
                     if ui.button("Copy as JSON").on_hover_text("The steps, as `plunger workflow save` and `save_workflow` take them").clicked() {
                         copy = true;
+                    }
+                    if ui.button("Delete\u{2026}").on_hover_text("Remove this workflow and its recorded runs").clicked() {
+                        delete = true;
                     }
                 });
                 if let Some(error) = &view.error {
@@ -492,9 +596,10 @@ impl ApiTesterApp {
             }
         }
         if copy {
-            let json = serde_json::to_string_pretty(&steps).unwrap_or_default();
-            ctx.copy_text(json);
-            self.notify("Copied the steps as JSON");
+            self.copy_workflow(ctx, &name);
+        }
+        if delete {
+            self.workflow_delete = Some(name.clone());
         }
         if let Some(i) = open_step {
             if let Some(step) = steps.get(i) {
