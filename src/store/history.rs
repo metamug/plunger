@@ -1,5 +1,5 @@
-use crate::model::{BodyMode, FormField, KeyValue, PersistedState};
-use crate::redact::{redact_headers_text, redact_url};
+use crate::domain::model::{BodyMode, FormField, KeyValue, PersistedState};
+use crate::domain::redact::{redact_headers_text, redact_url};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -806,7 +806,7 @@ X-Api-Key:");
 
     #[test]
     fn params_and_multipart_round_trip_with_secrets_blanked() {
-        use crate::model::FieldKind;
+        use crate::domain::model::FieldKind;
         let h = history();
         let mut s = state("http://a", BodyMode::Multipart);
         s.params = vec![

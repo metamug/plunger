@@ -2,7 +2,7 @@
 //! token). They go into the operating system's credential store, never into
 //! the state file or history database.
 
-use crate::model::PersistedState;
+use crate::domain::model::PersistedState;
 use std::collections::{HashMap, HashSet};
 
 pub const SERVICE: &str = "Plunger";
@@ -233,7 +233,7 @@ pub(crate) mod test_support {
 mod tests {
     use super::test_support::MemoryStore;
     use super::*;
-    use crate::model::Variable;
+    use crate::domain::model::Variable;
 
     fn var(name: &str, value: &str, secret: bool, remember: bool) -> Variable {
         Variable { name: name.into(), value: value.into(), secret, remember }

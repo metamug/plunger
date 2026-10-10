@@ -1,6 +1,6 @@
 use crate::app::tab::Tab;
-use crate::icons::{self, Icon};
-use crate::theme::{self, palette};
+use crate::ui::icons::{self, Icon};
+use crate::ui::theme::{self, palette};
 use eframe::egui;
 
 impl Tab {

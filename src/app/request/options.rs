@@ -1,5 +1,5 @@
 use crate::app::tab::Tab;
-use crate::theme::palette;
+use crate::ui::theme::palette;
 use eframe::egui;
 
 impl Tab {

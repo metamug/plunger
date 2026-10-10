@@ -1,4 +1,4 @@
-use crate::model::{FieldKind, FormField, ParsedRequest};
+use crate::domain::model::{FieldKind, FormField, ParsedRequest};
 use serde::Deserialize;
 use std::path::Path;
 
@@ -278,8 +278,8 @@ fn parse_tokens(
 /// is encoded whole.
 fn encode_data(spec: &str) -> String {
     match spec.split_once('=') {
-        Some((name, content)) => format!("{name}={}", crate::query::encode_value(content)),
-        None => crate::query::encode_value(spec),
+        Some((name, content)) => format!("{name}={}", crate::domain::query::encode_value(content)),
+        None => crate::domain::query::encode_value(spec),
     }
 }
 

@@ -2,46 +2,27 @@
 
 mod agent;
 mod app;
-mod cli;
-mod commands;
-mod curl_cli;
-mod curl_export;
-mod curl_import;
+mod convert;
+mod domain;
 mod engine;
-mod fallback_fonts;
-mod filename;
-mod highlight;
-mod history;
+mod headless;
+mod store;
+mod ui;
 mod workflow;
-mod http;
-mod icons;
-mod install;
-mod json_view;
-mod mcp;
-mod outline;
-mod mcp_content;
-mod model;
-mod query;
-mod redact;
-mod secrets;
-mod request;
 #[cfg(test)]
 mod test_server;
 #[cfg(test)]
 mod test_support;
-mod theme;
-mod timefmt;
-mod vars;
 
 use app::{ApiTesterApp, OpenTabs, Settings};
 use eframe::egui;
-use model::PersistedState;
+use domain::model::PersistedState;
 use std::io::Write;
 
 /// Release builds are `panic = "abort"` with no console, so a crash would
 /// otherwise vanish without a trace. Append it to a log the user can send.
 fn install_crash_log() {
-    let path = history::app_data_dir().join("crash.log");
+    let path = store::history::app_data_dir().join("crash.log");
     std::panic::set_hook(Box::new(move |info| {
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -74,9 +55,9 @@ fn main() -> eframe::Result<()> {
     if !args.is_empty() {
         // The MCP server talks over the pipes its client gave it; never attach a console to it.
         if args[0] != "mcp" {
-            cli::attach_parent_console();
+            headless::cli::attach_parent_console();
         }
-        std::process::exit(cli::run(args));
+        std::process::exit(headless::cli::run(args));
     }
 
     let options = eframe::NativeOptions {
@@ -89,9 +70,9 @@ fn main() -> eframe::Result<()> {
             .with_icon(window_icon()),
         // With the data-dir override, keep the window/tab state next to the
         // rest of the app data too.
-        persistence_path: std::env::var_os(history::DATA_DIR_ENV)
+        persistence_path: std::env::var_os(store::history::DATA_DIR_ENV)
             .filter(|d| !d.is_empty())
-            .map(|_| history::app_data_dir().join("app.ron")),
+            .map(|_| store::history::app_data_dir().join("app.ron")),
         ..Default::default()
     };
     eframe::run_native(
@@ -102,7 +83,7 @@ fn main() -> eframe::Result<()> {
                 storage.and_then(|s| eframe::get_value(s, key)).unwrap_or_default()
             }
             let settings: Settings = load(cc.storage, app::SETTINGS_KEY);
-            theme::apply_theme(&cc.egui_ctx, settings.theme);
+            ui::theme::apply_theme(&cc.egui_ctx, settings.theme);
 
             let state: PersistedState = load(cc.storage, eframe::APP_KEY);
             let tabs: OpenTabs = load(cc.storage, app::TABS_KEY);

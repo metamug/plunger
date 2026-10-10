@@ -1,11 +1,11 @@
 //! One open request: its form, its response, and its in-flight send. The app
 //! holds several of these as tabs.
 
-use crate::history::HistoryEntry;
-use crate::http::send_request;
-use crate::model::{Outcome, ParsedRequest, PersistedState, RequestTab, ResponseTab, SendResult, Variable};
-use crate::query::{params_from_url, reconcile};
-use crate::request::{parse_headers, prepare_to_send};
+use crate::store::history::HistoryEntry;
+use crate::domain::http::send_request;
+use crate::domain::model::{Outcome, ParsedRequest, PersistedState, RequestTab, ResponseTab, SendResult, Variable};
+use crate::domain::query::{params_from_url, reconcile};
+use crate::domain::request::{parse_headers, prepare_to_send};
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Instant;
@@ -108,7 +108,7 @@ pub struct HistoryMeta {
     pub created_at: String,
     pub status: Option<i64>,
     pub elapsed_ms: Option<i64>,
-    pub source: crate::history::Source,
+    pub source: crate::store::history::Source,
 }
 
 impl Tab {
@@ -324,7 +324,7 @@ mod tests {
     fn sending_folds_the_request_away_and_forgets_the_history_note() {
         let mut tab = Tab::new(1, PersistedState { url: "http://127.0.0.1:1/x".into(), ..Default::default() });
         tab.pane = Pane::RequestExpanded;
-        tab.opened_from = Some(HistoryMeta { created_at: "2026-10-09T06:11:03Z".into(), status: Some(200), elapsed_ms: Some(5), source: crate::history::Source::Mcp });
+        tab.opened_from = Some(HistoryMeta { created_at: "2026-10-09T06:11:03Z".into(), status: Some(200), elapsed_ms: Some(5), source: crate::store::history::Source::Mcp });
         tab.send("", &[]);
         assert_eq!(tab.pane, Pane::ResponseExpanded, "the response is what you see after a send");
         assert!(tab.opened_from.is_none());
@@ -339,14 +339,14 @@ mod tests {
 
     #[test]
     fn a_tab_opened_from_history_remembers_how_that_request_went() {
-        let entry = crate::history::HistoryEntry {
+        let entry = crate::store::history::HistoryEntry {
             id: 4,
             name: None,
             created_at: "2026-10-09T06:11:03Z".into(),
             method: "GET".into(),
             url: "http://h/x".into(),
             headers_text: String::new(),
-            body_mode: crate::model::BodyMode::None,
+            body_mode: crate::domain::model::BodyMode::None,
             json_body: String::new(),
             urlencoded_body: String::new(),
             raw_body: String::new(),
@@ -354,11 +354,11 @@ mod tests {
             multipart_fields: vec![],
             status: Some(404),
             elapsed_ms: Some(12),
-            source: crate::history::Source::Cli,
+            source: crate::store::history::Source::Cli,
         };
         let tab = Tab::from_entry(1, &entry, &PersistedState::default());
         let meta = tab.opened_from.expect("opened from history");
-        assert_eq!((meta.status, meta.elapsed_ms, meta.source), (Some(404), Some(12), crate::history::Source::Cli));
+        assert_eq!((meta.status, meta.elapsed_ms, meta.source), (Some(404), Some(12), crate::store::history::Source::Cli));
     }
 
     #[test]

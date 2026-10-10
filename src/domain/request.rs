@@ -1,10 +1,10 @@
 //! Turns the form state into a ready-to-send request: variables substituted,
 //! query parameters appended, body assembled. Pure logic, no network.
 
-use crate::model::{BodyMode, FormField, PersistedState};
-use crate::query::{encode_value, split_url};
-use crate::redact::is_sensitive_header;
-use crate::vars::Resolver;
+use crate::domain::model::{BodyMode, FormField, PersistedState};
+use crate::domain::query::{encode_value, split_url};
+use crate::domain::redact::is_sensitive_header;
+use crate::domain::vars::Resolver;
 use std::net::IpAddr;
 use std::time::Duration;
 
@@ -219,7 +219,7 @@ pub fn build_request(state: &PersistedState, bearer_token: &str) -> Result<Outgo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{FieldKind, KeyValue, Variable};
+    use crate::domain::model::{FieldKind, KeyValue, Variable};
 
     fn state() -> PersistedState {
         PersistedState {

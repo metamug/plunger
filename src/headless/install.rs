@@ -10,7 +10,7 @@ pub use mcp_install::{Agent, Change, Scope};
 pub const ALL: [Agent; 7] = Agent::ALL;
 
 /// The steering text every tool gets (also published as docs/steering/plunger.md).
-pub const STEERING: &str = include_str!("../docs/steering/plunger.md");
+pub const STEERING: &str = include_str!("../../docs/steering/plunger.md");
 
 const STEERING_DESCRIPTION: &str = "Use whenever you need to call an HTTP API or test an endpoint: send the request through Plunger (MCP or CLI) instead of curl, Invoke-RestMethod, Invoke-WebRequest or a script. Keeps secrets out of the transcript and returns only the values you select.";
 

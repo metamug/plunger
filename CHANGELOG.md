@@ -5,9 +5,12 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 ## [Unreleased]
 
 ### Changed
+- Dependencies brought up to date: egui and eframe 0.36 (from 0.29), egui_json_tree 0.17, reqwest 0.13, rfd 0.17, ron 0.12, keyring 4 and rmcp 3.5. No change in behaviour.
+- The source is grouped by what it does: `domain/`, `store/`, `convert/`, `headless/` and `ui/` next to `app/`, `engine/`, `agent/` and `workflow/` (see docs/architecture.md).
 - The code that registers an MCP server in Claude Code, Cursor, Kiro, Codex, Windsurf, VS Code and Gemini CLI is now its own crate, `mcp-install` (`crates/mcp-install`), usable by any MCP server, with its own tests, README and an example. Plunger uses it for `plunger install`; nothing changes for users. The repository is now a Cargo workspace and CI tests all of it.
 
 ### Added
+- Right-click a workflow in the sidebar for Open, Run, Copy as JSON and Delete; deleting asks first and also removes the workflow's recorded runs. The workflow window has a Delete button too.
 - Workflows in the window: a **WORKFLOWS** section in the sidebar with each workflow's step count and last run (a dot and "3 min ago"); click one to see its steps, **Run** it with live per-step progress (and Cancel), and see every recorded run, including the ones an agent made, with each step's status, time and the variables it set. Every run is now recorded (who, when, each step's result; never values or response bodies). **Tools > Workflows** and **Ctrl+Shift+R** (Run the open workflow) are in the menus (#162).
 - Homebrew: `brew install --cask metamug/tap/plunger` installs `Plunger.app` and a `plunger` command (the tap is metamug/homebrew-tap, tested on a macOS runner on every push).
 

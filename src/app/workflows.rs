@@ -2,8 +2,8 @@
 //! steps, runs it with live progress and shows the result of earlier runs (also those an agent made).
 
 use super::*;
-use crate::history::{Source, WorkflowRunRow, WORKFLOW_RUNS_KEPT};
-use crate::theme::{palette, status_badge};
+use crate::store::history::{Source, WorkflowRunRow, WORKFLOW_RUNS_KEPT};
+use crate::ui::theme::{palette, status_badge};
 use crate::workflow::{self, Progress, Step, StoredStep, WorkflowResult};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -118,19 +118,19 @@ pub(super) fn sidebar_section(ui: &mut egui::Ui, items: &[WorkflowItem], open: &
                 None => ui.visuals().weak_text_color(),
             };
             ui.painter().circle_filled(egui::pos2(rect.left() + 12.0, rect.center().y), 4.0, dot);
-            let when = item.last.as_ref().map(|r| format!(" \u{b7} {}", crate::timefmt::ago(&r.started_at))).unwrap_or_default();
+            let when = item.last.as_ref().map(|r| format!(" \u{b7} {}", crate::domain::timefmt::ago(&r.started_at))).unwrap_or_default();
             let meta = format!("{} step{}{}", item.steps.len(), if item.steps.len() == 1 { "" } else { "s" }, when);
             let meta_galley = ui.painter().layout_no_wrap(meta, egui::FontId::proportional(11.0), ui.visuals().weak_text_color());
             let meta_pos = egui::pos2(rect.right() - meta_galley.size().x - 8.0, rect.center().y - meta_galley.size().y / 2.0);
             let name_width = (meta_pos.x - rect.left() - 28.0).max(20.0);
-            let name_galley = crate::theme::one_line(ui, &item.name, egui::FontId::proportional(13.0), p.text, name_width);
+            let name_galley = crate::ui::theme::one_line(ui, &item.name, egui::FontId::proportional(13.0), p.text, name_width);
             ui.painter().galley(egui::pos2(rect.left() + 24.0, rect.center().y - name_galley.size().y / 2.0), name_galley, p.text);
             ui.painter().galley(meta_pos, meta_galley, ui.visuals().weak_text_color());
             let tip = match &item.last {
                 Some(run) => format!(
                     "{}\nLast run {} by {}: {}",
                     item.name,
-                    crate::timefmt::full(&run.started_at),
+                    crate::domain::timefmt::full(&run.started_at),
                     run.source.as_str(),
                     if run.cancelled { "cancelled" } else if run.ok { "all steps passed" } else { "a step failed" }
                 ),
@@ -443,7 +443,7 @@ impl ApiTesterApp {
                 egui::CollapsingHeader::new("Values for this run").default_open(false).show(ui, |ui| {
                     ui.label(egui::RichText::new("One name=value per line; they apply to every step.").weak().small());
                     ui.add(
-                        crate::theme::area(&mut view.values)
+                        crate::ui::theme::area(&mut view.values)
                             .desired_rows(2)
                             .desired_width(f32::INFINITY)
                             .font(egui::TextStyle::Monospace)
@@ -524,7 +524,7 @@ impl ApiTesterApp {
                         for r in view.runs.iter().take(8) {
                             let chosen = view.selected.map_or(view.runs.first().map(|n| n.id) == Some(r.id), |id| id == r.id);
                             let mark = if r.cancelled { "cancelled" } else if r.ok { "passed" } else { "failed" };
-                            let text = format!("{} \u{b7} {} \u{b7} {mark}", crate::timefmt::ago(&r.started_at), r.source.as_str());
+                            let text = format!("{} \u{b7} {} \u{b7} {mark}", crate::domain::timefmt::ago(&r.started_at), r.source.as_str());
                             if ui.selectable_label(chosen, text).clicked() {
                                 select_run = Some(r.id);
                             }
@@ -536,7 +536,7 @@ impl ApiTesterApp {
                         .or_else(|| view.runs.first());
                     if let Some(r) = shown {
                         ui.label(
-                            egui::RichText::new(format!("Started {} by {}", crate::timefmt::full(&r.started_at), r.source.as_str()))
+                            egui::RichText::new(format!("Started {} by {}", crate::domain::timefmt::full(&r.started_at), r.source.as_str()))
                                 .weak()
                                 .small(),
                         );

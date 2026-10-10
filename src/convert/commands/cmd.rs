@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn chromes_copy_as_curl_cmd_is_read_back() {
         let pasted = "curl \"https://example.com/api/items?a=1^&b=2\" ^\r\n  -H \"accept: application/json\" ^\r\n  -H \"content-type: application/json\" ^\r\n  --data-raw \"^{^\\^\"name^\\^\":^\\^\"widget^\\^\"^}\"";
-        let r = crate::curl_import::parse_curl(&normalize(pasted)).unwrap();
+        let r = crate::convert::curl_import::parse_curl(&normalize(pasted)).unwrap();
         assert_eq!(r.method, "POST");
         assert_eq!(r.url, "https://example.com/api/items?a=1&b=2");
         assert_eq!(r.headers.len(), 2);

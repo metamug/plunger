@@ -48,8 +48,8 @@ PLUNGER_DATA_DIR=/path/to/scratch cargo run
 [design.md](design.md) explains the architecture and the reasons behind it. The short version:
 
 - `src/app/` is the window (egui). It holds no request logic.
-- `request.rs`, `vars.rs`, `http.rs`, `model.rs` and friends are the **core**: they know nothing about the window or agents.
-- `engine.rs`, `agent.rs`, `cli.rs` and `mcp.rs` are the agent interface. They use the same core as the window, so a rule like "an undefined `{{variable}}` is never sent" holds in every mode. Keep it that way: a behaviour change to sending belongs in the core, not in one front end.
+- `domain/request.rs`, `domain/vars.rs`, `domain/http.rs`, `domain/model.rs` and friends are the **core**: they know nothing about the window or agents.
+- `engine.rs`, `agent.rs`, `headless/cli.rs` and `headless/mcp.rs` are the agent interface. They use the same core as the window, so a rule like "an undefined `{{variable}}` is never sent" holds in every mode. Keep it that way: a behaviour change to sending belongs in the core, not in one front end.
 
 ## Sending a pull request
 

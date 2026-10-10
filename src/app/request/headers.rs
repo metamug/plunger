@@ -1,9 +1,9 @@
 use super::rows::{edit_rows, remove_button};
 use super::suggest::{chips, variable_chips};
 use crate::app::tab::Tab;
-use crate::icons::{self, Icon};
-use crate::request::{headers_to_text, parse_headers};
-use crate::theme;
+use crate::ui::icons::{self, Icon};
+use crate::domain::request::{headers_to_text, parse_headers};
+use crate::ui::theme;
 use eframe::egui;
 
 const COMMON_HEADERS: &[&str] = &[
@@ -70,7 +70,7 @@ impl Tab {
             let variables = &self.state.variables;
             let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
                 let text = text.as_str();
-                let mut job = crate::highlight::header_lines(text, variables);
+                let mut job = crate::ui::highlight::header_lines(text, variables);
                 job.wrap.max_width = wrap_width;
                 ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
             };
@@ -104,7 +104,7 @@ impl Tab {
                             theme::field(value)
                                 .desired_width(width)
                                 .hint_text("Value")
-                                .layouter(&mut crate::highlight::variable_layouter(variables)),
+                                .layouter(&mut crate::ui::highlight::variable_layouter(variables)),
                         );
                         (key_resp, val_resp, remove_button(ui, "header", spare))
                     })

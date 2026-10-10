@@ -1,4 +1,4 @@
-use crate::redact::{is_sensitive_header, is_sensitive_param};
+use crate::domain::redact::{is_sensitive_header, is_sensitive_param};
 use serde::{Deserialize, Serialize};
 
 #[derive(PartialEq, Clone, Copy, Serialize, Deserialize, Default, Debug)]
@@ -159,7 +159,7 @@ impl PersistedState {
         if self.body_mode != BodyMode::Raw || self.raw_body.trim().is_empty() {
             return;
         }
-        let json_type = crate::request::parse_headers(&self.headers_text).iter().any(|(name, value)| {
+        let json_type = crate::domain::request::parse_headers(&self.headers_text).iter().any(|(name, value)| {
             let value = value.to_ascii_lowercase();
             name.eq_ignore_ascii_case("content-type") && (value.contains("application/json") || value.contains("+json"))
         });
@@ -185,8 +185,8 @@ impl PersistedState {
     pub fn redacted(&self) -> PersistedState {
         let mut s = self.clone();
         // The URL carries the query params too, so it needs the same treatment.
-        s.url = crate::redact::redact_url(&s.url);
-        s.headers_text = crate::redact::redact_headers_text(&s.headers_text);
+        s.url = crate::domain::redact::redact_url(&s.url);
+        s.headers_text = crate::domain::redact::redact_headers_text(&s.headers_text);
         for p in &mut s.params {
             if is_sensitive_param(&p.key) {
                 p.value.clear();
@@ -271,7 +271,7 @@ impl ParsedRequest {
             method: self.method,
             url: self.url,
             params: Vec::new(),
-            headers_text: crate::request::headers_to_text(&self.headers),
+            headers_text: crate::domain::request::headers_to_text(&self.headers),
             ..Default::default()
         };
         match self.body {

@@ -1,7 +1,7 @@
 //! Shared behaviour for the "one editable line per item, plus a spare blank
 //! line at the end" lists (headers, params, variables, form-data fields).
 
-use crate::icons::{self, Icon};
+use crate::ui::icons::{self, Icon};
 use eframe::egui;
 
 /// Removes the row at `remove` (if any), then makes sure the list ends with

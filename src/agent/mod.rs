@@ -2,16 +2,16 @@
 //! server so both behave identically. Each returns a serializable result or
 //! a message saying what went wrong; neither ever contains a secret value.
 
-use crate::curl_export::to_curl;
-use crate::curl_import::parse_curl;
+use crate::convert::curl_export::to_curl;
+use crate::convert::curl_import::parse_curl;
 use crate::engine::{
     self, AgentResponse, Body, HistoryItem, NameValue, RequestSpec, Scrubber, SendError, Session, StoredRequestInfo,
     VariableInfo, DEFAULT_MAX_BODY_CHARS,
 };
-use crate::history::{History, Source};
-use crate::redact::is_sensitive_header;
-use crate::model::{BodyMode, FieldKind, PersistedState, ResponseData};
-use crate::request::{headers_to_text, parse_headers};
+use crate::store::history::{History, Source};
+use crate::domain::redact::is_sensitive_header;
+use crate::domain::model::{BodyMode, FieldKind, PersistedState, ResponseData};
+use crate::domain::request::{headers_to_text, parse_headers};
 use rmcp::schemars::{self, JsonSchema};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -106,7 +106,7 @@ impl SendParams {
     pub(crate) fn to_state(&self, session: &Session, history: &History) -> Result<PersistedState, String> {
         let body = self.body()?;
         if let Some(h) = &self.headers {
-            crate::request::check_header_lines(h.iter())?;
+            crate::domain::request::check_header_lines(h.iter())?;
         }
         let Some(name) = &self.saved_request else {
             let url = self.url.clone().filter(|u| !u.trim().is_empty()).ok_or("Give a `url`, or a `saved_request` name.")?;
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn agents_set_and_delete_variables_and_a_secret_never_reaches_the_database() {
-        use crate::secrets::test_support::MemoryStore;
+        use crate::store::secrets::test_support::MemoryStore;
         let h = History::in_memory();
         let store = MemoryStore::default();
 
@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     fn the_users_own_variables_are_protected_and_bad_names_are_refused() {
-        use crate::secrets::test_support::MemoryStore;
+        use crate::store::secrets::test_support::MemoryStore;
         let h = History::in_memory();
         let store = MemoryStore::default();
         let window = vec!["host".to_string()];
@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn agent_variables_load_when_there_is_no_window_state_file() {
-        use crate::secrets::test_support::MemoryStore;
+        use crate::store::secrets::test_support::MemoryStore;
         let h = History::in_memory();
         h.set_agent_variable("host", "agent-value", false, Source::Mcp).unwrap();
         let dir = std::env::temp_dir().join(format!("plunger-winvar-{}", std::process::id()));

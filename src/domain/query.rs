@@ -3,7 +3,7 @@
 //! (only as much as needed — `{{variables}}`, `/`, `:` and non-ASCII stay
 //! readable, and are encoded properly when the request is sent).
 
-use crate::model::KeyValue;
+use crate::domain::model::KeyValue;
 
 /// Splits a URL into (everything before `?`, the query, the `#fragment`).
 pub fn split_url(url: &str) -> (&str, Option<&str>, Option<&str>) {

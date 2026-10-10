@@ -1,10 +1,10 @@
 use super::rows::{edit_rows, enabled_checkbox, remove_button};
 use super::suggest::variable_chips;
 use crate::app::tab::Tab;
-use crate::icons::{self, Icon};
-use crate::json_view::highlight_json;
-use crate::model::{BodyMode, FieldKind, FormField};
-use crate::theme::{self, palette};
+use crate::ui::icons::{self, Icon};
+use crate::ui::json_view::highlight_json;
+use crate::domain::model::{BodyMode, FieldKind, FormField};
+use crate::ui::theme::{self, palette};
 use eframe::egui;
 
 /// How many lines a body editor asks for: its text plus a spare line to click into, never fewer than
@@ -42,7 +42,7 @@ enum JsonCheck {
 }
 
 fn check_json(text: &str) -> JsonCheck {
-    if text.len() > crate::highlight::LARGE_TEXT_BYTES {
+    if text.len() > crate::ui::highlight::LARGE_TEXT_BYTES {
         return JsonCheck::Large;
     }
     let trimmed = text.trim();
@@ -132,7 +132,7 @@ impl Tab {
                 ui.label(egui::RichText::new("One key=value per line").weak());
                 let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
                     let text = text.as_str();
-                    let mut job = crate::highlight::form_body(text);
+                    let mut job = crate::ui::highlight::form_body(text);
                     job.wrap.max_width = wrap_width;
                     ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
                 };
@@ -151,7 +151,7 @@ impl Tab {
                 // JSON, XML/HTML and forms are told apart by what the text looks like.
                 let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
                     let text = text.as_str();
-                    let mut job = crate::highlight::body(text);
+                    let mut job = crate::ui::highlight::body(text);
                     job.wrap.max_width = wrap_width;
                     ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
                 };
@@ -172,8 +172,8 @@ impl Tab {
     fn render_json_editor(&mut self, ui: &mut egui::Ui) {
         let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| -> std::sync::Arc<egui::Galley> {
             let text = text.as_str();
-            let mut job = if text.len() > crate::highlight::LARGE_TEXT_BYTES {
-                crate::highlight::plain(text, palette().json[5])
+            let mut job = if text.len() > crate::ui::highlight::LARGE_TEXT_BYTES {
+                crate::ui::highlight::plain(text, palette().json[5])
             } else {
                 highlight_json(text)
             };
@@ -227,7 +227,7 @@ impl Tab {
                                 theme::field(&mut f.value)
                                     .desired_width(width)
                                     .hint_text("value  (or {{variable}})")
-                                    .layouter(&mut crate::highlight::variable_layouter(variables)),
+                                    .layouter(&mut crate::ui::highlight::variable_layouter(variables)),
                             ));
                         }
                         FieldKind::File => {
@@ -272,7 +272,7 @@ mod tests {
     fn the_json_chip_tells_valid_invalid_empty_and_large_apart() {
         assert_eq!(check_json("  "), JsonCheck::Empty);
         assert_eq!(check_json("{\"a\": [1, 2]}"), JsonCheck::Valid);
-        assert_eq!(check_json(&"1".repeat(crate::highlight::LARGE_TEXT_BYTES + 1)), JsonCheck::Large);
+        assert_eq!(check_json(&"1".repeat(crate::ui::highlight::LARGE_TEXT_BYTES + 1)), JsonCheck::Large);
         match check_json("{\"a\": 1,
   \"b\": }") {
             JsonCheck::Invalid { position, has_variable, .. } => {

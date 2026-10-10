@@ -7,8 +7,8 @@
 
 use crate::agent::{self, ImportedRequest, SendParams, VariablesResult};
 use crate::engine::{AgentResponse, HistoryItem, StoredRequestInfo, VariableInfo};
-use crate::history::Source;
-use crate::mcp_content;
+use crate::store::history::Source;
+use crate::headless::mcp_content;
 use crate::workflow::{self, Step, WorkflowInfo, WorkflowList, WorkflowResult};
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{

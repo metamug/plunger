@@ -1,7 +1,7 @@
 //! `{{name}}` variable substitution, plus a few dynamic built-ins
 //! (`{{$uuid}}`, `{{$timestamp}}`, `{{$randomInt}}`, and `{{$env:NAME}}`).
 
-use crate::model::Variable;
+use crate::domain::model::Variable;
 use std::collections::BTreeSet;
 use std::hash::{BuildHasher, Hasher};
 use std::time::{SystemTime, UNIX_EPOCH};

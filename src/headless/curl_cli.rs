@@ -7,11 +7,11 @@
 //! Exit codes are curl's where they exist (6 DNS, 7 refused, 22 HTTP error, 28 timeout).
 //! Plunger-only extras: `--var name=value`, `--use-saved-bearer`, `--plunger-json`.
 
-use crate::curl_import::{parse_curl_args, CurlOptions};
+use crate::convert::curl_import::{parse_curl_args, CurlOptions};
 use crate::engine::{self, AgentResponse, Scrubber, SendError, Session, DEFAULT_MAX_BODY_CHARS};
-use crate::history::{History, Source};
-use crate::model::ParsedRequest;
-use crate::redact::is_sensitive_header;
+use crate::store::history::{History, Source};
+use crate::domain::model::ParsedRequest;
+use crate::domain::redact::is_sensitive_header;
 use std::io::Write;
 
 pub const USAGE: &str = "\
@@ -239,7 +239,7 @@ fn head_text(status: u16, status_text: &str, headers: &[(String, String)], scrub
 }
 
 fn render(
-    r: &crate::model::ResponseData,
+    r: &crate::domain::model::ResponseData,
     url: &str,
     opts: &CurlOptions,
     scrubber: &Scrubber,
@@ -297,7 +297,7 @@ struct WriteOut {
 }
 
 impl WriteOut {
-    fn new(r: &crate::model::ResponseData, sent_url: &str) -> Self {
+    fn new(r: &crate::domain::model::ResponseData, sent_url: &str) -> Self {
         let header = |name: &str| r.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.clone()).unwrap_or_default();
         Self {
             http_code: r.status,

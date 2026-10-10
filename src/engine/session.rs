@@ -1,8 +1,8 @@
 //! What the window has configured and an agent inherits: variables, options and remembered secrets.
 
-use crate::history::{app_data_dir, History};
-use crate::model::{PersistedState, Variable};
-use crate::secrets::{OsStore, SecretStore, SecretSync};
+use crate::store::history::{app_data_dir, History};
+use crate::domain::model::{PersistedState, Variable};
+use crate::store::secrets::{OsStore, SecretStore, SecretSync};
 use rmcp::schemars::{self, JsonSchema};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

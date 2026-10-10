@@ -3,11 +3,11 @@
 use super::rows::{edit_rows, enabled_checkbox, remove_button};
 use super::suggest::variable_chips;
 use crate::app::tab::Tab;
-use crate::icons::{self, Icon};
-use crate::model::{KeyValue, Variable};
-use crate::query::{parse_query, url_with_params};
-use crate::redact::is_sensitive_header;
-use crate::theme::{self, palette};
+use crate::ui::icons::{self, Icon};
+use crate::domain::model::{KeyValue, Variable};
+use crate::domain::query::{parse_query, url_with_params};
+use crate::domain::redact::is_sensitive_header;
+use crate::ui::theme::{self, palette};
 use eframe::egui;
 
 impl Tab {
@@ -30,7 +30,7 @@ impl Tab {
                                 theme::field(&mut p.value)
                                     .desired_width(width)
                                     .hint_text("value  (or {{variable}})")
-                                    .layouter(&mut crate::highlight::variable_layouter(variables)),
+                                    .layouter(&mut crate::ui::highlight::variable_layouter(variables)),
                             );
                         (value_resp, remove_button(ui, "parameter", spare))
                     })
@@ -66,7 +66,7 @@ impl Tab {
         &mut self,
         ui: &mut egui::Ui,
         secrets_error: Option<&str>,
-        agent_variables: &[crate::history::AgentVariable],
+        agent_variables: &[crate::store::history::AgentVariable],
         delete_agent: &mut Option<String>,
     ) -> bool {
         let mut forget = false;

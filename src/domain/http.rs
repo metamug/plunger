@@ -1,8 +1,8 @@
 //! Sends a built request over the network and turns the reply into a `ResponseData`.
 
-use crate::json_view::pretty_json_if_possible;
-use crate::model::{FieldKind, FormField, ResponseData, SendResult};
-use crate::request::{OutgoingBody, OutgoingRequest};
+use crate::ui::json_view::pretty_json_if_possible;
+use crate::domain::model::{FieldKind, FormField, ResponseData, SendResult};
+use crate::domain::request::{OutgoingBody, OutgoingRequest};
 use reqwest::blocking::multipart::Form;
 use std::io::Read;
 use std::sync::{Arc, Mutex, mpsc::Sender};
@@ -144,7 +144,7 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
         (text, None, None)
     };
 
-    let (json_display, json_nodes) = match json_value.as_ref().and_then(crate::json_view::limit_for_display) {
+    let (json_display, json_nodes) = match json_value.as_ref().and_then(crate::ui::json_view::limit_for_display) {
         Some((shown, total)) => (Some(shown), total),
         None => (None, 0),
     };
@@ -209,8 +209,8 @@ fn is_binary(bytes: &[u8], content_type: &str, truncated: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{BodyMode, PersistedState};
-    use crate::request::build_request;
+    use crate::domain::model::{BodyMode, PersistedState};
+    use crate::domain::request::build_request;
     use std::io::Write;
     use std::net::TcpListener;
     use std::sync::mpsc;

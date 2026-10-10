@@ -2,10 +2,10 @@
 //! file. Each has its own dialog; the imported request opens in a tab.
 
 use super::{ApiTesterApp, ImportDialog};
-use crate::commands;
-use crate::curl_import::parse_har;
-use crate::{highlight, theme};
-use crate::theme::palette;
+use crate::convert::commands;
+use crate::convert::curl_import::parse_har;
+use crate::ui::{highlight, theme};
+use crate::ui::theme::palette;
 use eframe::egui;
 
 /// Tall enough for a long curl command; beyond this the box scrolls instead of

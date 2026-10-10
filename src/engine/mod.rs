@@ -12,10 +12,10 @@ mod session;
 pub use response::*;
 pub use session::*;
 
-use crate::history::{History, HistoryEntry, Source};
-use crate::http;
-use crate::model::{BodyMode, PersistedState, ResponseData, Variable};
-use crate::request::{headers_to_text, prepare_to_send};
+use crate::store::history::{History, HistoryEntry, Source};
+use crate::domain::http;
+use crate::domain::model::{BodyMode, PersistedState, ResponseData, Variable};
+use crate::domain::request::{headers_to_text, prepare_to_send};
 
 /// Default cap on body text handed to an agent, in characters. Big enough for
 /// typical API responses, small enough not to flood a model's context.
@@ -104,11 +104,11 @@ fn encode_keeping_variables(text: &str) -> String {
     let mut rest = text;
     while let Some(start) = rest.find("{{") {
         let Some(len) = rest[start..].find("}}") else { break };
-        out.push_str(&crate::query::encode_value(&rest[..start]));
+        out.push_str(&crate::domain::query::encode_value(&rest[..start]));
         out.push_str(&rest[start..start + len + 2]);
         rest = &rest[start + len + 2..];
     }
-    out.push_str(&crate::query::encode_value(rest));
+    out.push_str(&crate::domain::query::encode_value(rest));
     out
 }
 
@@ -234,8 +234,8 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
     use std::path::Path;
-    use crate::request::build_request;
-    use crate::secrets::test_support::MemoryStore;
+    use crate::domain::request::build_request;
+    use crate::store::secrets::test_support::MemoryStore;
     use crate::test_server::serve_echo;
 
     fn session(vars: Vec<Variable>) -> Session {

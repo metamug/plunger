@@ -3,8 +3,8 @@
 //! missing, or work without being in a menu.
 
 use super::*;
-use crate::model::RequestTab;
-use crate::theme::ThemeChoice;
+use crate::domain::model::RequestTab;
+use crate::ui::theme::ThemeChoice;
 
 /// One thing a person can ask the window to do.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -232,7 +232,7 @@ fn issue_url() -> String {
         std::env::consts::OS,
         std::env::consts::ARCH
     );
-    format!("{ISSUES_URL}?body={}", crate::query::encode_value(&body))
+    format!("{ISSUES_URL}?body={}", crate::domain::query::encode_value(&body))
 }
 
 impl ApiTesterApp {
@@ -378,7 +378,7 @@ impl ApiTesterApp {
                         }
                         Some(Action::CopyAsMenu) => {
                             ui.menu_button("Copy as", |ui| {
-                                for dialect in crate::commands::Dialect::ALL {
+                                for dialect in crate::convert::commands::Dialect::ALL {
                                     if ui.button(dialect.label()).clicked() {
                                         self.copy_request_as(ui.ctx(), dialect);
                                         ui.close();
@@ -471,7 +471,7 @@ impl ApiTesterApp {
                 ui.hyperlink_to("github.com/metamug/plunger", "https://github.com/metamug/plunger");
                 ui.hyperlink_to("Using it with AI agents", AGENTS_DOCS_URL);
                 ui.add_space(6.0);
-                ui.label(egui::RichText::new(format!("Data folder: {}", crate::history::app_data_dir().display())).weak().small());
+                ui.label(egui::RichText::new(format!("Data folder: {}", crate::store::history::app_data_dir().display())).weak().small());
             });
             self.about_open = open;
         }
@@ -533,6 +533,6 @@ mod tests {
     fn the_issue_link_carries_the_version() {
         let url = issue_url();
         assert!(url.starts_with("https://github.com/metamug/plunger/issues/new?body="));
-        assert!(url.contains(&crate::query::encode_value(env!("CARGO_PKG_VERSION"))));
+        assert!(url.contains(&crate::domain::query::encode_value(env!("CARGO_PKG_VERSION"))));
     }
 }

@@ -16,7 +16,7 @@ impl ApiTesterApp {
                 self.saved_entries = entries;
             }
             if let Ok(vars) = h.list_agent_variables() {
-                crate::highlight::set_agent_variable_names(vars.iter().map(|v| v.name.clone()).collect());
+                crate::ui::highlight::set_agent_variable_names(vars.iter().map(|v| v.name.clone()).collect());
                 self.agent_variables = vars;
             }
         }
@@ -24,10 +24,10 @@ impl ApiTesterApp {
     }
 
     /// The agent variables as values a request can use; a secret's value comes from the credential store.
-    pub(super) fn agent_variable_values(&self) -> Vec<crate::model::Variable> {
+    pub(super) fn agent_variable_values(&self) -> Vec<crate::domain::model::Variable> {
         self.agent_variables
             .iter()
-            .map(|v| crate::model::Variable {
+            .map(|v| crate::domain::model::Variable {
                 name: v.name.clone(),
                 value: if v.secret {
                     self.secrets.get(&crate::engine::agent_secret_key(&v.name)).ok().flatten().unwrap_or_default()

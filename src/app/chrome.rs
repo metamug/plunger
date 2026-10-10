@@ -3,9 +3,9 @@
 
 use super::tab::Tab;
 use super::{ApiTesterApp, NOTICE_FOR};
-use crate::icons::{self, Icon};
-use crate::model::Outcome;
-use crate::theme::{self, one_line, palette, ACCENT};
+use crate::ui::icons::{self, Icon};
+use crate::domain::model::Outcome;
+use crate::ui::theme::{self, one_line, palette, ACCENT};
 use eframe::egui;
 
 const TAB_HEIGHT: f32 = 32.0;

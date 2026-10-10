@@ -3,8 +3,8 @@
 //! exactly which files would change before anything is written.
 
 use super::ApiTesterApp;
-use crate::install::{self, Agent, Change, Options, Scope, Via};
-use crate::theme::palette;
+use crate::headless::install::{self, Agent, Change, Options, Scope, Via};
+use crate::ui::theme::palette;
 use eframe::egui;
 use std::path::PathBuf;
 

@@ -21,13 +21,13 @@ flowchart TB
     subgraph exe["plunger.exe (one binary)"]
         main["main.rs<br/>no args: window<br/>args: cli::run"]
         gui["GUI<br/>app/ (egui)"]
-        cli["cli.rs"]
-        mcp["mcp.rs<br/>(rmcp, stdio)"]
+        cli["headless/cli.rs"]
+        mcp["headless/mcp.rs<br/>(rmcp, stdio)"]
         agent["agent.rs<br/>operations for agents"]
         engine["engine.rs<br/>session, send, scrubber,<br/>agent-shaped results"]
         core["Core<br/>request, vars, http, model,<br/>redact, query, curl_import/export, json_view"]
-        hist["history.rs<br/>SQLite"]
-        sec["secrets.rs<br/>OS credential store"]
+        hist["store/history.rs<br/>SQLite"]
+        sec["store/secrets.rs<br/>OS credential store"]
     end
     main --> gui
     main --> cli
@@ -77,21 +77,21 @@ Details that matter:
 | | `app/tab.rs` | `Tab`: one open request, its response, its in-flight send, and its layout (`Pane`, dragged height). |
 | | `app/chrome.rs`, `sidebar.rs`, `command_bar.rs`, `response_panel.rs`, `response_search.rs`, `request/*` | Menu bar, status bar and tab strip; Saved and History lists; the URL bar; the response view and its search; the Params, Auth, Headers, Body, Variables and Options editors. |
 | | `app/import_window.rs`, `export_window.rs`, `agents_window.rs` | The import, export and "Set up AI agents" dialogs. |
-| | `theme.rs`, `icons.rs`, `json_view.rs`, `highlight.rs`, `timefmt.rs` | Palettes and styling; hand-painted vector icons; JSON tree and syntax colouring; local time. |
-| Core | `model.rs` | `PersistedState` (a request form), `ResponseData`, `ParsedRequest`, `Variable`. |
-| | `request.rs` | Builds the request that will be sent from the form: variable substitution, body assembly, headers. `prepare_to_send` is the one "press Send" step. |
-| | `vars.rs` | The `{{variable}}` resolver; built-ins `$uuid`, `$timestamp`, `$randomInt`; refuses undefined names. |
-| | `http.rs` | Sends the request (blocking reqwest) and turns the reply into `ResponseData`. |
-| | `query.rs` | URL and Params table in two-way sync, and percent-encoding. |
-| | `curl_import.rs`, `curl_export.rs`, `commands/*` | curl, HAR, Windows cmd and PowerShell to a request, and a request back to each. |
-| | `redact.rs`, `filename.rs`, `outline.rs` | Which headers and parameters are credentials; the file name suggested when saving a response; the outline of a big JSON body. |
-| Storage | `history.rs` | SQLite: history, saved requests, agent variables, workflows. |
-| | `secrets.rs` | Remembered secrets in the OS credential store. |
+| | `ui/theme.rs`, `ui/icons.rs`, `ui/json_view.rs`, `ui/highlight.rs`, `domain/timefmt.rs` | Palettes and styling; hand-painted vector icons; JSON tree and syntax colouring; local time. |
+| Core | `domain/model.rs` | `PersistedState` (a request form), `ResponseData`, `ParsedRequest`, `Variable`. |
+| | `domain/request.rs` | Builds the request that will be sent from the form: variable substitution, body assembly, headers. `prepare_to_send` is the one "press Send" step. |
+| | `domain/vars.rs` | The `{{variable}}` resolver; built-ins `$uuid`, `$timestamp`, `$randomInt`; refuses undefined names. |
+| | `domain/http.rs` | Sends the request (blocking reqwest) and turns the reply into `ResponseData`. |
+| | `domain/query.rs` | URL and Params table in two-way sync, and percent-encoding. |
+| | `convert/curl_import.rs`, `convert/curl_export.rs`, `convert/commands/*` | curl, HAR, Windows cmd and PowerShell to a request, and a request back to each. |
+| | `domain/redact.rs`, `domain/filename.rs`, `domain/outline.rs` | Which headers and parameters are credentials; the file name suggested when saving a response; the outline of a big JSON body. |
+| Storage | `store/history.rs` | SQLite: history, saved requests, agent variables, workflows. |
+| | `store/secrets.rs` | Remembered secrets in the OS credential store. |
 | Agents | `engine/` | `session.rs` (variables, remembered secrets), `mod.rs` (send with history), `response.rs` (the `Scrubber` and agent-shaped results). |
 | | `agent/` | `mod.rs` (send), `requests.rs` (saved requests, history, curl), `variables.rs`: the operations shared by the CLI and MCP. |
 | | `workflow/` | Saved sequences of requests, and pulling a value out of a response (`extract.rs`). |
-| | `install.rs`, `crates/mcp-install` | `plunger install`: Plunger's server and instructions on top of the `mcp-install` crate, which holds each AI tool's config files and the careful writing (merge, backup, markers, dry run). |
-| | `cli.rs`, `curl_cli.rs`, `mcp.rs`, `mcp_content.rs` | Argument parsing, output and exit codes; `plunger curl`; MCP tool definitions; MCP resources and prompts. |
+| | `headless/install.rs`, `crates/mcp-install` | `plunger install`: Plunger's server and instructions on top of the `mcp-install` crate, which holds each AI tool's config files and the careful writing (merge, backup, markers, dry run). |
+| | `headless/cli.rs`, `headless/curl_cli.rs`, `headless/mcp.rs`, `headless/mcp_content.rs` | Argument parsing, output and exit codes; `plunger curl`; MCP tool definitions; MCP resources and prompts. |
 
 Dependencies only point downward: the GUI and the agent layer use the core; the core knows nothing about either.
 
@@ -157,13 +157,13 @@ The data folder is `%APPDATA%\Plunger\data`, or `PLUNGER_DATA_DIR` if set.
 plunger send / import / …      plunger mcp
         │                          │
         └───────┐      ┌───────────┘
-             cli.rs  mcp.rs
+             headless/cli.rs  headless/mcp.rs
                 └──┬──┘
                 agent.rs        six operations (send, import, list saved, history, variables, export curl)
                    │
                 engine.rs       Session · send · Scrubber · AgentResponse
                    │
-      request.rs / http.rs / history.rs / secrets.rs   (the same code the window uses)
+      domain/request.rs / domain/http.rs / store/history.rs / store/secrets.rs   (the same code the window uses)
 ```
 
 - **Session.** An agent inherits the user's variables and options by reading the window's `app.ron`, and remembered secrets from the credential store. This is why a variable edited in the window can take up to about 30 seconds to reach an agent.

@@ -3,9 +3,9 @@
 //! saves it.
 
 use super::{ApiTesterApp, Rename};
-use crate::history::{HistoryEntry, Source};
-use crate::icons::{self, Icon};
-use crate::theme::{self, one_line, palette, status_dot_color};
+use crate::store::history::{HistoryEntry, Source};
+use crate::ui::icons::{self, Icon};
+use crate::ui::theme::{self, one_line, palette, status_dot_color};
 use eframe::egui;
 
 const ONE_LINE: f32 = 30.0;
@@ -21,7 +21,7 @@ enum RowAction {
 
 /// A timestamp for a tooltip: in the user's time zone when the system says what it is, else UTC.
 fn friendly_timestamp(ts: &str) -> String {
-    let local = crate::timefmt::full(ts);
+    let local = crate::domain::timefmt::full(ts);
     if local != ts {
         return local;
     }

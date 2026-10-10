@@ -3,7 +3,7 @@
 //! `-Headers @{...}` table, and a `$session` that carries the user agent and cookies).
 
 use super::{PartBody, Parts};
-use crate::model::{FieldKind, FormField, ParsedRequest};
+use crate::domain::model::{FieldKind, FormField, ParsedRequest};
 
 /// A single-quoted PowerShell string: nothing inside is expanded, `'` is doubled.
 fn quote(s: &str) -> String {
@@ -353,7 +353,7 @@ pub fn parse(src: &str) -> Result<ParsedRequest, String> {
                         body = match (value, table) {
                             (Some(text), _) => Some(text),
                             (None, Some(entries)) => Some(
-                                entries.iter().map(|(k, v, _)| format!("{}={}", crate::query::encode_value(k), crate::query::encode_value(v))).collect::<Vec<_>>().join("&"),
+                                entries.iter().map(|(k, v, _)| format!("{}={}", crate::domain::query::encode_value(k), crate::domain::query::encode_value(v))).collect::<Vec<_>>().join("&"),
                             ),
                             _ => None,
                         }
@@ -405,7 +405,7 @@ pub fn parse(src: &str) -> Result<ParsedRequest, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::PersistedState;
+    use crate::domain::model::PersistedState;
 
     #[test]
     fn chromes_copy_as_powershell_is_read_back() {
@@ -465,7 +465,7 @@ Invoke-WebRequest -UseBasicParsing -Uri \"https://example.com/api/items?x=1\" `\
             method: "POST".into(),
             url: "https://h/orders".into(),
             headers_text: "Authorization: Bearer {{token}}\nContent-Type: application/json\nUser-Agent: agent/1".into(),
-            body_mode: crate::model::BodyMode::Json,
+            body_mode: crate::domain::model::BodyMode::Json,
             json_body: "{\"a\":\"it's\"}".into(),
             ..Default::default()
         };

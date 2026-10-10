@@ -1,7 +1,7 @@
 use super::copy_button;
 use super::ApiTesterApp;
-use crate::icons::{self, Icon};
-use crate::theme::{self, palette};
+use crate::ui::icons::{self, Icon};
+use crate::ui::theme::{self, palette};
 use eframe::egui;
 
 pub(super) fn url_field_id(tab_id: u64) -> egui::Id {
@@ -112,7 +112,7 @@ impl ApiTesterApp {
                         widgets.hovered.bg_stroke = egui::Stroke::NONE;
                         ui.add(
                             theme::field(&mut tab.state.url)
-                                .layouter(&mut crate::highlight::variable_layouter(&tab.state.variables))
+                                .layouter(&mut crate::ui::highlight::variable_layouter(&tab.state.variables))
                                 .id(url_field_id(tab.id))
                                 .desired_width(ui.available_width() - icons::SIZE - theme::FIELD_MARGIN_X)
                                 .hint_text("https://api.example.com/resource  or  localhost:3000/api")

@@ -6,7 +6,7 @@
 //! Icons are painted with lines rather than font glyphs, so they can't turn
 //! into missing-glyph boxes and they follow the widget's hover/active colors.
 
-use crate::theme::palette;
+use crate::ui::theme::palette;
 use eframe::egui;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,7 +48,7 @@ pub const SIZE: f32 = 28.0;
 /// Width to leave at the end of a row for `n` icon buttons, including the
 /// spacing before each and the padding a text field adds outside its width.
 pub fn trailing_room(ui: &egui::Ui, n: usize) -> f32 {
-    n as f32 * (SIZE + ui.spacing().item_spacing.x) + crate::theme::FIELD_MARGIN_X + 2.0
+    n as f32 * (SIZE + ui.spacing().item_spacing.x) + crate::ui::theme::FIELD_MARGIN_X + 2.0
 }
 
 /// A square, borderless icon button that lights up on hover.

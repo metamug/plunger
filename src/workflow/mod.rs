@@ -7,8 +7,8 @@ pub(crate) mod extract;
 
 use crate::agent::{self, SendFailure, SendParams};
 use crate::engine::{AgentResponse, VariableInfo};
-use crate::history::Source;
-use crate::model::ResponseData;
+use crate::store::history::Source;
+use crate::domain::model::ResponseData;
 use rmcp::schemars::{self, JsonSchema};
 use serde::{Deserialize, Serialize};
 
@@ -227,7 +227,7 @@ fn record(result: &WorkflowResult, started_at: &str, source: Source) {
     let stored: Vec<StoredStep> = result.steps.iter().map(StoredStep::from).collect();
     let Ok(steps) = serde_json::to_string(&stored) else { return };
     if let Ok(history) = agent::open_history() {
-        let _ = history.record_workflow_run(&crate::history::NewWorkflowRun {
+        let _ = history.record_workflow_run(&crate::store::history::NewWorkflowRun {
             workflow: &result.workflow,
             started_at,
             source,

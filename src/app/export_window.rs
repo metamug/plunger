@@ -2,8 +2,8 @@
 //! the Windows command prompt, or PowerShell. The command is shown highlighted.
 
 use super::ApiTesterApp;
-use crate::commands::{self, Dialect};
-use crate::{highlight, theme};
+use crate::convert::commands::{self, Dialect};
+use crate::ui::{highlight, theme};
 use eframe::egui;
 
 /// Tall enough for a long command; beyond this the box scrolls.

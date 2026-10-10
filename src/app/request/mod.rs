@@ -10,10 +10,10 @@ mod suggest;
 
 use crate::app::tab::Pane;
 use crate::app::ApiTesterApp;
-use crate::icons;
-use crate::model::{BodyMode, PersistedState, RequestTab};
-use crate::request::parse_headers;
-use crate::theme::compact_card;
+use crate::ui::icons;
+use crate::domain::model::{BodyMode, PersistedState, RequestTab};
+use crate::domain::request::parse_headers;
+use crate::ui::theme::compact_card;
 use eframe::egui;
 
 /// The request panel is as tall as its content and grows until the response would be squeezed below

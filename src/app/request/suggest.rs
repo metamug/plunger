@@ -1,7 +1,7 @@
 //! Clickable suggestion chips under a text field: header names, content types,
 //! and `{{variables}}`. Picking one fills the field.
 
-use crate::model::Variable;
+use crate::domain::model::Variable;
 use eframe::egui::{self, text::{CCursor, CCursorRange}};
 
 const MAX_CHIPS: usize = 6;

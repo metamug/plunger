@@ -1,9 +1,9 @@
 //! Tests that draw the whole window headless and drive it like a user would.
 
 use super::*;
-use crate::model::{BodyMode, FieldKind, FormField, KeyValue, Outcome, RequestTab, ResponseData, ResponseTab, Variable};
-use crate::request::build_request;
-use crate::secrets::test_support::MemoryStore;
+use crate::domain::model::{BodyMode, FieldKind, FormField, KeyValue, Outcome, RequestTab, ResponseData, ResponseTab, Variable};
+use crate::domain::request::build_request;
+use crate::store::secrets::test_support::MemoryStore;
 
 fn app(state: PersistedState) -> ApiTesterApp {
     ApiTesterApp::new(state, Some(History::in_memory()), Box::new(MemoryStore::default()))
@@ -259,7 +259,7 @@ fn a_dragged_divider_and_a_history_note_draw_and_double_click_resets() {
         a.tab_mut().request_height = height;
         a.tab_mut().outcome = Outcome::Empty;
         draw(&mut a);
-        a.tab_mut().opened_from = Some(HistoryMeta { created_at: "2026-10-09T06:11:03Z".into(), status: Some(200), elapsed_ms: Some(7), source: crate::history::Source::Mcp });
+        a.tab_mut().opened_from = Some(HistoryMeta { created_at: "2026-10-09T06:11:03Z".into(), status: Some(200), elapsed_ms: Some(7), source: crate::store::history::Source::Mcp });
         draw(&mut a);
         a.tab_mut().opened_from = None;
         a.tab_mut().outcome = Outcome::Response(Box::new(response("{\"a\": 1}", true, false)));
@@ -343,7 +343,7 @@ fn old_saved_settings_without_zoom_or_sidebar_load_with_defaults() {
 #[test]
 fn workflows_are_listed_with_their_last_run_and_open_in_a_window() {
     use super::actions::Action;
-    use crate::history::{NewWorkflowRun, Source};
+    use crate::store::history::{NewWorkflowRun, Source};
     let mut a = app(PersistedState::default());
     let ctx = egui::Context::default();
 
@@ -411,7 +411,7 @@ fn the_agents_dialog_draws_in_both_scopes_without_writing_anything() {
     a.open_agents_dialog();
     draw(&mut a);
     let dialog = a.agents_dialog.as_mut().unwrap();
-    dialog.scope = crate::install::Scope::Project;
+    dialog.scope = crate::headless::install::Scope::Project;
     dialog.plan();
     draw(&mut a);
     assert!(a.agents_dialog.is_some());
@@ -704,7 +704,7 @@ fn imported_requests_open_in_a_tab_and_the_dialogs_draw() {
         *text = format!("curl 'https://h/x?q=1' {}", "-H 'X-Long: aaaaaaaaaaaaaaaaaaaa' ".repeat(80));
     }
     draw(&mut a);
-    a.open_parsed(crate::curl_import::parse_curl("curl https://h/x?q=1").unwrap());
+    a.open_parsed(crate::convert::curl_import::parse_curl("curl https://h/x?q=1").unwrap());
     assert_eq!(a.tabs.len(), 2);
     assert_eq!(a.tab().state.params[0].key, "q");
     assert!(matches!(a.import, ImportDialog::Closed));
@@ -737,13 +737,13 @@ fn requests_an_agent_sends_show_up_in_the_window_on_their_own() {
     // A separate connection, as `plunger mcp` would have.
     let agent = History::open_at(&path);
     agent
-        .insert_from(&PersistedState { url: "http://agent/x".into(), ..Default::default() }, Some(200), Some(3), crate::history::Source::Mcp)
+        .insert_from(&PersistedState { url: "http://agent/x".into(), ..Default::default() }, Some(200), Some(3), crate::store::history::Source::Mcp)
         .unwrap();
 
     a.last_db_poll = Instant::now() - DB_POLL * 2;
     a.poll_database(&egui::Context::default());
     assert_eq!(a.history_entries.len(), 1);
-    assert_eq!(a.history_entries[0].source, crate::history::Source::Mcp);
+    assert_eq!(a.history_entries[0].source, crate::store::history::Source::Mcp);
     draw(&mut a); // the agent tag renders
 }
 

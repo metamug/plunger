@@ -7,21 +7,33 @@ This is the short version. [design.md](../design.md) has the reasons behind each
 `plunger` is a single executable. `main.rs` looks at the arguments and starts one of:
 
 - **the window** (no arguments): egui, in `src/app/`;
-- **the command line** (`plunger send`, `plunger curl`, `plunger workflow`, ...): `src/cli.rs`, `src/curl_cli.rs`;
-- **an MCP server** (`plunger mcp`): `src/mcp.rs`.
+- **the command line** (`plunger send`, `plunger curl`, `plunger workflow`, ...): `headless/cli.rs`, `headless/curl_cli.rs`;
+- **an MCP server** (`plunger mcp`): `headless/mcp.rs`.
 
 All three send requests through the same path and write to the same SQLite database, so what an agent does shows up in the window.
+
+## Source layout
+
+| Folder | What is in it | Knows about |
+|---|---|---|
+| `domain/` | The request itself: form state (`model`), building (`request`) and sending (`http`), `{{variables}}`, the query string, redaction, outlines, file names, time formatting | nothing else in the program |
+| `store/` | The SQLite history (requests, saved requests, workflows and their runs) and the opt-in secret store | `domain` |
+| `convert/` | curl, cmd and PowerShell commands and HAR, in and out | `domain` |
+| `engine/`, `agent/`, `workflow/` | What an agent gets: sending with secrets masked, the tool logic, ordered steps with `extract` | `domain`, `store` |
+| `headless/` | The ways in without a window: the CLI, `plunger curl`, the MCP server, `plunger install` | everything above |
+| `ui/` | Drawing helpers: theme, icons, highlighting, the JSON tree, fallback fonts | `domain` |
+| `app/` | The window: tabs, panels, menus and actions, sidebar, workflows window | everything above |
 
 ## The path of a request
 
 ```
 form or agent input
       |
- request.rs   prepare_to_send: {{variables}} filled in, body built, undefined names refused
+ domain/request.rs   prepare_to_send: {{variables}} filled in, body built, undefined names refused
       |
-  http.rs     blocking reqwest, returns ResponseData
+  domain/http.rs     blocking reqwest, returns ResponseData
       |
- history.rs   one row per send (credentials blanked, placeholders kept)
+ store/history.rs   one row per send (credentials blanked, placeholders kept)
       |
  engine/      for agents only: secrets masked (Scrubber), body cut or outlined, select / extract applied
 ```
@@ -30,16 +42,16 @@ form or agent input
 
 | You want to change | Look in |
 |---|---|
-| How a request is built or sent | `request.rs`, `http.rs`, `vars.rs`, `query.rs` |
+| How a request is built or sent | `domain/request.rs`, `domain/http.rs`, `domain/vars.rs`, `domain/query.rs` |
 | Something in the window | `src/app/`; each editor tab is a file in `src/app/request/` |
 | A menu entry or a keyboard shortcut | `app/actions.rs`: one table of actions drives the menus, the keyboard and Help > Keyboard shortcuts |
 | Layout of request and response | `app/request/mod.rs` (heights), `app/mod.rs` (`render_divider`), `app/tab.rs` (`Pane`) |
-| What an agent gets back | `engine/response.rs` (`AgentResponse`, `Scrubber`), `outline.rs`, `workflow/extract.rs` (`select`) |
-| An MCP tool | `mcp.rs`; its logic is in `agent/` |
-| A CLI command | `cli.rs` (help text is in `command_help`) |
-| curl, PowerShell or cmd import and export | `curl_import.rs`, `curl_export.rs`, `commands/` |
-| Secrets | `secrets.rs` (OS credential store), `redact.rs`, `engine/response.rs` (`Scrubber`) |
-| Setting up AI tools | `crates/mcp-install` (the tools, their files and the safe writing, a reusable crate), `install.rs` (Plunger's server and instructions), `app/agents_window.rs` |
+| What an agent gets back | `engine/response.rs` (`AgentResponse`, `Scrubber`), `domain/outline.rs`, `workflow/extract.rs` (`select`) |
+| An MCP tool | `headless/mcp.rs`; its logic is in `agent/` |
+| A CLI command | `headless/cli.rs` (help text is in `command_help`) |
+| curl, PowerShell or cmd import and export | `convert/curl_import.rs`, `convert/curl_export.rs`, `convert/commands/` |
+| Secrets | `store/secrets.rs` (OS credential store), `domain/redact.rs`, `engine/response.rs` (`Scrubber`) |
+| Setting up AI tools | `crates/mcp-install` (the tools, their files and the safe writing, a reusable crate), `headless/install.rs` (Plunger's server and instructions), `app/agents_window.rs` |
 
 ## Rules that keep it safe
 

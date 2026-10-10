@@ -50,12 +50,12 @@ pub fn set_variable(name: &str, value: &str, secret: Option<bool>, source: Sourc
     let session = Session::load();
     let history = open_history()?;
     let window: Vec<String> = session.window_variables().iter().map(|v| v.name.trim().to_string()).collect();
-    set_variable_in(&history, &crate::secrets::OsStore::new(), &window, name, value, secret, source)
+    set_variable_in(&history, &crate::store::secrets::OsStore::new(), &window, name, value, secret, source)
 }
 
 pub(super) fn set_variable_in(
     history: &History,
-    store: &dyn crate::secrets::SecretStore,
+    store: &dyn crate::store::secrets::SecretStore,
     window_names: &[String],
     name: &str,
     value: &str,
@@ -101,12 +101,12 @@ pub fn delete_variable(name: &str) -> Result<(), String> {
     let session = Session::load();
     let history = open_history()?;
     let window: Vec<String> = session.window_variables().iter().map(|v| v.name.trim().to_string()).collect();
-    delete_variable_in(&history, &crate::secrets::OsStore::new(), &window, name)
+    delete_variable_in(&history, &crate::store::secrets::OsStore::new(), &window, name)
 }
 
 pub(super) fn delete_variable_in(
     history: &History,
-    store: &dyn crate::secrets::SecretStore,
+    store: &dyn crate::store::secrets::SecretStore,
     window_names: &[String],
     name: &str,
 ) -> Result<(), String> {
@@ -124,10 +124,10 @@ pub(super) fn delete_variable_in(
 /// Removes every variable agents set; returns how many.
 pub fn clear_variables() -> Result<usize, String> {
     let history = open_history()?;
-    let store = crate::secrets::OsStore::new();
+    let store = crate::store::secrets::OsStore::new();
     let names = history.clear_agent_variables().map_err(|e| e.to_string())?;
     for name in &names {
-        let _ = crate::secrets::SecretStore::delete(&store, &engine::agent_secret_key(name));
+        let _ = crate::store::secrets::SecretStore::delete(&store, &engine::agent_secret_key(name));
     }
     Ok(names.len())
 }

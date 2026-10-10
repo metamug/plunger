@@ -2,8 +2,8 @@
 //! that only speaks curl. `{{variables}}` are left as placeholders, never
 //! resolved, so an exported command can't carry a secret.
 
-use crate::model::{BodyMode, FieldKind, PersistedState};
-use crate::request::parse_headers;
+use crate::domain::model::{BodyMode, FieldKind, PersistedState};
+use crate::domain::request::parse_headers;
 
 /// POSIX-shell single quoting: `it's` -> `'it'\''s'`.
 fn quote(s: &str) -> String {
@@ -64,8 +64,8 @@ pub fn to_curl(state: &PersistedState) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::curl_import::parse_curl;
-    use crate::model::FormField;
+    use crate::convert::curl_import::parse_curl;
+    use crate::domain::model::FormField;
 
     #[test]
     fn a_json_post_round_trips_through_the_curl_importer() {

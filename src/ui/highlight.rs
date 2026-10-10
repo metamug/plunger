@@ -2,8 +2,8 @@
 //! fields that hold `{{variables}}`, and request bodies. Hand-written and small on purpose (no
 //! highlighting engine), each function returns a `LayoutJob` that draws exactly the text it was given.
 
-use crate::model::Variable;
-use crate::theme::palette;
+use crate::domain::model::Variable;
+use crate::ui::theme::palette;
 use eframe::egui::{self, text::LayoutJob, Color32, FontId, TextFormat};
 use std::sync::Arc;
 
@@ -258,7 +258,7 @@ pub fn body(text: &str) -> LayoutJob {
     }
     let trimmed = text.trim_start();
     if trimmed.starts_with('{') || trimmed.starts_with('[') {
-        crate::json_view::highlight_json(text)
+        crate::ui::json_view::highlight_json(text)
     } else if trimmed.starts_with('<') {
         markup(text)
     } else if !trimmed.contains('\n') && trimmed.contains('=') && !trimmed.contains(' ') {

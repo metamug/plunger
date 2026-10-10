@@ -1,10 +1,10 @@
 use super::copy_button;
 use super::response_search;
-use crate::highlight::markup_segments;
+use crate::ui::highlight::markup_segments;
 use super::tab::Tab;
-use crate::model::{Outcome, ResponseTab};
-use crate::icons::{self, Icon};
-use crate::theme::{self, palette, status_badge};
+use crate::domain::model::{Outcome, ResponseTab};
+use crate::ui::icons::{self, Icon};
+use crate::ui::theme::{self, palette, status_badge};
 use eframe::egui;
 use egui_json_tree::render::DefaultRender;
 use egui_json_tree::{DefaultExpand, JsonTree};
@@ -46,15 +46,15 @@ impl Tab {
                                 if let Some(status) = meta.status {
                                     status_badge(ui, status as u16, "");
                                 } else {
-                                    ui.label(egui::RichText::new("no response").color(crate::theme::palette().error));
+                                    ui.label(egui::RichText::new("no response").color(crate::ui::theme::palette().error));
                                 }
                                 let by = match meta.source {
-                                    crate::history::Source::Gui => "you",
-                                    crate::history::Source::Cli => "the CLI",
-                                    crate::history::Source::Mcp => "an agent (MCP)",
+                                    crate::store::history::Source::Gui => "you",
+                                    crate::store::history::Source::Cli => "the CLI",
+                                    crate::store::history::Source::Mcp => "an agent (MCP)",
                                 };
                                 let time = meta.elapsed_ms.map(|ms| format!(" · {ms} ms")).unwrap_or_default();
-                                ui.label(egui::RichText::new(format!("Sent by {by} {}{time}", crate::timefmt::full(&meta.created_at))).weak());
+                                ui.label(egui::RichText::new(format!("Sent by {by} {}{time}", crate::domain::timefmt::full(&meta.created_at))).weak());
                             });
                             ui.label(egui::RichText::new("The response is not stored. Ctrl+Enter sends it again").weak().small());
                         } else {
@@ -76,7 +76,7 @@ impl Tab {
         let scan_id = egui::Id::new(("font-scan", self.id));
         let signature = (resp.size_bytes, resp.status);
         if ui.ctx().data(|d| d.get_temp::<(usize, u16)>(scan_id)) != Some(signature) {
-            crate::fallback_fonts::ensure(ui.ctx(), &resp.body);
+            crate::ui::fallback_fonts::ensure(ui.ctx(), &resp.body);
             ui.ctx().data_mut(|d| d.insert_temp(scan_id, signature));
         }
 
@@ -88,7 +88,7 @@ impl Tab {
             ui.selectable_value(&mut self.response_tab, ResponseTab::Headers, headers_label);
             ui.add_space(8.0);
             status_badge(ui, resp.status, &resp.status_text);
-            let clock = crate::timefmt::clock(&resp.sent_at);
+            let clock = crate::domain::timefmt::clock(&resp.sent_at);
             let summary = if clock.is_empty() {
                 format!("{} ms · {}", resp.elapsed_ms, format_bytes(resp.size_bytes))
             } else {
@@ -109,7 +109,7 @@ impl Tab {
                     self.pane = if expanded { super::tab::Pane::Both } else { super::tab::Pane::ResponseExpanded };
                 }
                 if icons::button(ui, Icon::Download, "Save response body to a file").clicked() {
-                    let name = crate::filename::suggested(&self.state.url, &resp.headers, resp.json_value.is_some(), resp.binary.is_some());
+                    let name = crate::domain::filename::suggested(&self.state.url, &resp.headers, resp.json_value.is_some(), resp.binary.is_some());
                     if let Some(path) = rfd::FileDialog::new().set_file_name(name).save_file() {
                         let bytes = resp.binary.as_deref().unwrap_or(resp.body.as_bytes());
                         self.save_error = std::fs::write(&path, bytes)
@@ -303,7 +303,7 @@ impl Tab {
                                 }
                                 response.context_menu(|ui| {
                                     if ui.button("Copy path").clicked() {
-                                        ui.ctx().copy_text(crate::json_view::json_path(value, &pointer));
+                                        ui.ctx().copy_text(crate::ui::json_view::json_path(value, &pointer));
                                         ui.close();
                                     }
                                     if ui.button("Copy value").clicked() {
@@ -391,7 +391,7 @@ impl Tab {
                             // building the colours never costs more than drawing the text.
                             let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
                                 let text = text.as_str();
-                                let mut job = crate::highlight::body(text);
+                                let mut job = crate::ui::highlight::body(text);
                                 job.wrap.max_width = wrap_width;
                                 ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
                             };
@@ -425,7 +425,7 @@ impl Tab {
 }
 
 /// What the time label shows on hover: where the time went and what was sent and received.
-fn timing_details(ui: &mut egui::Ui, resp: &crate::model::ResponseData) {
+fn timing_details(ui: &mut egui::Ui, resp: &crate::domain::model::ResponseData) {
     egui::Grid::new("timing-details").num_columns(2).spacing([16.0, 2.0]).show(ui, |ui| {
         let row = |ui: &mut egui::Ui, label: &str, value: String| {
             ui.label(egui::RichText::new(label).weak());
@@ -433,7 +433,7 @@ fn timing_details(ui: &mut egui::Ui, resp: &crate::model::ResponseData) {
             ui.end_row();
         };
         if !resp.sent_at.is_empty() {
-            row(ui, "Sent at", crate::timefmt::full(&resp.sent_at));
+            row(ui, "Sent at", crate::domain::timefmt::full(&resp.sent_at));
         }
         row(ui, "Waiting (TTFB)", format!("{} ms", resp.ttfb_ms));
         row(ui, "Download", format!("{} ms", resp.elapsed_ms.saturating_sub(resp.ttfb_ms)));
@@ -567,7 +567,7 @@ pub(super) fn format_bytes(n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::{format_bytes, format_request_bytes, layout_job, pretty_markup};
-    use crate::highlight::markup_segments;
+    use crate::ui::highlight::markup_segments;
     use crate::app::response_search::text_matches;
 
     fn rendered(job: &eframe::egui::text::LayoutJob) -> String {

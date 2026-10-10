@@ -2,7 +2,7 @@
 //! the pane's own colour, lit from the top left. It is only a hint of the
 //! artwork, so it stays quiet next to the text under it.
 
-use crate::theme::palette;
+use crate::ui::theme::palette;
 use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions};
 
 /// White-on-transparent silhouette, 144x204 raw RGBA, made by

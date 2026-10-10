@@ -2,7 +2,7 @@
 //! `header:X-Request-Id` or `status`. The value is read from the response exactly as the server
 //! sent it, before any secret is masked, so a token can be passed on without an agent seeing it.
 
-use crate::model::ResponseData;
+use crate::domain::model::ResponseData;
 use serde_json::Value;
 
 /// The value `from` points at in `response`, as text.

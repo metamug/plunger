@@ -5,8 +5,8 @@
 mod cmd;
 mod powershell;
 
-use crate::model::{BodyMode, FieldKind, ParsedRequest, PersistedState};
-use crate::request::parse_headers;
+use crate::domain::model::{BodyMode, FieldKind, ParsedRequest, PersistedState};
+use crate::domain::request::parse_headers;
 
 /// A command syntax Plunger can write and read.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -95,7 +95,7 @@ impl Parts {
 /// The request as a command in `dialect`.
 pub fn export(state: &PersistedState, dialect: Dialect) -> String {
     match dialect {
-        Dialect::CurlBash => crate::curl_export::to_curl(state),
+        Dialect::CurlBash => crate::convert::curl_export::to_curl(state),
         Dialect::CurlCmd => cmd::export(&Parts::from_state(state)),
         Dialect::PowerShellRest => powershell::export(&Parts::from_state(state), "Invoke-RestMethod"),
         Dialect::PowerShellWeb => powershell::export(&Parts::from_state(state), "Invoke-WebRequest"),
@@ -119,8 +119,8 @@ pub fn detect(input: &str) -> Dialect {
 /// Reads a pasted command in any supported dialect into a request.
 pub fn import(input: &str) -> Result<ParsedRequest, String> {
     match detect(input) {
-        Dialect::CurlBash => crate::curl_import::parse_curl(input),
-        Dialect::CurlCmd => crate::curl_import::parse_curl(&cmd::normalize(input)),
+        Dialect::CurlBash => crate::convert::curl_import::parse_curl(input),
+        Dialect::CurlCmd => crate::convert::curl_import::parse_curl(&cmd::normalize(input)),
         Dialect::PowerShellRest | Dialect::PowerShellWeb => powershell::parse(input),
     }
 }
@@ -128,7 +128,7 @@ pub fn import(input: &str) -> Result<ParsedRequest, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::FormField;
+    use crate::domain::model::FormField;
 
     fn state(method: &str, url: &str, headers: &str, mode: BodyMode, body: &str) -> PersistedState {
         let mut s = PersistedState { method: method.into(), url: url.into(), headers_text: headers.into(), body_mode: mode, ..Default::default() };
@@ -177,7 +177,7 @@ mod tests {
             for s in sample_states() {
                 let text = export(&s, dialect);
                 let back = import(&text).unwrap_or_else(|e| panic!("{dialect:?}: {e}\n{text}"));
-                let original = crate::curl_import::parse_curl(&export(&s, Dialect::CurlBash)).unwrap();
+                let original = crate::convert::curl_import::parse_curl(&export(&s, Dialect::CurlBash)).unwrap();
                 let (m1, u1, h1, b1, f1) = essentials(&original);
                 let (m2, u2, mut h2, b2, f2) = essentials(&back);
                 // PowerShell moves the Content-Type into -ContentType; it must still be there.

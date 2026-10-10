@@ -20,12 +20,12 @@ mod workflows;
 
 pub use tab::SavedTab;
 
-use crate::commands::Dialect;
-use crate::history::{AgentVariable, History, HistoryEntry};
-use crate::icons::{self, Icon};
-use crate::model::{Outcome, ResponseTab, ParsedRequest, PersistedState};
-use crate::secrets::{OsStore, SecretStore, SecretSync};
-use crate::theme::{self, ThemeChoice};
+use crate::convert::commands::Dialect;
+use crate::store::history::{AgentVariable, History, HistoryEntry};
+use crate::ui::icons::{self, Icon};
+use crate::domain::model::{Outcome, ResponseTab, ParsedRequest, PersistedState};
+use crate::store::secrets::{OsStore, SecretStore, SecretSync};
+use crate::ui::theme::{self, ThemeChoice};
 use eframe::egui;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
@@ -358,7 +358,7 @@ impl ApiTesterApp {
             text.push_str(e.name.as_deref().unwrap_or(""));
         }
         self.font_sig = sig;
-        crate::fallback_fonts::ensure(ctx, &text);
+        crate::ui::fallback_fonts::ensure(ctx, &text);
     }
 
     /// The line between the request editor and the response. Drag it to give either more room;

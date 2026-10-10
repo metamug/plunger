@@ -6,8 +6,8 @@
 //! error, 3 sent but no response, 4 --fail and the status was 400 or higher.
 
 use crate::agent::{self, SendFailure, SendParams};
-use crate::history::Source;
-use crate::mcp;
+use crate::store::history::Source;
+use crate::headless::mcp;
 use crate::workflow;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -259,7 +259,7 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
             }
             finish_send(agent::send_request(&opts.params, Source::Cli), opts.fail)
         }
-        "curl" => Ok(crate::curl_cli::run(args.rest())),
+        "curl" => Ok(crate::headless::curl_cli::run(args.rest())),
         "import" => {
             let curl = args.next().ok_or_else(|| usage_error("Give the curl command in quotes"))?;
             let (mut save, mut send, mut opts) = (None, false, SendOptions::default());
@@ -317,7 +317,7 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
             Ok(EXIT_OK)
         }
         "install" => {
-            use crate::install::{self, Agent, Options, Scope, Via};
+            use crate::headless::install::{self, Agent, Options, Scope, Via};
             let (mut names, mut scope, mut dir, mut via) = (Vec::<String>::new(), Scope::Project, None::<String>, None::<Via>);
             let (mut mcp, mut steering, mut dry_run, mut list) = (true, true, false, false);
             while let Some(arg) = args.next() {

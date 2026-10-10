@@ -2,10 +2,10 @@
 //! and the structured shapes the CLI and MCP tools return.
 
 use super::{percent_encode_all, Sent, VariableInfo, MIN_MASKED_LEN};
-use crate::history::HistoryEntry;
-use crate::model::{BodyMode, PersistedState};
-use crate::redact::{is_sensitive_header, redact_url};
-use crate::request::parse_headers;
+use crate::store::history::HistoryEntry;
+use crate::domain::model::{BodyMode, PersistedState};
+use crate::domain::redact::{is_sensitive_header, redact_url};
+use crate::domain::request::parse_headers;
 use rmcp::schemars::{self, JsonSchema};
 use serde::{Deserialize, Serialize};
 
@@ -30,7 +30,7 @@ impl Scrubber {
         // An environment variable that looks like a credential, used by this request.
         for name in variables_used(state) {
             let Some(env_name) = name.strip_prefix("$env:") else { continue };
-            if !crate::redact::is_secret_env_name(env_name) {
+            if !crate::domain::redact::is_secret_env_name(env_name) {
                 continue;
             }
             if let Ok(value) = std::env::var(env_name) {
@@ -44,7 +44,7 @@ impl Scrubber {
         let encoded: Vec<(String, String)> = secrets
             .iter()
             .flat_map(|(name, value)| {
-                [crate::query::encode_value(value), percent_encode_all(value)]
+                [crate::domain::query::encode_value(value), percent_encode_all(value)]
                     .into_iter()
                     .filter(move |e| e != value)
                     .map(move |e| (name.clone(), e))
@@ -65,7 +65,7 @@ impl Scrubber {
         }
         let value = value.trim().to_string();
         let mut secrets = vec![(name.to_string(), value.clone())];
-        for encoded in [crate::query::encode_value(&value), percent_encode_all(&value)] {
+        for encoded in [crate::domain::query::encode_value(&value), percent_encode_all(&value)] {
             if encoded != value {
                 secrets.push((name.to_string(), encoded));
             }
@@ -217,7 +217,7 @@ impl AgentResponse {
             Some(value) if body_chars <= max_body_chars => (Some(scrubber.json(value)), None, None),
             Some(value) => {
                 // Too long to return whole: the shape is worth more than the first part of it.
-                outline = Some(crate::outline::outline(&scrubber.json(value)));
+                outline = Some(crate::domain::outline::outline(&scrubber.json(value)));
                 hint = Some(format!(
                     "The JSON body is {body_chars} characters, so only its outline is returned. Send again with `select` (for example [\"$.data[0].id\", \"$.items[*].name\"]) for the values you need, or a larger `max_body_chars` for the whole body."
                 ));
