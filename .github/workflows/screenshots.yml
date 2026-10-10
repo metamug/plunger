@@ -1,0 +1,66 @@
+name: Screenshots
+
+# Runs the window on a macOS runner and captures what it looks like, so a person without a Mac can see
+# it (issue #41). Start it by hand: Actions > Screenshots > Run workflow. The images are in the run's
+# artifacts. It does not publish anything.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  macos:
+    name: Window on ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS (Apple Silicon), os: macos-14 }
+          - { name: macOS (Intel), os: macos-15-intel }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: A local API to talk to
+        run: |
+          mkdir -p /tmp/www shots
+          echo '{"items":[{"id":1,"name":"Widget 1","price_cents":637},{"id":2,"name":"Widget 2","price_cents":774},{"id":3,"name":"Widget 3","price_cents":911}],"page":1,"total":12}' > /tmp/www/items.json
+          python3 -m http.server 18080 --bind 127.0.0.1 --directory /tmp/www >/dev/null 2>&1 &
+          for _ in $(seq 1 50); do curl -sf http://127.0.0.1:18080/items.json >/dev/null && break; sleep 0.1; done
+
+      - name: Some history, as an agent would leave it
+        env:
+          PLUNGER_DATA_DIR: /tmp/plunger-data
+        run: |
+          ./target/release/plunger vars set base http://127.0.0.1:18080
+          ./target/release/plunger send --url '{{base}}/items.json' --select '$.items[*].name' >/dev/null
+          ./target/release/plunger send --url '{{base}}/items.json' >/dev/null
+          ./target/release/plunger send --url '{{base}}/missing.json' >/dev/null || true
+
+      - name: Open the window and capture it
+        env:
+          PLUNGER_DATA_DIR: /tmp/plunger-data
+        run: |
+          uname -a > shots/system.txt
+          sw_vers >> shots/system.txt
+          system_profiler SPDisplaysDataType 2>&1 | head -30 >> shots/system.txt || true
+          ./target/release/plunger > shots/plunger-stdout.txt 2>&1 &
+          APP=$!
+          sleep 10
+          kill -0 $APP 2>/dev/null && echo "the window is running (pid $APP)" || echo "the window exited"
+          osascript -e 'tell application "System Events" to get the name of every process whose background only is false' > shots/visible-processes.txt 2>&1 || true
+          screencapture -x shots/screen.png || echo "screencapture failed"
+          ls -la shots
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-${{ matrix.os }}
+          path: shots/
+          if-no-files-found: warn
