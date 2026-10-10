@@ -492,12 +492,14 @@ mod tests {
 
     #[test]
     fn shortcuts_read_the_way_people_write_them() {
+        // Formatting needs a frame (it asks which operating system this is), as in the window.
         let ctx = egui::Context::default();
-        let zoom_in = Action::ZoomIn.shortcut().unwrap();
-        let text = shortcut_text(&ctx, &zoom_in);
-        assert!(text.ends_with('=') && !text.contains("Equals"), "{text}");
-        assert!(shortcut_text(&ctx, &Action::ZoomOut.shortcut().unwrap()).ends_with('-'));
-        assert_eq!(shortcut_text(&ctx, &Action::Cancel.shortcut().unwrap()), "Esc");
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            let text = shortcut_text(ctx, &Action::ZoomIn.shortcut().unwrap());
+            assert!(text.ends_with('=') && !text.contains("Equals"), "{text}");
+            assert!(shortcut_text(ctx, &Action::ZoomOut.shortcut().unwrap()).ends_with('-'));
+            assert_eq!(shortcut_text(ctx, &Action::Cancel.shortcut().unwrap()), "Esc");
+        });
     }
 
     #[test]
