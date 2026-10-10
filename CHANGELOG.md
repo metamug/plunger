@@ -4,6 +4,10 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-10
+
+Workflows get a window of their own, the toolkit is current (egui 0.36), and the source is organised by what it does.
+
 ### Changed
 - Dependencies brought up to date: egui and eframe 0.36 (from 0.29), egui_json_tree 0.17, reqwest 0.13, rfd 0.17, ron 0.12, keyring 4 and rmcp 3.5. No change in behaviour. TLS uses ring instead of the aws-lc-rs that reqwest 0.13 selects by default, and keyring stays on 3, which keeps the Windows executable about 1.5 MB smaller (10.0 MB; egui 0.36's new text engine accounts for most of the rest of the growth over 0.5.3's 7.1 MB).
 - The source is grouped by what it does: `domain/`, `store/`, `convert/`, `headless/` and `ui/` next to `app/`, `engine/`, `agent/` and `workflow/` (see docs/architecture.md).
@@ -225,7 +229,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 First public release: send requests with params, headers, JSON, form-urlencoded, raw and multipart bodies; `{{variables}}`; secrets kept in Windows Credential Manager on request; curl and HAR import; local history; TLS-skip for local servers.
 
-[Unreleased]: https://github.com/metamug/plunger/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/metamug/plunger/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/metamug/plunger/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/metamug/plunger/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/metamug/plunger/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/metamug/plunger/compare/v0.5.0...v0.5.1
