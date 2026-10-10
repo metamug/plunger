@@ -2,8 +2,8 @@
 # (metamug/homebrew-tap), with `version` and `sha256` set from a release's Plunger-<version>-macos.dmg
 # and its .sha256 file. See packaging/homebrew/README.md.
 cask "plunger" do
-  version "0.5.3"
-  sha256 "3c697a10d2d2177171fab4afa330b3bb496e1685256e51a6fe73ca3f7b1ed36a"
+  version "0.6.0"
+  sha256 "50430dbb483f348c50d39a7c1a917f8b6a9dd2191995440d0bdb476d6af3cebe"
 
   url "https://github.com/metamug/plunger/releases/download/v#{version}/Plunger-#{version}-macos.dmg"
   name "Plunger"
