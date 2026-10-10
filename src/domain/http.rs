@@ -74,6 +74,11 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
     } else {
         reqwest::redirect::Policy::none()
     };
+    // reqwest is built without a TLS provider (its default one is large); install ring, once.
+    static TLS_PROVIDER: std::sync::Once = std::sync::Once::new();
+    TLS_PROVIDER.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
     let client = reqwest::blocking::Client::builder()
         .timeout(req.timeout)
         .redirect(redirect)

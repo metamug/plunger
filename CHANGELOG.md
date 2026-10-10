@@ -5,7 +5,7 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 ## [Unreleased]
 
 ### Changed
-- Dependencies brought up to date: egui and eframe 0.36 (from 0.29), egui_json_tree 0.17, reqwest 0.13, rfd 0.17, ron 0.12, keyring 4 and rmcp 3.5. No change in behaviour.
+- Dependencies brought up to date: egui and eframe 0.36 (from 0.29), egui_json_tree 0.17, reqwest 0.13, rfd 0.17, ron 0.12, keyring 4 and rmcp 3.5. No change in behaviour. TLS uses ring instead of the aws-lc-rs that reqwest 0.13 selects by default, and keyring stays on 3, which keeps the Windows executable about 1.5 MB smaller (10.0 MB; egui 0.36's new text engine accounts for most of the rest of the growth over 0.5.3's 7.1 MB).
 - The source is grouped by what it does: `domain/`, `store/`, `convert/`, `headless/` and `ui/` next to `app/`, `engine/`, `agent/` and `workflow/` (see docs/architecture.md).
 - The code that registers an MCP server in Claude Code, Cursor, Kiro, Codex, Windsurf, VS Code and Gemini CLI is now its own crate, `mcp-install` (`crates/mcp-install`), usable by any MCP server, with its own tests, README and an example. Plunger uses it for `plunger install`; nothing changes for users. The repository is now a Cargo workspace and CI tests all of it.
 
