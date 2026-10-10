@@ -4,13 +4,17 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
-### Added
-- A macOS app and disk image: each release now has `Plunger-<version>-macos.dmg`, one `Plunger.app` for Apple Silicon and Intel, with an icon, ad-hoc signed, built and checked by the release workflow (it is universal, the signature verifies, the window starts, the image mounts). A Homebrew cask is ready in `packaging/homebrew/`. See `docs/packaging-macos.md`.
+## [0.5.3] - 2026-10-10
 
 ### Added
+
+- A macOS app and disk image: each release now has `Plunger-<version>-macos.dmg`, one `Plunger.app` for Apple Silicon and Intel, with an icon, ad-hoc signed, built and checked by the release workflow (it is universal, the signature verifies, the window starts, the image mounts). A Homebrew cask is ready in `packaging/homebrew/`. See `docs/packaging-macos.md`.
 - Ctrl+1 to Ctrl+6 (Cmd on a Mac) open the Params, Auth, Headers, Body, Variables and Options tabs of the request.
+- A scripted, captioned demo video: Actions > Demo video records the real window on a macOS runner with real keyboard and mouse input and makes an MP4 and a GIF (`scripts/demo/`).
+- A manual Screenshots workflow that runs the window on macOS and uploads a screenshot, so the window can be checked without a Mac.
 
 ### Changed
+
 - The menu bar is now File, Edit, View, Request, Tools and Help, built from one table of actions that also drives the keyboard shortcuts, so a shortcut is always in a menu and shown next to its item (#102, #128, #129):
   - **Edit:** Copy URL, Copy response body, Find in response (Ctrl+F), Go to URL (Ctrl+L).
   - **View:** Theme (moved from Settings), Zoom in, out and reset (Ctrl+=, Ctrl+-, Ctrl+0, remembered), and Hide or show the sidebar (Ctrl+B).
@@ -23,8 +27,10 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 - The response's Headers tab shows how many headers there are.
 - Request and response panels: the request panel is as tall as its content (the body editor no longer scrolls inside it) and grows until the response would be squeezed; it folds away when you send, so the response fills the window, and clicking any request tab brings it back. A two-arrow icon on each panel's header expands it, and shows arrows pointing in on the panel that is expanded. Dragging the divider still sets your own split (double-click resets), and a split you dragged is kept when you send.
 - A body editor is as tall as its text plus a spare line (at least four lines) instead of a fixed block of blank lines the cursor could not enter; an expanded request gives the editor the whole surface.
+- The regular CI now runs the tests, lint and smoke test on macOS too, not only a compile check.
 
 ### Fixed
+
 - MCP: `list_saved_requests` and `get_history` advertised an array as their output schema, which the MCP spec does not allow (strict clients reject it). They now return an object: `{"requests": [...]}` and `{"history": [...]}`. A test checks that every tool's output schema is an object (#97). The command line still prints plain arrays.
 - `extract` and `select` mistakes (an empty or unknown source, a bad variable name, a malformed path) are reported before the request is sent, so a POST is not fired and then fails to extract; `plunger workflow save` checks the same. `plunger history --status banana` is an error, not an empty list.
 - The macOS release builds failed their smoke test because `scripts/smoke-cli.sh` used GNU-only `date +%s%N` and `timeout`; it now works on macOS. The macOS tarballs for 0.5.2 were attached afterwards (the release workflow can attach them to an existing release).
@@ -209,7 +215,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 First public release: send requests with params, headers, JSON, form-urlencoded, raw and multipart bodies; `{{variables}}`; secrets kept in Windows Credential Manager on request; curl and HAR import; local history; TLS-skip for local servers.
 
-[Unreleased]: https://github.com/metamug/plunger/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/metamug/plunger/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/metamug/plunger/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/metamug/plunger/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/metamug/plunger/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/metamug/plunger/compare/v0.4.2...v0.5.0
