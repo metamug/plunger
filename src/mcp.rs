@@ -116,8 +116,9 @@ pub struct RunWorkflowParams {
     pub variables: Option<std::collections::BTreeMap<String, String>>,
 }
 
-/// A tool's structured result must be a JSON object (the MCP spec says so, and strict clients reject
-/// an array), so lists are wrapped.
+/// A tool's structured result is a JSON object, so lists are wrapped. MCP 2025-06-18 and 2025-11-25
+/// require an object (a strict client rejects an array schema); only 2026-07-28 allows other types, and
+/// rmcp advertises them whatever version was negotiated (modelcontextprotocol/rust-sdk#1337).
 #[derive(Serialize, JsonSchema)]
 pub struct SavedRequestsResult {
     /// The saved requests, by name.
