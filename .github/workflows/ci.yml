@@ -55,12 +55,16 @@ jobs:
           path: target/release/plunger
           if-no-files-found: error
 
-  # macOS is not built or tested yet; this only reports whether the code compiles.
-  other-platforms:
-    name: Compile check (macOS, not supported yet)
-    runs-on: macos-latest
-    continue-on-error: true
+  # macOS (Apple Silicon): the same tests and headless smoke test as Linux. The release workflow also
+  # builds and tests the Intel build; this catches a macOS-only failure on every push.
+  macos:
+    name: Build and test (macOS)
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v7
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --locked --all-targets
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo build --release --locked
+      - name: Headless smoke test
+        run: scripts/smoke-cli.sh target/release/plunger
