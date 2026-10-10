@@ -112,7 +112,7 @@ snap s3-variables
 
 # 4. open one of its calls: the placeholder stays, never the token
 mark "headers|Requests keep {{placeholders}}, so a secret is never written down"
-click 130 238
+click 130 302   # the agent's GET /me, which carries Authorization: Bearer {{token}}
 pause 0.8
 snap s4-opened
 key 3 command
