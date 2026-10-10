@@ -68,10 +68,11 @@ impl Tab {
     pub(in crate::app) fn render_headers_tab(&mut self, ui: &mut egui::Ui) {
         if self.headers_as_text {
             let variables = &self.state.variables;
-            let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+            let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                let text = text.as_str();
                 let mut job = crate::highlight::header_lines(text, variables);
                 job.wrap.max_width = wrap_width;
-                ui.fonts(|fonts| fonts.layout_job(job))
+                ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
             };
             ui.add(
                 theme::area(&mut self.state.headers_text)

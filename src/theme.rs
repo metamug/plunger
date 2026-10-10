@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(90, 125, 230);
 
 /// Breathing room inside text fields; egui's default (4×2) makes them cramped.
-pub const FIELD_MARGIN: egui::Margin = egui::Margin::symmetric(8.0, 6.0);
+pub const FIELD_MARGIN: egui::Margin = egui::Margin::symmetric(8, 6);
 /// TextEdit adds its margin *outside* `desired_width`, so subtract this when
 /// sizing a field to fill the remaining space.
 pub const FIELD_MARGIN_X: f32 = 16.0;
@@ -169,7 +169,7 @@ pub fn is_applied(ctx: &egui::Context, choice: ThemeChoice) -> bool {
         ThemeChoice::Dark => &DARK,
         ThemeChoice::Light => &LIGHT,
     };
-    ctx.style().visuals.panel_fill == expected.panel
+    ctx.global_style().visuals.panel_fill == expected.panel
 }
 
 pub fn apply_theme(ctx: &egui::Context, choice: ThemeChoice) {
@@ -205,31 +205,31 @@ pub fn apply_theme(ctx: &egui::Context, choice: ThemeChoice) {
     };
     visuals.selection.stroke = egui::Stroke::new(1.0_f32, p.accent_text);
 
-    let rounding = egui::Rounding::same(5.0);
+    let rounding = egui::CornerRadius::same(5);
     visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, p.border);
-    visuals.widgets.noninteractive.rounding = rounding;
+    visuals.widgets.noninteractive.corner_radius = rounding;
 
     // bg_fill: checkbox/radio boxes (text fields use extreme_bg_color);
     // weak_bg_fill: buttons and combo boxes.
     visuals.widgets.inactive.bg_fill = p.checkbox;
     visuals.widgets.inactive.weak_bg_fill = p.button;
     visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, p.border);
-    visuals.widgets.inactive.rounding = rounding;
+    visuals.widgets.inactive.corner_radius = rounding;
 
     visuals.widgets.hovered.bg_fill = p.checkbox;
     visuals.widgets.hovered.weak_bg_fill = p.hover;
     visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0_f32, ACCENT.linear_multiply(0.7));
-    visuals.widgets.hovered.rounding = rounding;
+    visuals.widgets.hovered.corner_radius = rounding;
     visuals.widgets.hovered.expansion = 0.0;
 
     visuals.widgets.active.bg_fill = p.accent_soft;
     visuals.widgets.active.weak_bg_fill = p.accent_soft;
     visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, ACCENT);
-    visuals.widgets.active.rounding = rounding;
+    visuals.widgets.active.corner_radius = rounding;
     visuals.widgets.active.expansion = 0.0;
 
     visuals.widgets.open.weak_bg_fill = p.hover;
-    visuals.widgets.open.rounding = rounding;
+    visuals.widgets.open.corner_radius = rounding;
 
     let theme = match choice {
         ThemeChoice::Dark => egui::Theme::Dark,
@@ -240,7 +240,7 @@ pub fn apply_theme(ctx: &egui::Context, choice: ThemeChoice) {
     style.spacing.item_spacing = egui::vec2(10.0, 10.0);
     style.spacing.button_padding = egui::vec2(12.0, 7.0);
     style.spacing.interact_size.y = 30.0;
-    style.spacing.window_margin = egui::Margin::same(14.0);
+    style.spacing.window_margin = egui::Margin::same(14);
     for (text_style, font_id) in style.text_styles.iter_mut() {
         match text_style {
             egui::TextStyle::Body | egui::TextStyle::Button => font_id.size = 14.5,
@@ -273,16 +273,16 @@ pub fn one_line(ui: &egui::Ui, text: &str, font: egui::FontId, color: egui::Colo
         break_anywhere: true,
         overflow_character: Some('\u{2026}'),
     };
-    ui.fonts(|f| f.layout_job(job))
+    ui.ctx().fonts_mut(|f| f.layout_job(job))
 }
 
 /// Adds `widget` exactly over `rect` without taking any space in the
 /// surrounding layout (unlike `Ui::put`), so hover-only controls don't make
 /// the rows around them jump.
-pub fn overlay(ui: &mut egui::Ui, salt: impl std::hash::Hash, rect: egui::Rect, widget: impl egui::Widget) -> egui::Response {
+pub fn overlay(ui: &mut egui::Ui, salt: impl std::hash::Hash + std::fmt::Debug, rect: egui::Rect, widget: impl egui::Widget) -> egui::Response {
     let mut child = ui.new_child(
         egui::UiBuilder::new()
-            .id_salt(salt)
+            .id_salt(egui::Id::new(salt))
             .max_rect(rect)
             .layout(egui::Layout::centered_and_justified(egui::Direction::LeftToRight)),
     );
@@ -292,11 +292,11 @@ pub fn overlay(ui: &mut egui::Ui, salt: impl std::hash::Hash, rect: egui::Rect, 
 /// The rounded panel the request editors sit in, with little padding so the response gets the room.
 pub fn compact_card(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
     let p = palette();
-    egui::Frame::none()
+    egui::Frame::NONE
         .fill(p.card)
         .stroke(egui::Stroke::new(1.0_f32, p.border))
-        .rounding(egui::Rounding::same(8.0))
-        .inner_margin(egui::Margin::symmetric(10.0, 8.0))
+        .corner_radius(egui::CornerRadius::same(8))
+        .inner_margin(egui::Margin::symmetric(10, 8))
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             add_contents(ui);
@@ -312,10 +312,10 @@ pub fn status_badge(ui: &mut egui::Ui, status: u16, status_text: &str) {
         400..=499 => 2,
         _ => 3,
     }];
-    egui::Frame::none()
+    egui::Frame::NONE
         .fill(bg)
-        .rounding(egui::Rounding::same(4.0))
-        .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+        .corner_radius(egui::CornerRadius::same(4))
+        .inner_margin(egui::Margin::symmetric(8, 3))
         .show(ui, |ui| {
             ui.colored_label(fg, format!("{status} {status_text}"));
         });

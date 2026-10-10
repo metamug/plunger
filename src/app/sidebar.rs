@@ -38,15 +38,15 @@ fn utc_timestamp(ts: &str) -> String {
 }
 
 impl ApiTesterApp {
-    pub(super) fn render_sidebar(&mut self, ctx: &egui::Context) {
+    pub(super) fn render_sidebar(&mut self, ui: &mut egui::Ui) {
         if !self.settings.show_sidebar {
             return;
         }
-        egui::SidePanel::left("sidebar")
+        egui::Panel::left("sidebar")
             .resizable(true)
-            .default_width(260.0)
-            .width_range(180.0..=420.0)
-            .show(ctx, |ui| {
+            .default_size(260.0)
+            .size_range(180.0..=420.0)
+            .show(ui, |ui| {
                 if self.history.is_none() {
                     ui.add_space(8.0);
                     ui.label(
@@ -215,7 +215,7 @@ fn entry_row(
     } else {
         egui::Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(rect, egui::Rounding::same(5.0), fill);
+    ui.painter().rect_filled(rect, egui::CornerRadius::same(5), fill);
 
     let trash_room = if removable { icons::SIZE } else { 0.0 };
     let inner = rect.shrink2(egui::vec2(8.0, 5.0));
@@ -240,7 +240,7 @@ fn entry_row(
             egui::pos2(url_left, line_y - tag.size().y / 2.0 - 1.0),
             tag.size() + egui::vec2(4.0, 2.0),
         );
-        ui.painter().rect_filled(tag_rect, egui::Rounding::same(3.0), p.accent_soft);
+        ui.painter().rect_filled(tag_rect, egui::CornerRadius::same(3), p.accent_soft);
         ui.painter().galley(tag_rect.min + egui::vec2(2.0, 1.0), tag, p.accent_text);
         url_left = tag_rect.right() + 4.0;
     }

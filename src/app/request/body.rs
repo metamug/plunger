@@ -130,10 +130,11 @@ impl Tab {
             BodyMode::Multipart => self.render_multipart_editor(ui),
             BodyMode::UrlEncoded => {
                 ui.label(egui::RichText::new("One key=value per line").weak());
-                let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                    let text = text.as_str();
                     let mut job = crate::highlight::form_body(text);
                     job.wrap.max_width = wrap_width;
-                    ui.fonts(|fonts| fonts.layout_job(job))
+                    ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
                 };
                 let rows = editor_lines(&self.state.urlencoded_body, self.editor_rows, self.editor_fill);
                 body_box(ui, "body-urlencoded", |ui| {
@@ -148,10 +149,11 @@ impl Tab {
             }
             BodyMode::Raw => {
                 // JSON, XML/HTML and forms are told apart by what the text looks like.
-                let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                    let text = text.as_str();
                     let mut job = crate::highlight::body(text);
                     job.wrap.max_width = wrap_width;
-                    ui.fonts(|fonts| fonts.layout_job(job))
+                    ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
                 };
                 let rows = editor_lines(&self.state.raw_body, self.editor_rows, self.editor_fill);
                 body_box(ui, "body-raw", |ui| {
@@ -168,14 +170,15 @@ impl Tab {
     }
 
     fn render_json_editor(&mut self, ui: &mut egui::Ui) {
-        let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| -> std::sync::Arc<egui::Galley> {
+        let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| -> std::sync::Arc<egui::Galley> {
+            let text = text.as_str();
             let mut job = if text.len() > crate::highlight::LARGE_TEXT_BYTES {
                 crate::highlight::plain(text, palette().json[5])
             } else {
                 highlight_json(text)
             };
             job.wrap.max_width = wrap_width;
-            ui.fonts(|f| f.layout_job(job))
+            ui.ctx().fonts_mut(|f| f.layout_job(job))
         };
         let rows = editor_lines(&self.state.json_body, self.editor_rows, self.editor_fill);
         body_box(ui, "body-json", |ui| {

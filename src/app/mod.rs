@@ -72,7 +72,7 @@ fn copy_button(ui: &mut egui::Ui, flash: &mut CopiedFlash, key: &'static str, to
     let fresh = flash.is_some_and(|(t, k)| k == key && t.elapsed() < COPIED_FLASH);
     let (icon, tip) = if fresh { (Icon::Check, "Copied") } else { (Icon::Copy, tooltip) };
     if icons::button(ui, icon, tip).clicked() {
-        ui.output_mut(|o| o.copied_text = text.to_string());
+        ui.ctx().copy_text(text.to_string());
         *flash = Some((Instant::now(), key));
     }
     if fresh {
@@ -305,7 +305,7 @@ impl eframe::App for ApiTesterApp {
         self.sync_secrets();
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // egui_winit reacts to OS ThemeChanged events by resetting visuals to
         // the system theme; re-assert the chosen one.
         if !theme::is_applied(ctx, self.settings.theme) {
@@ -319,7 +319,10 @@ impl eframe::App for ApiTesterApp {
         self.poll_workflow_run(ctx);
         self.handle_shortcuts(ctx);
         self.scan_fonts(ctx);
-        self.render_ui(ctx);
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.render_ui(ui);
     }
 }
 
@@ -380,25 +383,27 @@ impl ApiTesterApp {
         // A grip in the middle, so it is clear the line can be pulled; it lights up under the pointer.
         let grip = egui::Rect::from_center_size(rect.center(), egui::vec2(46.0, 6.0));
         let grip_color = if active { theme::palette().accent_text } else { theme::palette().text_widget.linear_multiply(0.5) };
-        ui.painter().rect_filled(grip, egui::Rounding::same(3.0), theme::palette().panel);
-        ui.painter().rect_stroke(grip, egui::Rounding::same(3.0), egui::Stroke::new(1.0_f32, grip_color));
+        ui.painter().rect_filled(grip, egui::CornerRadius::same(3), theme::palette().panel);
+        ui.painter().rect_stroke(grip, egui::CornerRadius::same(3), egui::Stroke::new(1.0_f32, grip_color), egui::StrokeKind::Inside);
         for dx in [-10.0_f32, 0.0, 10.0] {
             ui.painter().circle_filled(grip.center() + egui::vec2(dx, 0.0), 1.2, grip_color);
         }
     }
 
     /// Everything drawn each frame, separate from `update` so it can run headless in tests.
-    fn render_ui(&mut self, ctx: &egui::Context) {
-        self.render_menu_bar(ctx);
-        self.render_status_bar(ctx);
-        self.render_sidebar(ctx);
+    fn render_ui(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let ctx = &ctx;
+        self.render_menu_bar(ui);
+        self.render_status_bar(ui);
+        self.render_sidebar(ui);
         self.render_import_windows(ctx);
         self.render_export_window(ctx);
         self.render_agents_window(ctx);
         self.render_help_windows(ctx);
         self.render_workflow_window(ctx);
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             self.render_tab_bar(ui);
             ui.add_space(4.0);
             self.render_command_bar(ui);

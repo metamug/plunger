@@ -153,12 +153,13 @@ pub fn variables(text: &str, base: Color32, font: &FontId, variables: &[Variable
 
 /// A layouter for a single-line field that holds `{{variables}}`:
 /// `ui.add(theme::field(text).layouter(&mut highlight::variable_layouter(&vars)))`.
-pub fn variable_layouter(vars: &[Variable]) -> impl FnMut(&egui::Ui, &str, f32) -> Arc<egui::Galley> + '_ {
+pub fn variable_layouter(vars: &[Variable]) -> impl FnMut(&egui::Ui, &dyn egui::TextBuffer, f32) -> Arc<egui::Galley> + '_ {
     move |ui, text, wrap_width| {
+        let text = text.as_str();
         let font = egui::TextStyle::Body.resolve(ui.style());
         let mut job = variables(text, ui.visuals().text_color(), &font, vars);
         job.wrap.max_width = wrap_width;
-        ui.fonts(|f| f.layout_job(job))
+        ui.ctx().fonts_mut(|f| f.layout_job(job))
     }
 }
 
@@ -177,7 +178,7 @@ pub fn header_lines(text: &str, vars: &[Variable]) -> LayoutJob {
                 append(&mut job, ":", &font, punct);
                 let colored = variables(value, default, &font, vars);
                 for s in &colored.sections {
-                    append(&mut job, &colored.text[s.byte_range.clone()], &font, s.format.color);
+                    append(&mut job, &colored.text[s.byte_range.start.0..s.byte_range.end.0], &font, s.format.color);
                 }
             }
             None => append(&mut job, line, &font, default),
@@ -274,7 +275,7 @@ mod tests {
     use super::*;
 
     fn pieces(job: &LayoutJob) -> Vec<(String, Color32)> {
-        job.sections.iter().map(|s| (job.text[s.byte_range.clone()].to_string(), s.format.color)).collect()
+        job.sections.iter().map(|s| (job.text[s.byte_range.start.0..s.byte_range.end.0].to_string(), s.format.color)).collect()
     }
 
     fn color_of(job: &LayoutJob, piece: &str) -> Color32 {
@@ -297,12 +298,12 @@ mod tests {
         for sample in SAMPLES {
             for job in [command(sample), form_body(sample), body(sample), header_lines(sample, &[])] {
                 assert_eq!(job.text, *sample);
-                let joined: String = job.sections.iter().map(|s| &job.text[s.byte_range.clone()]).collect();
+                let joined: String = job.sections.iter().map(|s| &job.text[s.byte_range.start.0..s.byte_range.end.0]).collect();
                 assert_eq!(joined, *sample, "sections do not cover {sample:?}");
             }
             let font = FontId::monospace(13.0);
             let job = variables(sample, Color32::WHITE, &font, &[]);
-            let joined: String = job.sections.iter().map(|s| &job.text[s.byte_range.clone()]).collect();
+            let joined: String = job.sections.iter().map(|s| &job.text[s.byte_range.start.0..s.byte_range.end.0]).collect();
             assert_eq!(joined, *sample);
         }
     }

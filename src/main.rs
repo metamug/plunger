@@ -27,6 +27,8 @@ mod secrets;
 mod request;
 #[cfg(test)]
 mod test_server;
+#[cfg(test)]
+mod test_support;
 mod theme;
 mod timefmt;
 mod vars;

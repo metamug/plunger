@@ -19,12 +19,12 @@ path = "src/main.rs"
 
 [dependencies]
 mcp-install = { path = "crates/mcp-install", version = "0.1.0" }
-eframe = { version = "0.29", default-features = false, features = ["default_fonts", "glow", "persistence"] }
-egui = "0.29"
+eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "persistence"] }
+egui = "0.36"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "multipart", "rustls"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde = { version = "1", features = ["derive"] }
-egui_json_tree = "0.8"
+egui_json_tree = "0.17"
 rusqlite = { version = "0.40", features = ["bundled"] }
 directories = "6"
 shell-words = "1"
@@ -44,7 +44,7 @@ keyring = "4"
 [target.'cfg(target_os = "linux")'.dependencies]
 # winit needs a display backend on Linux; they load their libraries at run time,
 # so the headless CLI and MCP modes still start on a server with no desktop.
-eframe = { version = "0.29", default-features = false, features = ["x11", "wayland"] }
+eframe = { version = "0.36", default-features = false, features = ["x11", "wayland"] }
 # File dialogs go through the desktop portal: pure Rust, no GTK to install.
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 

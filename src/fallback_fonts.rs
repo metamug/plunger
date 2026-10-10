@@ -91,7 +91,7 @@ pub fn ensure(ctx: &egui::Context, text: &str) {
         end -= 1;
     }
     let mut needed = HashSet::new();
-    ctx.fonts(|fonts| {
+    ctx.fonts_mut(|fonts| {
         let font = FontId::proportional(14.0);
         for c in text[..end].chars().filter(|c| !c.is_control()) {
             if let Some(script) = script_of(c) {
@@ -105,7 +105,7 @@ pub fn ensure(ctx: &egui::Context, text: &str) {
         return;
     }
 
-    let mut definitions = ctx.fonts(|f| f.lock().fonts.definitions().clone());
+    let mut definitions = ctx.fonts(|f| f.definitions().clone());
     let mut added = false;
     for script in needed {
         tried.insert(script);
@@ -114,7 +114,7 @@ pub fn ensure(ctx: &egui::Context, text: &str) {
             let name = format!("fallback-{script:?}");
             let mut data = FontData::from_owned(bytes);
             data.index = *index;
-            definitions.font_data.insert(name.clone(), data);
+            definitions.font_data.insert(name.clone(), std::sync::Arc::new(data));
             for family in [FontFamily::Proportional, FontFamily::Monospace] {
                 definitions.families.entry(family).or_default().push(name.clone());
             }
@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn plain_text_costs_nothing_and_loads_nothing() {
         let ctx = egui::Context::default();
-        let _ = ctx.run(Default::default(), |ctx| ensure(ctx, "just ascii, and café"));
+        crate::test_support::pass(&ctx, Default::default(), |ui| ensure(ui.ctx(), "just ascii, and café"));
         assert!(ctx.data(|d| d.get_temp::<HashSet<Script>>(egui::Id::new("fallback-fonts-tried"))).is_none());
     }
 
@@ -155,11 +155,11 @@ mod tests {
     fn cjk_text_gets_a_system_font_once_it_appears() {
         let ctx = egui::Context::default();
         let font = FontId::proportional(14.0);
-        let _ = ctx.run(Default::default(), |ctx| ensure(ctx, "日本語"));
+        crate::test_support::pass(&ctx, Default::default(), |ui| ensure(ui.ctx(), "日本語"));
         // The new font takes effect on the next frame.
-        let _ = ctx.run(Default::default(), |_| {});
+        crate::test_support::pass(&ctx, Default::default(), |_| {});
         if candidates(Script::Cjk).iter().any(|(p, _)| std::path::Path::new(p).exists()) {
-            assert!(ctx.fonts(|f| f.has_glyph(&font, '日')));
+            assert!(ctx.fonts_mut(|f| f.has_glyph(&font, '日')));
         }
     }
 }

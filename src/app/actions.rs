@@ -381,7 +381,7 @@ impl ApiTesterApp {
                                 for dialect in crate::commands::Dialect::ALL {
                                     if ui.button(dialect.label()).clicked() {
                                         self.copy_request_as(ui.ctx(), dialect);
-                                        ui.close_menu();
+                                        ui.close();
                                     }
                                 }
                             });
@@ -393,7 +393,7 @@ impl ApiTesterApp {
                                 ui.radio_value(&mut choice, ThemeChoice::Light, "Light");
                                 if choice != self.settings.theme {
                                     self.set_theme(ui.ctx(), choice);
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                             });
                         }
@@ -409,7 +409,7 @@ impl ApiTesterApp {
                             let enabled = self.action_enabled(action);
                             let clicked = ui.add_enabled(enabled, egui::Button::new(title).shortcut_text(shortcut)).clicked();
                             if clicked {
-                                ui.close_menu();
+                                ui.close();
                                 self.run_action(ui.ctx(), action);
                             }
                         }
@@ -520,7 +520,8 @@ mod tests {
     fn shortcuts_read_the_way_people_write_them() {
         // Formatting needs a frame (it asks which operating system this is), as in the window.
         let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+        crate::test_support::pass(&ctx, egui::RawInput::default(), |ui| {
+            let ctx = &ui.ctx().clone();
             let text = shortcut_text(ctx, &Action::ZoomIn.shortcut().unwrap());
             assert!(text.ends_with('=') && !text.contains("Equals"), "{text}");
             assert!(shortcut_text(ctx, &Action::ZoomOut.shortcut().unwrap()).ends_with('-'));

@@ -50,10 +50,11 @@ impl ApiTesterApp {
                 });
                 ui.add_space(4.0);
                 let mut shown: &str = &text;
-                let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                    let text = text.as_str();
                     let mut job = highlight::command(text);
                     job.wrap.max_width = wrap_width;
-                    ui.fonts(|fonts| fonts.layout_job(job))
+                    ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
                 };
                 egui::ScrollArea::vertical().max_height(COMMAND_BOX_HEIGHT).show(ui, |ui| {
                     ui.add(

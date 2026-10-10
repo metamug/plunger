@@ -17,14 +17,14 @@ enum TabAction {
 }
 
 impl ApiTesterApp {
-    pub(super) fn render_menu_bar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| self.render_menus(ui));
+    pub(super) fn render_menu_bar(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::top("menu_bar").show(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| self.render_menus(ui));
         });
     }
 
-    pub(super) fn render_status_bar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::bottom("status_bar").exact_height(26.0).show(ctx, |ui| {
+    pub(super) fn render_status_bar(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::bottom("status_bar").exact_size(26.0).show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 let p = palette();
                 let tab = self.tab();
@@ -42,7 +42,7 @@ impl ApiTesterApp {
                     if at.elapsed() < NOTICE_FOR {
                         ui.separator();
                         small(ui, message.clone(), Some(p.accent_text));
-                        ctx.request_repaint_after(NOTICE_FOR);
+                        ui.ctx().request_repaint_after(NOTICE_FOR);
                     }
                 }
 
@@ -121,9 +121,9 @@ fn tab_chip(ui: &mut egui::Ui, tab: &Tab, active: bool) -> Option<TabAction> {
 
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, TAB_HEIGHT), egui::Sense::click());
     let hovered = ui.rect_contains_pointer(rect);
-    let rounding = egui::Rounding { nw: 6.0, ne: 6.0, sw: 0.0, se: 0.0 };
+    let rounding = egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 };
     if active {
-        ui.painter().rect(rect, rounding, p.card, egui::Stroke::new(1.0_f32, p.border));
+        ui.painter().rect(rect, rounding, p.card, egui::Stroke::new(1.0_f32, p.border), egui::StrokeKind::Inside);
         ui.painter().hline(rect.x_range(), rect.top() + 1.0, egui::Stroke::new(2.0_f32, ACCENT));
     } else if hovered {
         ui.painter().rect_filled(rect, rounding, p.hover);
@@ -147,7 +147,7 @@ fn tab_chip(ui: &mut egui::Ui, tab: &Tab, active: bool) -> Option<TabAction> {
             .interact(close_rect, ui.id().with(("close-tab", tab.id)), egui::Sense::click())
             .on_hover_text("Close tab (Ctrl+W)");
         if close.hovered() {
-            ui.painter().rect_filled(close_rect, egui::Rounding::same(4.0), p.hover);
+            ui.painter().rect_filled(close_rect, egui::CornerRadius::same(4), p.hover);
         }
         let color = if close.hovered() { p.text_hover } else { ui.visuals().weak_text_color() };
         icons::paint(ui.painter(), close_rect.shrink(4.0), Icon::Close, color);

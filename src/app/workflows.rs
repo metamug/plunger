@@ -99,9 +99,9 @@ pub(super) fn sidebar_section(ui: &mut egui::Ui, items: &[WorkflowItem], open: &
             }
             let is_selected = selected == Some(item.name.as_str());
             if is_selected {
-                ui.painter().rect_filled(rect, egui::Rounding::same(5.0), p.accent_soft);
+                ui.painter().rect_filled(rect, egui::CornerRadius::same(5), p.accent_soft);
             } else if response.hovered() {
-                ui.painter().rect_filled(rect, egui::Rounding::same(5.0), p.hover);
+                ui.painter().rect_filled(rect, egui::CornerRadius::same(5), p.hover);
             }
             let dot = match &item.last {
                 Some(run) if run.ok => p.ok,

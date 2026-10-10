@@ -57,7 +57,7 @@ pub fn button(ui: &mut egui::Ui, icon: Icon, tooltip: &str) -> egui::Response {
     if ui.is_rect_visible(rect) {
         let visuals = ui.style().interact(&response);
         if response.hovered() || response.has_focus() {
-            ui.painter().rect_filled(rect, egui::Rounding::same(5.0), palette().hover);
+            ui.painter().rect_filled(rect, egui::CornerRadius::same(5), palette().hover);
         }
         let color = if icon == Icon::Check { palette().ok } else { visuals.fg_stroke.color };
         paint(ui.painter(), rect.shrink(7.0), icon, color);
@@ -76,7 +76,7 @@ pub fn toggle(ui: &mut egui::Ui, on: &mut bool, icon: Icon, tooltip_on: &str, to
     }
     if ui.is_rect_visible(rect) {
         let visuals = ui.style().interact(&response);
-        let rounding = egui::Rounding::same(5.0);
+        let rounding = egui::CornerRadius::same(5);
         if *on {
             ui.painter().rect_filled(rect, rounding, palette().accent_soft);
         } else if response.hovered() || response.has_focus() {
@@ -99,7 +99,7 @@ pub fn panel_toggle(ui: &mut egui::Ui, expanded: bool, tooltip_expanded: &str, t
     let (rect, response) = ui.allocate_exact_size(egui::vec2(SIZE, SIZE), egui::Sense::click());
     if ui.is_rect_visible(rect) {
         let visuals = ui.style().interact(&response);
-        let rounding = egui::Rounding::same(5.0);
+        let rounding = egui::CornerRadius::same(5);
         if expanded {
             ui.painter().rect_filled(rect, rounding, palette().accent_soft);
         } else if response.hovered() || response.has_focus() {
@@ -134,9 +134,8 @@ pub fn paint(painter: &egui::Painter, r: egui::Rect, icon: Icon, color: egui::Co
             // Front page, plus the visible edges of the page behind it.
             painter.rect_stroke(
                 egui::Rect::from_min_max(p(4.0, 3.0), p(14.0, 14.0)),
-                egui::Rounding::same(1.5),
-                stroke,
-            );
+                egui::CornerRadius::same(2),
+                stroke, egui::StrokeKind::Inside);
             line(vec![p(4.0, 11.0), p(0.0, 11.0), p(0.0, 0.0), p(10.0, 0.0), p(10.0, 3.0)]);
         }
         Icon::Check => line(vec![p(1.0, 7.5), p(5.0, 11.5), p(13.0, 2.5)]),
@@ -177,9 +176,8 @@ pub fn paint(painter: &egui::Painter, r: egui::Rect, icon: Icon, color: egui::Co
         Icon::Lock => {
             painter.rect_stroke(
                 egui::Rect::from_min_max(p(1.5, 6.5), p(12.5, 13.5)),
-                egui::Rounding::same(1.5),
-                stroke,
-            );
+                egui::CornerRadius::same(2),
+                stroke, egui::StrokeKind::Inside);
             let mut shackle = vec![p(3.5, 6.5)];
             shackle.extend(arc(7.0, 4.0, 3.5, 180.0, 360.0));
             shackle.push(p(10.5, 6.5));

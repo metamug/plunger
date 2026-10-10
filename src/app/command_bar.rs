@@ -22,11 +22,7 @@ impl ApiTesterApp {
             // exactly the width that is left.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let import = icons::button(ui, Icon::Import, "Import a request: paste a curl command or open a HAR file");
-                let popup_id = ui.make_persistent_id("import-menu");
-                if import.clicked() {
-                    ui.memory_mut(|m| m.toggle_popup(popup_id));
-                }
-                egui::popup_below_widget(ui, popup_id, &import, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                egui::Popup::from_toggle_button_response(&import).close_behavior(egui::PopupCloseBehavior::CloseOnClick).show(|ui| {
                     ui.set_min_width(190.0);
                     if menu_item(ui, "Paste a curl command\u{2026}") {
                         open_curl = true;
@@ -80,11 +76,11 @@ impl ApiTesterApp {
     fn render_url_bar(&mut self, ui: &mut egui::Ui) {
         let p = palette();
         let tab = &mut self.tabs[self.active];
-        egui::Frame::none()
+        egui::Frame::NONE
             .fill(p.input)
             .stroke(egui::Stroke::new(1.0_f32, p.border))
-            .rounding(egui::Rounding::same(6.0))
-            .inner_margin(egui::Margin::symmetric(3.0, 2.0))
+            .corner_radius(egui::CornerRadius::same(6))
+            .inner_margin(egui::Margin::symmetric(3, 2))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.spacing_mut().item_spacing.x = 0.0;
@@ -95,7 +91,7 @@ impl ApiTesterApp {
                         widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
                         widgets.hovered.bg_stroke = egui::Stroke::NONE;
                         widgets.hovered.weak_bg_fill = p.hover;
-                        widgets.hovered.rounding = egui::Rounding::same(4.0);
+                        widgets.hovered.corner_radius = egui::CornerRadius::same(4);
                         egui::ComboBox::from_id_salt(("method", tab.id))
                             .selected_text(
                                 egui::RichText::new(&tab.state.method).strong().color(theme::method_color(&tab.state.method)),
@@ -120,7 +116,7 @@ impl ApiTesterApp {
                                 .id(url_field_id(tab.id))
                                 .desired_width(ui.available_width() - icons::SIZE - theme::FIELD_MARGIN_X)
                                 .hint_text("https://api.example.com/resource  or  localhost:3000/api")
-                                .frame(false),
+                                .frame(egui::Frame::NONE),
                         );
                     });
                     if !tab.state.url.is_empty() {

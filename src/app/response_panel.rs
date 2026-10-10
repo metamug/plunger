@@ -295,7 +295,7 @@ impl Tab {
                                 let response = node.render_default(ui);
                                 let pointer = node.pointer().to_json_pointer_string();
                                 if current_json.as_deref() == Some(pointer.as_str()) {
-                                    ui.painter().rect_stroke(response.rect.expand(2.0), 3.0, egui::Stroke::new(1.5_f32, CURRENT_MATCH));
+                                    ui.painter().rect_stroke(response.rect.expand(2.0), 3.0, egui::Stroke::new(1.5_f32, CURRENT_MATCH), egui::StrokeKind::Inside);
                                     if scroll_wanted {
                                         response.scroll_to_me(Some(egui::Align::Center));
                                         scrolled = true;
@@ -304,7 +304,7 @@ impl Tab {
                                 response.context_menu(|ui| {
                                     if ui.button("Copy path").clicked() {
                                         ui.ctx().copy_text(crate::json_view::json_path(value, &pointer));
-                                        ui.close_menu();
+                                        ui.close();
                                     }
                                     if ui.button("Copy value").clicked() {
                                         let text = match value.pointer(&pointer) {
@@ -313,7 +313,7 @@ impl Tab {
                                             None => String::new(),
                                         };
                                         ui.ctx().copy_text(text);
-                                        ui.close_menu();
+                                        ui.close();
                                     }
                                 });
                             })
@@ -345,10 +345,11 @@ impl Tab {
                         }
                         let mut text: &str = formatted;
                         let segments = &view.segments;
-                        let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                        let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                            let text = text.as_str();
                             let mut job = layout_job(text, segments, match_ranges, current_text);
                             job.wrap.max_width = wrap_width;
-                            ui.fonts(|fonts| fonts.layout_job(job))
+                            ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
                         };
                         let out = theme::area(&mut text)
                             .font(egui::TextStyle::Monospace)
@@ -378,7 +379,7 @@ impl Tab {
                             let segments = [(0, preview.len(), ui.visuals().text_color())];
                             let mut job = layout_job(preview, &segments, match_ranges, current_text);
                             job.wrap.max_width = ui.available_width();
-                            let galley = ui.fonts(|fonts| fonts.layout_job(job));
+                            let galley = ui.ctx().fonts_mut(|fonts| fonts.layout_job(job));
                             let label = ui.add(egui::Label::new(galley.clone()));
                             if let (true, Some((start, _))) = (scroll_wanted, current_text) {
                                 scroll_to_char(ui, &galley, label.rect.min, preview, start);
@@ -388,10 +389,11 @@ impl Tab {
                             let mut text: &str = preview;
                             // JSON that failed to parse, a form, or plain text; big previews stay plain so
                             // building the colours never costs more than drawing the text.
-                            let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                            let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                                let text = text.as_str();
                                 let mut job = crate::highlight::body(text);
                                 job.wrap.max_width = wrap_width;
-                                ui.fonts(|fonts| fonts.layout_job(job))
+                                ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
                             };
                             ui.add(
                                 theme::area(&mut text)
@@ -548,7 +550,7 @@ fn layout_job(
 /// Scrolls the character at byte offset `start` of `text` into view, given where `galley` was drawn.
 fn scroll_to_char(ui: &egui::Ui, galley: &egui::Galley, origin: egui::Pos2, text: &str, start: usize) {
     let index = text[..start].chars().count();
-    let rect = galley.pos_from_ccursor(egui::text::CCursor::new(index)).translate(origin.to_vec2());
+    let rect = galley.pos_from_cursor(egui::text::CCursor::new(index)).translate(origin.to_vec2());
     ui.scroll_to_rect(rect, Some(egui::Align::Center));
 }
 
@@ -569,7 +571,7 @@ mod tests {
     use crate::app::response_search::text_matches;
 
     fn rendered(job: &eframe::egui::text::LayoutJob) -> String {
-        job.sections.iter().map(|s| &job.text[s.byte_range.clone()]).collect()
+        job.sections.iter().map(|s| &job.text[s.byte_range.start.0..s.byte_range.end.0]).collect()
     }
 
     #[test]

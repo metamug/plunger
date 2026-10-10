@@ -14,13 +14,13 @@ fn draw(app: &mut ApiTesterApp) {
     let ctx = egui::Context::default();
     theme::apply_theme(&ctx, ThemeChoice::Dark);
     for _ in 0..3 {
-        let _ = ctx.run(egui::RawInput::default(), |ctx| app.render_ui(ctx));
+        crate::test_support::pass(&ctx, egui::RawInput::default(), |ui| app.render_ui(ui));
     }
 }
 
 fn press_escape(app: &mut ApiTesterApp) {
     let ctx = egui::Context::default();
-    let _ = ctx.run(
+    crate::test_support::pass(&ctx, 
         egui::RawInput {
             events: vec![egui::Event::Key {
                 key: egui::Key::Escape,
@@ -31,13 +31,13 @@ fn press_escape(app: &mut ApiTesterApp) {
             }],
             ..Default::default()
         },
-        |ctx| app.handle_shortcuts(ctx),
+        |ui| app.handle_shortcuts(&ui.ctx().clone()),
     );
 }
 
 fn press_tab(app: &mut ApiTesterApp, modifiers: egui::Modifiers) {
     let ctx = egui::Context::default();
-    let _ = ctx.run(
+    crate::test_support::pass(&ctx, 
         egui::RawInput {
             events: vec![egui::Event::Key {
                 key: egui::Key::Tab,
@@ -48,7 +48,7 @@ fn press_tab(app: &mut ApiTesterApp, modifiers: egui::Modifiers) {
             }],
             ..Default::default()
         },
-        |ctx| app.handle_shortcuts(ctx),
+        |ui| app.handle_shortcuts(&ui.ctx().clone()),
     );
 }
 
@@ -95,11 +95,11 @@ fn command_l_focuses_and_selects_the_url() {
     let ctx = egui::Context::default();
     theme::apply_theme(&ctx, ThemeChoice::Dark);
     for _ in 0..2 {
-        let _ = ctx.run(egui::RawInput::default(), |ctx| a.render_ui(ctx));
+        crate::test_support::pass(&ctx, egui::RawInput::default(), |ui| a.render_ui(ui));
     }
 
     let url_id = egui::Id::new(("url", a.tab().id));
-    let _ = ctx.run(
+    crate::test_support::pass(&ctx, 
         egui::RawInput {
             events: vec![egui::Event::Key {
                 key: egui::Key::L,
@@ -110,19 +110,19 @@ fn command_l_focuses_and_selects_the_url() {
             }],
             ..Default::default()
         },
-        |ctx| {
-            a.handle_shortcuts(ctx);
-            a.render_ui(ctx);
+        |ui| {
+            a.handle_shortcuts(&ui.ctx().clone());
+            a.render_ui(ui);
         },
     );
 
     assert_eq!(ctx.memory(|memory| memory.focused()), Some(url_id));
-    let _ = ctx.run(
+    crate::test_support::pass(&ctx, 
         egui::RawInput {
             events: vec![egui::Event::Text("https://example.org".into())],
             ..Default::default()
         },
-        |ctx| a.render_ui(ctx),
+        |ui| a.render_ui(ui),
     );
     assert_eq!(a.tab().state.url, "https://example.org");
 }
@@ -742,7 +742,7 @@ fn both_themes_draw() {
     for choice in [ThemeChoice::Light, ThemeChoice::Dark] {
         let ctx = egui::Context::default();
         theme::apply_theme(&ctx, choice);
-        let _ = ctx.run(egui::RawInput::default(), |ctx| a.render_ui(ctx));
+        crate::test_support::pass(&ctx, egui::RawInput::default(), |ui| a.render_ui(ui));
     }
 }
 
