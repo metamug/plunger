@@ -8,6 +8,7 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 - The code that registers an MCP server in Claude Code, Cursor, Kiro, Codex, Windsurf, VS Code and Gemini CLI is now its own crate, `mcp-install` (`crates/mcp-install`), usable by any MCP server, with its own tests, README and an example. Plunger uses it for `plunger install`; nothing changes for users. The repository is now a Cargo workspace and CI tests all of it.
 
 ### Added
+- Workflows in the window: a **WORKFLOWS** section in the sidebar with each workflow's step count and last run (a dot and "3 min ago"); click one to see its steps, **Run** it with live per-step progress (and Cancel), and see every recorded run, including the ones an agent made, with each step's status, time and the variables it set. Every run is now recorded (who, when, each step's result; never values or response bodies). **Tools > Workflows** and **Ctrl+Shift+R** (Run the open workflow) are in the menus (#162).
 - Homebrew: `brew install --cask metamug/tap/plunger` installs `Plunger.app` and a `plunger` command (the tap is metamug/homebrew-tap, tested on a macOS runner on every push).
 
 ## [0.5.3] - 2026-10-10

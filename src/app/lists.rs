@@ -20,6 +20,7 @@ impl ApiTesterApp {
                 self.agent_variables = vars;
             }
         }
+        self.refresh_workflows();
     }
 
     /// The agent variables as values a request can use; a secret's value comes from the credential store.

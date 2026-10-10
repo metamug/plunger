@@ -137,6 +137,16 @@ A workflow is a saved list of requests where a later one can use a value from an
 
 From a terminal: `plunger workflow save shop @steps.json`, `plunger workflow run shop --var base=http://localhost:8080` (exit code 4 when a step fails), `plunger workflow list|show|delete`. Variables a workflow sets stay afterwards and show in the window under "Set by agents".
 
+## Workflows in the window
+
+Workflows are made by agents (or `plunger workflow save`), but the window shows them: a **WORKFLOWS** section in the sidebar lists each one with its step count and a dot for its last run (green all passed, red a step failed, amber cancelled, grey never run) and how long ago.
+
+Click one to open it. The window shows the steps (the request, what each step keeps with `extract`, the status it expects), **Run** with live progress and a **Cancel** that stops before the next step, an optional "Values for this run" box (`name=value`, one per line), and **Last run**: every recorded run, whoever made it (you, the CLI or an agent over MCP), with each step's status, time and the variables it set (by name; a secret never shows). **Open as request** puts a step in an ordinary tab to try by hand, and **Copy as JSON** copies the steps.
+
+A run from the window uses the same engine, variables and history as an agent's: its requests appear in the History, and the variables it keeps appear under "Set by agents". **Tools > Workflows** opens the list, and **Ctrl+Shift+R** (Cmd+Shift+R on a Mac) runs the open one.
+
+Only the result is recorded for a run (names and statuses, never values or response bodies); the final response of a run you made from the window is shown until you close it.
+
 ## Resources and prompts
 
 Besides tools, the MCP server offers resources a client can read without calling a tool: `plunger://guide`, `plunger://variables`, `plunger://saved-requests`, `plunger://workflows`, `plunger://history`, and one for each saved request and workflow (`plunger://saved-requests/{name}`, `plunger://workflows/{name}`). It also offers prompts that start common jobs: `test_endpoint`, `login_workflow`, `debug_failed_request` and `record_workflow`.

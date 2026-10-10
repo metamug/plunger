@@ -132,6 +132,45 @@ fn body_mode_from_str(s: &str) -> BodyMode {
     }
 }
 
+/// How many runs of each workflow are kept.
+pub const WORKFLOW_RUNS_KEPT: i64 = 20;
+
+/// A workflow run to record.
+pub struct NewWorkflowRun<'a> {
+    pub workflow: &'a str,
+    pub started_at: &'a str,
+    pub source: Source,
+    pub ok: bool,
+    pub cancelled: bool,
+    /// The per-step results as JSON.
+    pub steps: &'a str,
+}
+
+/// A recorded workflow run.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkflowRunRow {
+    pub id: i64,
+    pub workflow: String,
+    pub started_at: String,
+    pub source: Source,
+    pub ok: bool,
+    pub cancelled: bool,
+    /// The per-step results as JSON.
+    pub steps: String,
+}
+
+fn workflow_run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkflowRunRow> {
+    Ok(WorkflowRunRow {
+        id: row.get(0)?,
+        workflow: row.get(1)?,
+        started_at: row.get(2)?,
+        source: Source::parse(&row.get::<_, String>(3)?),
+        ok: row.get(4)?,
+        cancelled: row.get(5)?,
+        steps: row.get(6)?,
+    })
+}
+
 /// A variable set from the command line or over MCP.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AgentVariable {
@@ -270,6 +309,21 @@ impl History {
             )",
             [],
         )?;
+        // One row per workflow run: who ran it, when, and each step's result (names of the variables it set,
+        // never their values, and no response bodies).
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS workflow_runs (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                workflow   TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                source     TEXT NOT NULL,
+                ok         INTEGER NOT NULL,
+                cancelled  INTEGER NOT NULL DEFAULT 0,
+                steps      TEXT NOT NULL
+            )",
+            [],
+        )?;
+        conn.execute("CREATE INDEX IF NOT EXISTS workflow_runs_by_name ON workflow_runs (workflow, id)", [])?;
         let columns: Vec<String> = conn
             .prepare("PRAGMA table_info(requests)")?
             .query_map([], |r| r.get::<_, String>(1))?
@@ -478,6 +532,40 @@ impl History {
         Ok(())
     }
 
+    /// Records one run of a workflow, keeping the newest `WORKFLOW_RUNS_KEPT` of each workflow.
+    pub fn record_workflow_run(&self, run: &NewWorkflowRun) -> rusqlite::Result<i64> {
+        self.conn.execute(
+            "INSERT INTO workflow_runs (workflow, started_at, source, ok, cancelled, steps) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![run.workflow, run.started_at, run.source.as_str(), run.ok, run.cancelled, run.steps],
+        )?;
+        let id = self.conn.last_insert_rowid();
+        self.conn.execute(
+            "DELETE FROM workflow_runs WHERE workflow = ?1 AND id NOT IN
+               (SELECT id FROM workflow_runs WHERE workflow = ?1 ORDER BY id DESC LIMIT ?2)",
+            params![run.workflow, WORKFLOW_RUNS_KEPT],
+        )?;
+        Ok(id)
+    }
+
+    /// The runs of one workflow, newest first.
+    pub fn workflow_runs(&self, workflow: &str, limit: i64) -> rusqlite::Result<Vec<WorkflowRunRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, workflow, started_at, source, ok, cancelled, steps FROM workflow_runs WHERE workflow = ?1 ORDER BY id DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![workflow, limit], workflow_run_from_row)?;
+        rows.collect()
+    }
+
+    /// The newest run of every workflow that has one.
+    pub fn latest_workflow_runs(&self) -> rusqlite::Result<Vec<WorkflowRunRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, workflow, started_at, source, ok, cancelled, steps FROM workflow_runs
+             WHERE id IN (SELECT MAX(id) FROM workflow_runs GROUP BY workflow)",
+        )?;
+        let rows = stmt.query_map([], workflow_run_from_row)?;
+        rows.collect()
+    }
+
     /// A workflow's steps (JSON), if there is one by that name.
     pub fn get_workflow(&self, name: &str) -> rusqlite::Result<Option<String>> {
         self.conn
@@ -492,8 +580,9 @@ impl History {
         rows.collect()
     }
 
-    /// Removes a workflow; false when there was none by that name.
+    /// Removes a workflow and its recorded runs; false when there was none by that name.
     pub fn delete_workflow(&self, name: &str) -> rusqlite::Result<bool> {
+        self.conn.execute("DELETE FROM workflow_runs WHERE workflow = ?1", params![name])?;
         Ok(self.conn.execute("DELETE FROM workflows WHERE name = ?1", params![name])? > 0)
     }
 
@@ -564,6 +653,27 @@ impl History {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workflow_runs_are_recorded_listed_newest_first_and_pruned() {
+        let h = history();
+        for i in 0..25 {
+            let run = NewWorkflowRun { workflow: "shop", started_at: &format!("2026-10-10T09:00:{i:02}Z"), source: if i % 2 == 0 { Source::Mcp } else { Source::Cli }, ok: i != 24, cancelled: false, steps: "[]" };
+            h.record_workflow_run(&run).unwrap();
+        }
+        h.record_workflow_run(&NewWorkflowRun { workflow: "other", started_at: "2026-10-10T10:00:00Z", source: Source::Gui, ok: true, cancelled: true, steps: "[]" }).unwrap();
+        let runs = h.workflow_runs("shop", 100).unwrap();
+        assert_eq!(runs.len() as i64, WORKFLOW_RUNS_KEPT, "only the newest are kept");
+        assert_eq!(runs[0].started_at, "2026-10-10T09:00:24Z");
+        assert!(!runs[0].ok && runs[1].ok);
+        let latest = h.latest_workflow_runs().unwrap();
+        assert_eq!(latest.len(), 2, "one per workflow");
+        assert!(latest.iter().any(|r| r.workflow == "other" && r.cancelled && r.source == Source::Gui));
+        h.save_workflow("shop", "[]").unwrap();
+        assert!(h.delete_workflow("shop").unwrap());
+        assert!(h.workflow_runs("shop", 10).unwrap().is_empty(), "deleting a workflow removes its runs");
+        assert_eq!(h.workflow_runs("other", 10).unwrap().len(), 1);
+    }
 
     #[test]
     fn a_raw_json_body_comes_back_in_the_json_editor() {

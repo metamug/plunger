@@ -58,6 +58,8 @@ impl ApiTesterApp {
                 }
                 let mut actions: Vec<(HistoryEntry, &'static str, RowAction)> = Vec::new();
                 let mut clear = false;
+                let mut open_workflow: Option<String> = None;
+                let workflow_selected = self.workflow_view.as_ref().map(|v| v.name.clone());
                 // Each list highlights its own link: the saved request being
                 // edited, and the history row this tab last came from or sent.
                 let saved_selected = self.tab().saved_id;
@@ -90,6 +92,10 @@ impl ApiTesterApp {
                         } else if self.saved_entries.is_empty() {
                             hint(ui, "Double-click a request in History, or press Ctrl+S, to save it here.");
                         }
+                    }
+
+                    if !filtering {
+                        open_workflow = super::workflows::sidebar_section(ui, &self.workflows, &mut self.workflows_open, workflow_selected.as_deref());
                     }
 
                     ui.add_space(8.0);
@@ -127,6 +133,9 @@ impl ApiTesterApp {
                 if clear {
                     self.clear_history();
                 }
+                if let Some(name) = open_workflow {
+                    self.open_workflow(&name);
+                }
                 for (entry, list, action) in actions {
                     match action {
                         RowAction::Open => self.open_entry(&entry),
@@ -143,14 +152,14 @@ impl ApiTesterApp {
     }
 }
 
-fn hint(ui: &mut egui::Ui, text: &str) {
+pub(super) fn hint(ui: &mut egui::Ui, text: &str) {
     ui.add_space(2.0);
     ui.add(egui::Label::new(egui::RichText::new(text).weak().small()).wrap());
     ui.add_space(2.0);
 }
 
 /// A collapsible section title with a count, plus optional controls on the right.
-fn section_header(ui: &mut egui::Ui, title: &str, count: usize, open: &mut bool, right: impl FnOnce(&mut egui::Ui)) {
+pub(super) fn section_header(ui: &mut egui::Ui, title: &str, count: usize, open: &mut bool, right: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {
         let label = if count > 0 { format!("{title}  {count}") } else { title.to_string() };
         let text = egui::RichText::new(label).small().strong().color(ui.visuals().weak_text_color());

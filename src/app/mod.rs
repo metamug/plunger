@@ -16,6 +16,7 @@ mod response_search;
 mod sidebar;
 mod tab;
 mod tabs;
+mod workflows;
 
 pub use tab::SavedTab;
 
@@ -136,6 +137,11 @@ pub struct ApiTesterApp {
     import: ImportDialog,
     export: Option<export_window::ExportDialog>,
     agents_dialog: Option<agents_window::AgentsDialog>,
+    /// The workflows, the open workflow window and a run in progress (src/app/workflows.rs).
+    workflows: Vec<workflows::WorkflowItem>,
+    workflows_open: bool,
+    workflow_view: Option<workflows::WorkflowView>,
+    workflow_run: Option<workflows::WorkflowRun>,
     /// Help > Keyboard shortcuts and Help > About are open.
     shortcuts_open: bool,
     about_open: bool,
@@ -179,6 +185,10 @@ impl ApiTesterApp {
             import: ImportDialog::default(),
             export: None,
             agents_dialog: None,
+            workflows: Vec::new(),
+            workflows_open: true,
+            workflow_view: None,
+            workflow_run: None,
             shortcuts_open: false,
             about_open: false,
             export_dialect: Dialect::CurlBash,
@@ -306,6 +316,7 @@ impl eframe::App for ApiTesterApp {
         }
         self.poll_responses(ctx);
         self.poll_database(ctx);
+        self.poll_workflow_run(ctx);
         self.handle_shortcuts(ctx);
         self.scan_fonts(ctx);
         self.render_ui(ctx);
@@ -385,6 +396,7 @@ impl ApiTesterApp {
         self.render_export_window(ctx);
         self.render_agents_window(ctx);
         self.render_help_windows(ctx);
+        self.render_workflow_window(ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
             self.render_tab_bar(ui);

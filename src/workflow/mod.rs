@@ -59,11 +59,53 @@ pub struct StepResult {
     pub error: Option<String>,
 }
 
+/// One step as it is stored with a recorded run: the variables it set by name, never by value.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct StoredStep {
+    pub step: usize,
+    pub label: String,
+    pub ok: bool,
+    #[serde(default)]
+    pub status: Option<u16>,
+    #[serde(default)]
+    pub elapsed_ms: Option<u64>,
+    #[serde(default)]
+    pub set: Vec<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+impl From<&StepResult> for StoredStep {
+    fn from(s: &StepResult) -> Self {
+        StoredStep {
+            step: s.step,
+            label: s.label.clone(),
+            ok: s.ok,
+            status: s.status,
+            elapsed_ms: s.elapsed_ms,
+            set: s.set.iter().map(|v| v.name.clone()).collect(),
+            error: s.error.clone(),
+        }
+    }
+}
+
+/// What a running workflow reports, so a window can show progress.
+#[derive(Debug, Clone)]
+pub enum Progress {
+    /// Step `step` (1-based) is about to be sent.
+    Started { step: usize },
+    /// A step is done (passed or failed).
+    Finished(StepResult),
+}
+
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
 pub struct WorkflowResult {
     pub workflow: String,
     /// True when every step passed.
     pub ok: bool,
+    /// True when the run was cancelled before it finished.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cancelled: bool,
     /// How many steps ran (a failed step stops the rest).
     pub steps_run: usize,
     pub steps: Vec<StepResult>,
@@ -120,7 +162,7 @@ pub fn save(name: &str, steps: Vec<Step>, overwrite: bool) -> Result<WorkflowInf
     Ok(WorkflowInfo { name, steps })
 }
 
-fn parse_steps(json: &str) -> Result<Vec<Step>, String> {
+pub(crate) fn parse_steps(json: &str) -> Result<Vec<Step>, String> {
     serde_json::from_str(json).map_err(|e| format!("The stored workflow is unreadable: {e}"))
 }
 
@@ -149,32 +191,89 @@ pub fn delete(name: &str) -> Result<WorkflowInfo, String> {
 }
 
 /// Runs a workflow by name. `variables` apply to every step, on top of what each step sets.
+/// The run is recorded in the history database (who, when, each step's result).
 pub fn run(name: &str, variables: &std::collections::BTreeMap<String, String>, source: Source) -> Result<WorkflowResult, String> {
+    run_reporting(name, variables, source, &std::sync::atomic::AtomicBool::new(false), &mut |_| {})
+}
+
+/// Like [`run`], reporting each step as it starts and finishes, and stopping before the next step when
+/// `cancel` is set. This is what the window uses to show progress.
+pub fn run_reporting(
+    name: &str,
+    variables: &std::collections::BTreeMap<String, String>,
+    source: Source,
+    cancel: &std::sync::atomic::AtomicBool,
+    report: &mut dyn FnMut(Progress),
+) -> Result<WorkflowResult, String> {
     let info = get(name)?;
-    Ok(run_steps(
+    let started_at = time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_default();
+    let result = run_steps_reporting(
         &info.name,
         &info.steps,
         variables,
         |params| agent::send_request_raw(params, source),
         |name, value, secret| agent::set_variable(name, value, secret, source),
-    ))
+        cancel,
+        report,
+    );
+    record(&result, &started_at, source);
+    Ok(result)
+}
+
+/// Writes the run to the history database; a failure to do so never fails the run.
+fn record(result: &WorkflowResult, started_at: &str, source: Source) {
+    let stored: Vec<StoredStep> = result.steps.iter().map(StoredStep::from).collect();
+    let Ok(steps) = serde_json::to_string(&stored) else { return };
+    if let Ok(history) = agent::open_history() {
+        let _ = history.record_workflow_run(&crate::history::NewWorkflowRun {
+            workflow: &result.workflow,
+            started_at,
+            source,
+            ok: result.ok,
+            cancelled: result.cancelled,
+            steps: &steps,
+        });
+    }
 }
 
 /// The runner, with sending and variable-setting passed in so it can be tested without a network.
+#[cfg(test)]
 fn run_steps(
+    workflow: &str,
+    steps: &[Step],
+    variables: &std::collections::BTreeMap<String, String>,
+    send: impl FnMut(&SendParams) -> Result<(AgentResponse, ResponseData), SendFailure>,
+    set: impl FnMut(&str, &str, Option<bool>) -> Result<VariableInfo, String>,
+) -> WorkflowResult {
+    run_steps_reporting(workflow, steps, variables, send, set, &std::sync::atomic::AtomicBool::new(false), &mut |_| {})
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_steps_reporting(
     workflow: &str,
     steps: &[Step],
     variables: &std::collections::BTreeMap<String, String>,
     mut send: impl FnMut(&SendParams) -> Result<(AgentResponse, ResponseData), SendFailure>,
     mut set: impl FnMut(&str, &str, Option<bool>) -> Result<VariableInfo, String>,
+    cancel: &std::sync::atomic::AtomicBool,
+    report: &mut dyn FnMut(Progress),
 ) -> WorkflowResult {
     let mut results: Vec<StepResult> = Vec::new();
     let mut last_response = None;
     let mut ok = true;
+    let mut cancelled = false;
     for (i, step) in steps.iter().enumerate() {
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            ok = false;
+            cancelled = true;
+            break;
+        }
         let label = step.label.clone().unwrap_or_else(|| {
             step.request.saved_request.clone().unwrap_or_else(|| format!("{} {}", step.request.method.as_deref().unwrap_or("GET"), step.request.url.as_deref().unwrap_or("")))
         });
+        report(Progress::Started { step: i + 1 });
         let mut result = StepResult { step: i + 1, label, ok: false, status: None, elapsed_ms: None, set: Vec::new(), error: None };
 
         let mut params = step.request.clone();
@@ -215,13 +314,14 @@ fn run_steps(
         }
 
         let stop = !result.ok;
+        report(Progress::Finished(result.clone()));
         results.push(result);
         if stop {
             ok = false;
             break;
         }
     }
-    WorkflowResult { workflow: workflow.to_string(), ok, steps_run: results.len(), steps: results, last_response }
+    WorkflowResult { workflow: workflow.to_string(), ok, cancelled, steps_run: results.len(), steps: results, last_response }
 }
 
 #[cfg(test)]
@@ -287,6 +387,50 @@ mod tests {
         assert_eq!(set_calls, vec![("token".to_string(), "abc123".to_string())]);
         assert_eq!(sent, vec!["http://h/login", "http://h/me"]);
         assert_eq!(result.steps[0].set[0].name, "token");
+    }
+
+    #[test]
+    fn progress_is_reported_and_a_cancel_stops_before_the_next_step() {
+        let steps = vec![step("http://h/a"), step("http://h/b"), step("http://h/c")];
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let mut events = Vec::new();
+        let result = run_steps_reporting(
+            "w",
+            &steps,
+            &BTreeMap::new(),
+            |_| Ok(reply(200, "{}")),
+            |n, _, _| Ok(info(n)),
+            &cancel,
+            &mut |p| {
+                if let Progress::Finished(r) = &p {
+                    if r.step == 2 {
+                        cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+                events.push(match p {
+                    Progress::Started { step } => format!("start {step}"),
+                    Progress::Finished(r) => format!("done {}", r.step),
+                });
+            },
+        );
+        assert_eq!(events, ["start 1", "done 1", "start 2", "done 2"]);
+        assert!(result.cancelled && !result.ok);
+        assert_eq!(result.steps_run, 2, "the third step never started");
+    }
+
+    #[test]
+    fn a_recorded_step_names_its_variables_but_never_their_values() {
+        let result = StepResult {
+            step: 1,
+            label: "log in".into(),
+            ok: true,
+            status: Some(200),
+            elapsed_ms: Some(12),
+            set: vec![VariableInfo { name: "token".into(), secret: true, has_value: true, remembered: false, value: Some("tok_SECRET".into()), source: "agent".into() }],
+            error: None,
+        };
+        let json = serde_json::to_string(&StoredStep::from(&result)).unwrap();
+        assert!(json.contains("\"token\"") && !json.contains("tok_SECRET"), "{json}");
     }
 
     #[test]

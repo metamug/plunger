@@ -34,6 +34,7 @@ pub(super) enum Action {
     // Request
     Send,
     Cancel,
+    RunWorkflow,
     DuplicateTab,
     NextTab,
     PreviousTab,
@@ -47,6 +48,7 @@ pub(super) enum Action {
     ExpandResponse,
     RestoreLayout,
     // Tools
+    ShowWorkflows,
     SetUpAgents,
     // Help
     KeyboardShortcuts,
@@ -91,6 +93,7 @@ pub(super) const VIEW_MENU: &[Option<Action>] = &[
 pub(super) const REQUEST_MENU: &[Option<Action>] = &[
     Some(Action::Send),
     Some(Action::Cancel),
+    Some(Action::RunWorkflow),
     None,
     Some(Action::ShowParams),
     Some(Action::ShowAuth),
@@ -107,7 +110,7 @@ pub(super) const REQUEST_MENU: &[Option<Action>] = &[
     Some(Action::NextTab),
     Some(Action::PreviousTab),
 ];
-pub(super) const TOOLS_MENU: &[Option<Action>] = &[Some(Action::SetUpAgents)];
+pub(super) const TOOLS_MENU: &[Option<Action>] = &[Some(Action::ShowWorkflows), Some(Action::SetUpAgents)];
 pub(super) const HELP_MENU: &[Option<Action>] = &[
     Some(Action::KeyboardShortcuts),
     Some(Action::Documentation),
@@ -156,6 +159,8 @@ impl Action {
             Action::ToggleSidebar => "Show or hide the sidebar",
             Action::Send => "Send",
             Action::Cancel => "Cancel the request",
+            Action::RunWorkflow => "Run the open workflow",
+            Action::ShowWorkflows => "Workflows",
             Action::DuplicateTab => "Duplicate tab",
             Action::NextTab => "Next tab",
             Action::PreviousTab => "Previous tab",
@@ -192,6 +197,7 @@ impl Action {
             Action::ZoomReset => (cmd, Key::Num0),
             Action::ToggleSidebar => (cmd, Key::B),
             Action::Send => (cmd, Key::Enter),
+            Action::RunWorkflow => (cmd | Modifiers::SHIFT, Key::R),
             Action::Cancel => (Modifiers::NONE, Key::Escape),
             Action::ShowParams => (cmd, Key::Num1),
             Action::ShowAuth => (cmd, Key::Num2),
@@ -236,6 +242,7 @@ impl ApiTesterApp {
         match action {
             Action::Send => !tab.is_loading(),
             Action::Cancel => tab.is_loading(),
+            Action::RunWorkflow => self.workflow_view.is_some() && !self.workflow_is_running(),
             Action::CopyResponseBody | Action::FindInResponse => matches!(tab.outcome, Outcome::Response(_)),
             Action::CloseTab => true,
             Action::NextTab | Action::PreviousTab => self.tabs.len() > 1,
@@ -324,6 +331,19 @@ impl ApiTesterApp {
                 tab.request_height = None;
             }
             Action::SetUpAgents => self.open_agents_dialog(),
+            Action::ShowWorkflows => {
+                // bring the list into view, and open the first workflow if none is open
+                self.settings.show_sidebar = true;
+                self.workflows_open = true;
+                if self.workflow_view.is_none() {
+                    if let Some(first) = self.workflows.first().map(|w| w.name.clone()) {
+                        self.open_workflow(&first);
+                    } else {
+                        self.notify("No workflows yet: an agent can save one with save_workflow, or use plunger workflow save");
+                    }
+                }
+            }
+            Action::RunWorkflow => self.start_workflow_run(ctx),
             Action::KeyboardShortcuts => self.shortcuts_open = true,
             Action::Documentation => ctx.open_url(egui::OpenUrl::new_tab(DOCS_URL)),
             Action::ReportIssue => ctx.open_url(egui::OpenUrl::new_tab(issue_url())),

@@ -103,7 +103,7 @@ impl SendParams {
     }
 
     /// The form state to send: a saved request with overrides, or a new one.
-    fn to_state(&self, session: &Session, history: &History) -> Result<PersistedState, String> {
+    pub(crate) fn to_state(&self, session: &Session, history: &History) -> Result<PersistedState, String> {
         let body = self.body()?;
         if let Some(h) = &self.headers {
             crate::request::check_header_lines(h.iter())?;

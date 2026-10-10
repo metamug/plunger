@@ -341,6 +341,60 @@ fn old_saved_settings_without_zoom_or_sidebar_load_with_defaults() {
 }
 
 #[test]
+fn workflows_are_listed_with_their_last_run_and_open_in_a_window() {
+    use super::actions::Action;
+    use crate::history::{NewWorkflowRun, Source};
+    let mut a = app(PersistedState::default());
+    let ctx = egui::Context::default();
+
+    // nothing yet: no section, and the menu entries say so instead of failing
+    draw(&mut a);
+    assert!(a.workflows.is_empty());
+    assert!(!a.action_enabled(Action::RunWorkflow), "nothing is open to run");
+    a.run_action(&ctx, Action::ShowWorkflows);
+    assert!(a.workflow_view.is_none());
+
+    let h = a.history.as_ref().unwrap();
+    h.save_workflow(
+        "shop",
+        r#"[{"label":"log in","method":"POST","url":"{{base}}/login","json":{"u":"{{u}}"},"extract":[{"name":"token","from":"json:$.token"}],"expect_status":200},
+            {"url":"{{base}}/me","headers":{"Authorization":"Bearer {{token}}"}}]"#,
+    )
+    .unwrap();
+    h.save_workflow("saved only", r#"[{"saved_request":"Orders list"}]"#).unwrap();
+    let steps = r#"[{"step":1,"label":"log in","ok":true,"status":200,"elapsed_ms":9,"set":["token"],"error":null},
+                    {"step":2,"label":"GET {{base}}/me","ok":false,"status":401,"elapsed_ms":3,"set":[],"error":"expected 2xx, got 401"}]"#;
+    h.record_workflow_run(&NewWorkflowRun { workflow: "shop", started_at: "2026-10-10T09:00:00Z", source: Source::Mcp, ok: false, cancelled: false, steps })
+        .unwrap();
+    a.refresh_lists();
+
+    assert_eq!(a.workflows.len(), 2);
+    let shop = a.workflows.iter().find(|w| w.name == "shop").unwrap();
+    assert_eq!(shop.steps.len(), 2);
+    assert!(!shop.last.as_ref().unwrap().ok, "the failed run is the last one");
+    assert!(a.workflows.iter().find(|w| w.name == "saved only").unwrap().last.is_none());
+    draw(&mut a);
+
+    // opening one shows it, with the recorded run, and Run becomes available
+    a.open_workflow("shop");
+    assert_eq!(a.workflow_view.as_ref().unwrap().name, "shop");
+    draw(&mut a);
+    assert!(a.action_enabled(Action::RunWorkflow));
+
+    // the menu entry opens the first workflow when none is open
+    a.workflow_view = None;
+    a.run_action(&ctx, Action::ShowWorkflows);
+    assert!(a.workflow_view.is_some());
+
+    // a workflow deleted behind the window's back closes it
+    a.history.as_ref().unwrap().delete_workflow("shop").unwrap();
+    a.history.as_ref().unwrap().delete_workflow("saved only").unwrap();
+    a.refresh_lists();
+    assert!(a.workflows.is_empty() && a.workflow_view.is_none());
+    draw(&mut a);
+}
+
+#[test]
 fn the_agents_dialog_draws_in_both_scopes_without_writing_anything() {
     let mut a = app(PersistedState::default());
     a.open_agents_dialog();
