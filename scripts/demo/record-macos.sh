@@ -40,6 +40,9 @@ click() {
     post($.kCGEventLeftMouseDown, x, y);
     delay(0.06);
     post($.kCGEventLeftMouseUp, x, y);
+    // park the pointer on the status bar, so a tooltip does not sit over the next scene
+    delay(0.25);
+    post($.kCGEventMouseMoved, '"$((WX + WW - 60))"', '"$((WY + WH - 14))"');
   ' 2>>"$OUT/osascript-err.txt" || echo "click failed" >> "$OUT/osascript-err.txt"
 }
 move() { sys_events "set the position of the mouse to {$((WX + $1)), $((WY + $2))}" 2>/dev/null || true; }

@@ -5,9 +5,14 @@ name: Demo video
 # The files are in the run's artifacts. It does not publish anything.
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Also attach the video to this release (for example v0.5.3). Leave empty to only keep it as a build artifact."
+        required: false
+        default: ""
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -59,3 +64,9 @@ jobs:
             demo-out/osascript-err.txt
             demo-out/app-stdout.txt
           if-no-files-found: warn
+
+      - name: Attach to the release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.release_tag }}" demo-out/plunger-demo.mp4 demo-out/plunger-demo.gif --clobber
