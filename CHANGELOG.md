@@ -4,6 +4,9 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed
+- The code that registers an MCP server in Claude Code, Cursor, Kiro, Codex, Windsurf, VS Code and Gemini CLI is now its own crate, `mcp-install` (`crates/mcp-install`), usable by any MCP server, with its own tests, README and an example. Plunger uses it for `plunger install`; nothing changes for users. The repository is now a Cargo workspace and CI tests all of it.
+
 ### Added
 - Homebrew: `brew install --cask metamug/tap/plunger` installs `Plunger.app` and a `plunger` command (the tap is metamug/homebrew-tap, tested on a macOS runner on every push).
 

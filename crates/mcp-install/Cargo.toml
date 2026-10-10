@@ -1,0 +1,16 @@
+[package]
+name = "mcp-install"
+version = "0.1.0"
+edition = "2021"
+description = "Register an MCP server in Claude Code, Cursor, Kiro, Codex, Windsurf, VS Code and Gemini CLI, and add the always-on instructions that tell the agent to use it."
+license = "MIT"
+repository = "https://github.com/metamug/plunger"
+homepage = "https://github.com/metamug/plunger/tree/main/crates/mcp-install"
+readme = "README.md"
+keywords = ["mcp", "ai", "agent", "installer", "config"]
+categories = ["development-tools", "config"]
+rust-version = "1.74"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }

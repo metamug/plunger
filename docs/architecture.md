@@ -39,7 +39,7 @@ form or agent input
 | A CLI command | `cli.rs` (help text is in `command_help`) |
 | curl, PowerShell or cmd import and export | `curl_import.rs`, `curl_export.rs`, `commands/` |
 | Secrets | `secrets.rs` (OS credential store), `redact.rs`, `engine/response.rs` (`Scrubber`) |
-| Setting up AI tools | `install.rs` (data table of tools and file formats), `app/agents_window.rs` |
+| Setting up AI tools | `crates/mcp-install` (the tools, their files and the safe writing, a reusable crate), `install.rs` (Plunger's server and instructions), `app/agents_window.rs` |
 
 ## Rules that keep it safe
 

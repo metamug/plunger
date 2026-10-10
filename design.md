@@ -90,7 +90,7 @@ Details that matter:
 | Agents | `engine/` | `session.rs` (variables, remembered secrets), `mod.rs` (send with history), `response.rs` (the `Scrubber` and agent-shaped results). |
 | | `agent/` | `mod.rs` (send), `requests.rs` (saved requests, history, curl), `variables.rs`: the operations shared by the CLI and MCP. |
 | | `workflow/` | Saved sequences of requests, and pulling a value out of a response (`extract.rs`). |
-| | `install.rs` | `plunger install`: MCP config and steering files for each AI tool. |
+| | `install.rs`, `crates/mcp-install` | `plunger install`: Plunger's server and instructions on top of the `mcp-install` crate, which holds each AI tool's config files and the careful writing (merge, backup, markers, dry run). |
 | | `cli.rs`, `curl_cli.rs`, `mcp.rs`, `mcp_content.rs` | Argument parsing, output and exit codes; `plunger curl`; MCP tool definitions; MCP resources and prompts. |
 
 Dependencies only point downward: the GUI and the agent layer use the core; the core knows nothing about either.
