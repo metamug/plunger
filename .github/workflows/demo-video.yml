@@ -56,5 +56,6 @@ jobs:
             demo-out/geometry.txt
             demo-out/start.txt
             demo-out/recorder-err.txt
+            demo-out/osascript-err.txt
             demo-out/app-stdout.txt
           if-no-files-found: warn

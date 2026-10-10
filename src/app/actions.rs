@@ -193,6 +193,12 @@ impl Action {
             Action::ToggleSidebar => (cmd, Key::B),
             Action::Send => (cmd, Key::Enter),
             Action::Cancel => (Modifiers::NONE, Key::Escape),
+            Action::ShowParams => (cmd, Key::Num1),
+            Action::ShowAuth => (cmd, Key::Num2),
+            Action::ShowHeaders => (cmd, Key::Num3),
+            Action::ShowBody => (cmd, Key::Num4),
+            Action::ShowVariables => (cmd, Key::Num5),
+            Action::ShowOptions => (cmd, Key::Num6),
             Action::NextTab => (cmd, Key::Tab),
             Action::PreviousTab => (cmd | Modifiers::SHIFT, Key::Tab),
             Action::KeyboardShortcuts => (Modifiers::NONE, Key::F1),
@@ -485,7 +491,7 @@ mod tests {
     #[test]
     fn the_shortcuts_people_know_are_there() {
         let has = |a: Action| a.shortcut().is_some();
-        for action in [Action::NewTab, Action::SaveRequest, Action::CloseTab, Action::Send, Action::Cancel, Action::GoToUrl, Action::FindInResponse, Action::NextTab, Action::PreviousTab, Action::CopyAsLast, Action::ZoomIn, Action::ZoomOut, Action::ZoomReset, Action::ToggleSidebar, Action::KeyboardShortcuts] {
+        for action in [Action::NewTab, Action::SaveRequest, Action::CloseTab, Action::Send, Action::Cancel, Action::GoToUrl, Action::FindInResponse, Action::NextTab, Action::PreviousTab, Action::CopyAsLast, Action::ZoomIn, Action::ZoomOut, Action::ZoomReset, Action::ToggleSidebar, Action::KeyboardShortcuts, Action::ShowParams, Action::ShowBody, Action::ShowVariables] {
             assert!(has(action), "{action:?} lost its shortcut");
         }
     }

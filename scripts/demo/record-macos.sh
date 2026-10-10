@@ -16,16 +16,32 @@ mkdir -p "$OUT"
 now() { python3 -c 'import time; print(f"{time.time():.3f}")'; }
 mark() { echo "$(now)|$1" >> "$OUT/markers.txt"; }
 snap() { screencapture -x "$OUT/$1.png" || true; }
-sys_events() { osascript -e 'tell application "System Events"' -e "$1" -e 'end tell'; }
+sys_events() { osascript -e 'tell application "System Events"' -e "$1" -e 'end tell' 2>>"$OUT/osascript-err.txt" || echo "failed: $1" >> "$OUT/osascript-err.txt"; }
 key() { sys_events "keystroke \"$1\" using $2 down"; }
 code() { sys_events "key code $1"; }
 send_it() { sys_events "key code 36 using command down"; }
 typing() {
+  # errors are kept: a keystroke that does not arrive should be visible in the artifacts
   osascript -e 'tell application "System Events"' \
-    -e "repeat with c in characters of \"$1\"" -e 'keystroke c' -e 'delay 0.045' -e 'end repeat' -e 'end tell'
+    -e "repeat with c in characters of \"$1\"" -e 'keystroke c' -e 'delay 0.045' -e 'end repeat' -e 'end tell' 2>>"$OUT/osascript-err.txt" || echo "typing failed" >> "$OUT/osascript-err.txt"
 }
-# Coordinates are relative to the top-left of the Plunger window.
-click() { sys_events "click at {$((WX + $1)), $((WY + $2))}"; }
+# Coordinates are relative to the top-left of the Plunger window. A real mouse click is posted at the
+# system level (System Events' `click at` only presses accessibility elements, and this window has none).
+click() {
+  osascript -l JavaScript -e '
+    ObjC.import("ApplicationServices");
+    function post(type, x, y) {
+      var ev = $.CGEventCreateMouseEvent(null, type, $.CGPointMake(x, y), $.kCGMouseButtonLeft);
+      $.CGEventPost($.kCGHIDEventTap, ev);
+    }
+    var x = '"$((WX + $1))"', y = '"$((WY + $2))"';
+    post($.kCGEventMouseMoved, x, y);
+    delay(0.15);
+    post($.kCGEventLeftMouseDown, x, y);
+    delay(0.06);
+    post($.kCGEventLeftMouseUp, x, y);
+  ' 2>>"$OUT/osascript-err.txt" || echo "click failed" >> "$OUT/osascript-err.txt"
+}
 move() { sys_events "set the position of the mouse to {$((WX + $1)), $((WY + $2))}" 2>/dev/null || true; }
 pause() { sleep "$1"; }
 
@@ -71,10 +87,8 @@ pause 1.5
 
 # 1. a person sends a request
 mark "person|You: send a request from the window"
-click 560 134
+key l command
 pause 0.4
-key a command
-pause 0.2
 typing "http://127.0.0.1:18095/items?per_page=3"
 pause 0.6
 send_it
@@ -92,7 +106,7 @@ pause 0.6
 
 # 3. what the agent saved: the token stays hidden
 mark "variables|The token it saved stays hidden, from the agent and from the screen"
-click 614 183
+key 5 command
 pause 2.4
 snap s3-variables
 
@@ -100,13 +114,14 @@ snap s3-variables
 mark "headers|Requests keep {{placeholders}}, so a secret is never written down"
 click 130 238
 pause 0.8
-click 450 183
+snap s4-opened
+key 3 command
 pause 2.4
 snap s4-headers
 
 # 5. run it again, look at the response
 mark "rerun|Re-run any of the agent's calls yourself with Cmd+Enter"
-click 302 183
+key 1 command
 pause 0.4
 send_it
 pause 2.4

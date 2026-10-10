@@ -7,6 +7,9 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 ### Added
 - A macOS app and disk image: each release now has `Plunger-<version>-macos.dmg`, one `Plunger.app` for Apple Silicon and Intel, with an icon, ad-hoc signed, built and checked by the release workflow (it is universal, the signature verifies, the window starts, the image mounts). A Homebrew cask is ready in `packaging/homebrew/`. See `docs/packaging-macos.md`.
 
+### Added
+- Ctrl+1 to Ctrl+6 (Cmd on a Mac) open the Params, Auth, Headers, Body, Variables and Options tabs of the request.
+
 ### Changed
 - The menu bar is now File, Edit, View, Request, Tools and Help, built from one table of actions that also drives the keyboard shortcuts, so a shortcut is always in a menu and shown next to its item (#102, #128, #129):
   - **Edit:** Copy URL, Copy response body, Find in response (Ctrl+F), Go to URL (Ctrl+L).
