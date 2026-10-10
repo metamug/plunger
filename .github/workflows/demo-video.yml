@@ -1,0 +1,57 @@
+name: Demo video
+
+# Records the real window on a macOS runner, driven by real keyboard and mouse events, and turns the
+# frames into a captioned video and GIF. Start it by hand: Actions > Demo video > Run workflow.
+# The files are in the run's artifacts. It does not publish anything.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  record:
+    name: Record on macOS
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: What this runner allows (probe)
+        run: |
+          mkdir -p shots
+          pip3 install --quiet imageio imageio-ffmpeg pillow numpy 2>&1 | tail -1 || true
+          python3 -c "import imageio_ffmpeg; print('ffmpeg:', imageio_ffmpeg.get_ffmpeg_exe())" > shots/probe.txt 2>&1 || echo "no imageio-ffmpeg" >> shots/probe.txt
+          mkdir -p /tmp/www /tmp/data
+          echo '{"items":[{"id":1,"name":"Widget 1"},{"id":2,"name":"Widget 2"}]}' > /tmp/www/items.json
+          python3 -m http.server 18080 --bind 127.0.0.1 --directory /tmp/www >/dev/null 2>&1 &
+          sleep 1
+          export PLUNGER_DATA_DIR=/tmp/data
+          ./target/release/plunger vars set base http://127.0.0.1:18080 >/dev/null
+          ./target/release/plunger send --url '{{base}}/items.json' >/dev/null
+          ./target/release/plunger > shots/stdout.txt 2>&1 &
+          sleep 8
+          screencapture -x shots/a-start.png || echo "screencapture failed" >> shots/probe.txt
+          # keyboard and mouse through System Events (needs the Accessibility permission)
+          osascript -e 'tell application "System Events" to set frontmost of process "plunger" to true' >> shots/probe.txt 2>&1 || true
+          sleep 1
+          osascript -e 'tell application "System Events" to keystroke "t" using command down' >> shots/probe.txt 2>&1 && echo "keystroke ok" >> shots/probe.txt || echo "keystroke FAILED" >> shots/probe.txt
+          sleep 1
+          osascript -e 'tell application "System Events" to click at {900, 330}' >> shots/probe.txt 2>&1 && echo "click ok" >> shots/probe.txt || echo "click FAILED" >> shots/probe.txt
+          sleep 1
+          screencapture -x shots/b-after-input.png || true
+          # a short screen recording
+          screencapture -v -V 3 shots/clip.mov >> shots/probe.txt 2>&1 || echo "video capture FAILED" >> shots/probe.txt
+          ls -la shots >> shots/probe.txt
+          cat shots/probe.txt
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: probe
+          path: shots/
+          if-no-files-found: warn
