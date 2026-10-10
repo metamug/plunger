@@ -155,3 +155,60 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ inputs.release_tag || github.ref_name }}" dist/plunger-macos-${{ matrix.arch }}.tar.gz dist/plunger-macos-${{ matrix.arch }}.tar.gz.sha256 --clobber
+
+  # One app for both kinds of Mac: the two builds above joined into a universal Plunger.app, in a disk image.
+  macos-app:
+    name: Build and publish (macOS app and disk image)
+    needs: macos
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: plunger-macos-*-tarball
+          path: builds
+          merge-multiple: true
+
+      - name: Build Plunger.app and the disk image
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          mkdir -p arm x86 out
+          tar -xzf builds/plunger-macos-arm64.tar.gz -C arm
+          tar -xzf builds/plunger-macos-x86_64.tar.gz -C x86
+          packaging/macos/build-app.sh "$version" out arm/plunger/plunger x86/plunger/plunger
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: The app is universal, signed, and starts
+        run: |
+          APP=out/Plunger.app
+          lipo -info "$APP/Contents/MacOS/plunger" | tee /dev/stderr | grep -q "x86_64 arm64\|arm64 x86_64"
+          codesign -dv "$APP" 2>&1 | head -5
+          plutil -lint "$APP/Contents/Info.plist"
+          "$APP/Contents/MacOS/plunger" --version
+          export PLUNGER_DATA_DIR=$(mktemp -d)
+          "$APP/Contents/MacOS/plunger" &
+          pid=$!
+          sleep 6
+          kill -0 $pid && echo "the window stayed up" || { echo "the window exited"; exit 1; }
+          kill $pid || true
+          # the disk image mounts and holds the app
+          hdiutil attach "out/Plunger-$VERSION-macos.dmg" -mountpoint /tmp/plunger-dmg -nobrowse -quiet
+          ls /tmp/plunger-dmg
+          test -d /tmp/plunger-dmg/Plunger.app
+          hdiutil detach /tmp/plunger-dmg -quiet
+
+      - name: Keep the disk image as a build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: plunger-macos-dmg
+          path: |
+            out/Plunger-*-macos.dmg
+            out/Plunger-*-macos.dmg.sha256
+          if-no-files-found: error
+
+      - name: Attach to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.release_tag || github.ref_name }}" "out/Plunger-$VERSION-macos.dmg" "out/Plunger-$VERSION-macos.dmg.sha256" --clobber
