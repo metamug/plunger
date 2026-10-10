@@ -160,6 +160,8 @@ pipx install plunger-cli      # same, in its own environment (use this if pip sa
 uvx plunger-cli mcp           # or run the MCP server without installing anything
 ```
 
+**macOS (11 or later, Apple Silicon and Intel):** download `Plunger-<version>-macos.dmg` from the [releases page](https://github.com/metamug/plunger/releases/latest), open it and drag Plunger to Applications. The first time, right-click the app and choose **Open** (it is not signed with an Apple Developer ID yet; see [docs/packaging-macos.md](docs/packaging-macos.md)). `pip install plunger-cli` also works on a Mac.
+
 **Zip:**
 
 1. [Download `plunger-windows.zip`](https://github.com/metamug/plunger/releases/latest/download/plunger-windows.zip) and unzip it anywhere.
