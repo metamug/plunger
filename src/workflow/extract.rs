@@ -199,7 +199,8 @@ fn field_of<'a>(item: &'a Value, field: &[String]) -> Option<&'a Value> {
 }
 
 /// Follows a path like `$.items[0].id`, `$['a b'].c` or `$.items[*].id` through `value`. A `[*]` collects the
-/// value from every item into an array (an item that lacks it is skipped).
+/// value from every item into an array, one entry per item (an item that lacks it, or whose parent is
+/// null, gives null, so the list lines up with the items).
 pub fn json_path(value: &Value, path: &str) -> Result<Value, String> {
     let segments = parse_path(path)?;
     let mut current: Vec<&Value> = vec![value];
@@ -210,12 +211,12 @@ pub fn json_path(value: &Value, path: &str) -> Result<Value, String> {
             match (segment, node) {
                 (Segment::Key(k), Value::Object(map)) => match map.get(k) {
                     Some(v) => next.push(v),
-                    None if fanned => {}
+                    None if fanned => next.push(&Value::Null),
                     None => return Err(format!("no `{k}` in the response (at `{path}`)")),
                 },
                 (Segment::Index(n), Value::Array(items)) => match items.get(*n) {
                     Some(v) => next.push(v),
-                    None if fanned => {}
+                    None if fanned => next.push(&Value::Null),
                     None => return Err(format!("no item {n}: the array has {} (at `{path}`)", items.len())),
                 },
                 (Segment::Every, Value::Array(items)) => {
@@ -229,9 +230,11 @@ pub fn json_path(value: &Value, path: &str) -> Result<Value, String> {
                 (Segment::Filter { .. }, _) if !fanned => return Err(format!("a filter is not inside an array (at `{path}`)")),
                 (Segment::Every, _) => return Err(format!("[*] is not inside an array (at `{path}`)")),
                 // a null parent (a Jira issue with no assignee) has no children: the result is null, not an error
-                (Segment::Key(_) | Segment::Index(_), Value::Null) if !fanned => next.push(&Value::Null),
+                (Segment::Key(_) | Segment::Index(_), Value::Null) => next.push(&Value::Null),
                 (Segment::Key(k), _) if !fanned => return Err(format!("`{k}` is not inside an object (at `{path}`)")),
                 (Segment::Index(n), _) if !fanned => return Err(format!("[{n}] is not inside an array (at `{path}`)")),
+                // inside a [*]: an item that has no such part gives null, so the result stays one entry per item
+                (Segment::Key(_) | Segment::Index(_), _) => next.push(&Value::Null),
                 _ => {}
             }
         }
@@ -267,7 +270,7 @@ mod tests {
         assert_eq!(json_path(&v, "$").unwrap(), v);
         assert_eq!(json_path(&v, "$.data.items[*].id").unwrap(), json!([7, 8]));
         let loose = json!({"rows": [{"id": 1, "tag": "a"}, {"id": 2}, {"id": 3, "tag": "c"}]});
-        assert_eq!(json_path(&loose, "$.rows[*].tag").unwrap(), json!(["a", "c"]), "an item without it is skipped");
+        assert_eq!(json_path(&loose, "$.rows[*].tag").unwrap(), json!(["a", null, "c"]), "an item without it gives null, so the list lines up with the items");
         assert_eq!(json_path(&loose, "$.rows[*]").unwrap().as_array().unwrap().len(), 3);
         assert!(json_path(&loose, "$.rows[0][*]").is_err());
     }
@@ -371,5 +374,12 @@ mod tests {
         assert_eq!(json_path(&v, "$.fields.assignee.avatars[0].url").unwrap(), json!(null));
         assert!(json_path(&v, "$.fields.reporter").unwrap_err().contains("no `reporter`"));
         assert!(json_path(&v, "$.fields.labels[0]").unwrap_err().contains("array has 0"));
+    }
+
+    #[test]
+    fn a_wildcard_gives_one_entry_per_item_so_lists_line_up() {
+        let v = json!({"items": [{"owner": {"n": "x"}, "id": 1}, {"owner": null, "id": 2}, {"id": 3}, {"owner": {"n": "z"}, "id": 4}]});
+        assert_eq!(json_path(&v, "$.items[*].owner.n").unwrap(), json!(["x", null, null, "z"]));
+        assert_eq!(json_path(&v, "$.items[*].id").unwrap(), json!([1, 2, 3, 4]));
     }
 }

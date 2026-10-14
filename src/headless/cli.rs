@@ -62,7 +62,7 @@ SEND OPTIONS
   --timeout <SECONDS>         Default: the window's setting (20)
   --insecure                  Skip TLS certificate checks
   --no-follow                 Don't follow redirects
-  --max-body <CHARS>          Cut longer bodies in the output (default 50000)
+  --max-body <CHARS>          Longer JSON gives an outline, longer text is cut (default 50000)
   --fail                      Exit with 4 when the status is 400 or higher
 
 Run `plunger <command> --help` for the options of one command. Environment variables work too:

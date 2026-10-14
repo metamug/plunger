@@ -436,8 +436,9 @@ fn run_steps_reporting(
 
         let mut params = step.request.clone();
         if !visible.is_empty() {
-            let mut merged = params.variables.take().unwrap_or_default();
-            merged.extend(visible.iter().map(|(k, v)| (k.clone(), v.clone())));
+            // the step's own `variables` are the most specific, so they win over the run's
+            let mut merged: std::collections::BTreeMap<String, String> = visible.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            merged.extend(params.variables.take().unwrap_or_default());
             params.variables = Some(merged);
         }
 
@@ -708,6 +709,20 @@ mod tests {
             Ok(reply(200, "{}"))
         }, |n, _, _| Ok(info(n)));
         assert!(seen.iter().all(|v| v.get("user").map(String::as_str) == Some("ann")));
+    }
+
+    #[test]
+    fn a_steps_own_variables_win_over_the_runs() {
+        let mut seen = Vec::new();
+        let vars = BTreeMap::from([("env".to_string(), "prod".to_string()), ("user".to_string(), "ann".to_string())]);
+        let mut own = step("http://h/a");
+        own.request.variables = Some(BTreeMap::from([("env".to_string(), "staging".to_string())]));
+        run_steps("w", &[own], &vars, |p| {
+            seen.push(p.variables.clone().unwrap());
+            Ok(reply(200, "{}"))
+        }, |n, _, _| Ok(info(n)));
+        assert_eq!(seen[0].get("env").map(String::as_str), Some("staging"), "the step's override stays");
+        assert_eq!(seen[0].get("user").map(String::as_str), Some("ann"), "the run's other values still arrive");
     }
 
     #[test]

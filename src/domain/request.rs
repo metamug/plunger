@@ -28,6 +28,12 @@ pub struct OutgoingRequest {
     pub insecure_tls: bool,
 }
 
+/// A value in a form body: everything the query encoding does, plus `=`, so a value can never look like
+/// another `key=value` pair.
+fn form_value(value: &str) -> String {
+    encode_value(value).replace('=', "%3D")
+}
+
 pub fn parse_headers(text: &str) -> Vec<(String, String)> {
     text.lines()
         .filter_map(|line| {
@@ -185,7 +191,7 @@ pub fn build_request(state: &PersistedState, bearer_token: &str) -> Result<Outgo
                 .filter(|l| !l.is_empty())
                 .map(|l| match l.split_once('=') {
                     // a value with `&`, `=` or a line break must not become another field
-                    Some((key, value)) => format!("{}={}", r.apply(key), r.apply_with(value, encode_value)),
+                    Some((key, value)) => format!("{}={}", r.apply(key), r.apply_with(value, form_value)),
                     None => r.apply(l),
                 })
                 .collect();
@@ -356,6 +362,16 @@ mod tests {
         let r = build(&s, "tok");
         assert_eq!(r.headers.len(), 2);
         assert!(r.headers.iter().all(|(_, v)| !v.contains("Bearer")));
+    }
+
+    #[test]
+    fn a_form_value_with_an_equals_sign_is_encoded() {
+        let mut s = state();
+        s.method = "POST".into();
+        s.body_mode = BodyMode::UrlEncoded;
+        s.urlencoded_body = "a={{v}}".into();
+        s.variables = vec![var("v", "x y&z=1")];
+        assert_eq!(text_body(&build(&s, "")), Some("a=x%20y%26z%3D1"));
     }
 
     #[test]

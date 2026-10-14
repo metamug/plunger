@@ -63,7 +63,7 @@ pub struct SendParams {
     /// Skip TLS certificate checks, e.g. for a local server with a self-signed certificate.
     #[serde(default)]
     pub insecure_tls: Option<bool>,
-    /// Longest body to return, in characters (default 50000). Longer bodies are cut and marked.
+    /// Longest body to return, in characters (default 50000). A longer JSON body comes back as an outline of its shape (keys, types, array lengths) with a hint to use `select`; a longer text body is cut and marked with `body_cut_from_chars`.
     #[serde(default)]
     pub max_body_chars: Option<usize>,
     /// Keep values from the response as variables for later requests, e.g.
@@ -73,7 +73,7 @@ pub struct SendParams {
     pub extract: Vec<crate::workflow::Extract>,
     /// Return only these values instead of the whole body, e.g. ["$.data[0].id", "header:Location", "status"].
     /// Saves context on a big response; `json`, `body` and the headers are then left out. `[?(@.name=='Done')]`
-    /// keeps the array items whose field equals the value. If a path cannot be read, the whole response is returned.
+    /// keeps the array items whose field equals the value. If every path fails the whole response is returned with the reasons; if only some fail, the values that could be read come back and `problems` names the rest.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub select: Option<Vec<String>>,
     /// Which response headers to return: `all`, `none`, or `relevant` (location, link, retry-after,
@@ -372,23 +372,31 @@ fn apply_header_mode(shaped: &mut AgentResponse, every_header: Vec<engine::NameV
 /// again to see what came back could do its work twice.
 fn apply_select(shaped: &mut AgentResponse, raw: &ResponseData, paths: &[String], scrubber: &Scrubber) {
     let mut selected = BTreeMap::new();
-    let mut failed = false;
+    let mut failed = 0;
     for path in paths {
         match crate::workflow::extract::select(raw, path) {
             Ok(value) => {
                 selected.insert(path.clone(), scrubber.json(&value));
             }
             Err(err) => {
-                failed = true;
+                failed += 1;
                 shaped.problems.push(format!("could not select `{path}`: {err}"));
             }
         }
     }
-    shaped.selected = Some(selected);
-    if failed {
+    if failed > 0 && selected.is_empty() {
+        shaped.selected = Some(selected);
         shaped.problems.push("`select` did not work, so the whole response is returned (the request was sent once).".to_string());
         return;
     }
+    if failed > 0 {
+        // the paths that worked are the answer; returning the whole body as well would cost what `select` is for
+        shaped.problems.push(format!(
+            "{failed} of {} `select` paths could not be read (named above); the values that could are in `selected`. The request was sent once.",
+            paths.len()
+        ));
+    }
+    shaped.selected = Some(selected);
     shaped.json = None;
     shaped.body = None;
     shaped.body_cut_from_chars = None;
@@ -771,6 +779,17 @@ mod tests {
     }
 
     #[test]
+    fn one_bad_path_does_not_cost_the_values_of_the_good_ones() {
+        let raw = response_with(r#"{"key": "PRJ-1", "big": "xxxxxxxxxxxxxxxxxxxx"}"#);
+        let mut out = shaped(serde_json::json!({"key": "PRJ-1"}));
+        apply_select(&mut out, &raw, &["$.key".into(), "$.nope.x".into()], &Scrubber::new(&PersistedState::default(), ""));
+        assert_eq!(out.selected.as_ref().unwrap()["$.key"], "PRJ-1");
+        assert!(out.json.is_none() && out.body.is_none(), "the whole body is not returned when something was selected");
+        let said = out.problems.join(" | ");
+        assert!(said.contains("could not select `$.nope.x`") && said.contains("1 of 2"), "{said}");
+    }
+
+    #[test]
     fn selecting_below_a_null_is_null_not_a_problem() {
         let raw = response_with(r#"{"fields": {"assignee": null, "summary": "x"}}"#);
         let mut out = shaped(serde_json::json!({"fields": {"assignee": null}}));
@@ -848,10 +867,14 @@ mod tests {
                 let before = (out.json.clone(), out.body.clone());
                 apply_select(&mut out, &raw, &paths.map(String::from), &scrubber);
                 let selected = out.selected.as_ref().expect("select always reports");
-                // it never panics, and when any path could not be read the body is still there to look at
-                if !out.problems.is_empty() {
+                // it never panics; when no path could be read the body is still there to look at, and when only
+                // some could not, the ones that could are returned
+                if !out.problems.is_empty() && selected.is_empty() {
                     assert_eq!((out.json.clone(), out.body.clone()), before, "{body:?} {status}: the body was lost");
                     assert!(out.problems.iter().any(|p| p.contains("whole response")), "{body:?}: {:?}", out.problems);
+                } else if !out.problems.is_empty() {
+                    assert!(out.json.is_none() && out.body.is_none(), "{body:?} {status}: a partial select returns only values");
+                    assert!(out.problems.iter().any(|p| p.contains(" of ")), "{body:?}: {:?}", out.problems);
                 } else {
                     assert_eq!(selected.len(), paths.len());
                 }

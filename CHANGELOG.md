@@ -4,6 +4,13 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed
+- `$.items[*].owner.n` gives one entry per item: an item that lacks the value, or whose parent is null, gives `null` instead of being left out, so the list lines up with `$.items[*].id`.
+- A step's own `variables` win over the run's: a workflow-level value no longer replaces a step's override.
+- A `=` in a form value is percent-encoded, so a variable's value can never become another `key=value` pair.
+- When some `select` paths cannot be read, the ones that can are returned and `problems` names the rest; the whole response is returned only when every path fails.
+- `max_body_chars` is described as it behaves: a long JSON body returns an outline, a long text body is cut.
+
 ## [0.7.1] - 2026-10-14
 
 ### Fixed
