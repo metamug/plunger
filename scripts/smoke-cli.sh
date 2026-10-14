@@ -47,7 +47,14 @@ list='{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 # The server stops when its input closes; a time limit is only a safety net where `timeout` exists
 # (it does not on macOS).
 limit=""
-if command -v timeout >/dev/null 2>&1; then limit="timeout 10"; elif command -v gtimeout >/dev/null 2>&1; then limit="gtimeout 10"; fi
-resp=$( { printf '%s\n%s\n%s\n' "$init" "$note" "$list"; sleep 2; } | $limit "$BIN" mcp || true)
+if command -v timeout >/dev/null 2>&1; then limit="timeout 20"; elif command -v gtimeout >/dev/null 2>&1; then limit="gtimeout 20"; fi
+# A freshly built program can take a few seconds to start on a busy runner (the first run is scanned), so the
+# input stays open for longer than the server needs and the check is tried up to three times.
+resp=""
+for attempt in 1 2 3; do
+  resp=$( { printf '%s\n%s\n%s\n' "$init" "$note" "$list"; sleep 6; } | $limit "$BIN" mcp || true)
+  if echo "$resp" | grep -q send_request; then break; fi
+  echo "mcp: no tool list yet (attempt $attempt)"
+done
 echo "$resp" | grep -q send_request || { echo "mcp: tools/list has no send_request"; echo "$resp"; exit 1; }
 echo "smoke test passed"
