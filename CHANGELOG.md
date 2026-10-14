@@ -4,7 +4,14 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-14
+
+### Fixed
+- History stopped saving new requests when the table held a row the audit log's counter had not seen (an older build wrote it after the log started): the next id collided and the insert was lost without a word. Ids now continue after the highest row in the table. If a history write still fails, the window says so ("History was not saved: ...").
+- Dialogs (Variables, Workflow, Import, Export, Set up AI agents, Shortcuts, About) no longer grow past the window on a laptop screen; they stop short of the edges and scroll.
+
 ### Changed
+- A calmer look: neutral borders, flat menus, a quiet shadow under dialogs, amber kept for the active tab, Send and the selected row. Send is as tall as the URL box, and Save and Import are in the File menu only, not next to Send.
 - What an agent is told matches what Plunger does: the server instructions and the installed skill (`plunger install`) now cover groups, `select` filters, optional and default placeholders, JSON escaping, conditional workflow steps, `include_headers`, redirect and binary fields. A test fails if a tool is missing from the instructions, if a send option has no description in the tool schema, or if the skill loses a key feature. Re-run `plunger install` to refresh an installed skill.
 
 ## [0.7.0] - 2026-10-14
@@ -269,7 +276,8 @@ Workflows get a window of their own, the toolkit is current (egui 0.36), and the
 
 First public release: send requests with params, headers, JSON, form-urlencoded, raw and multipart bodies; `{{variables}}`; secrets kept in Windows Credential Manager on request; curl and HAR import; local history; TLS-skip for local servers.
 
-[Unreleased]: https://github.com/metamug/plunger/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/metamug/plunger/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/metamug/plunger/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/metamug/plunger/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/metamug/plunger/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/metamug/plunger/compare/v0.5.2...v0.5.3
