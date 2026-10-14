@@ -500,6 +500,12 @@ impl History {
         // lines another process appended and did not apply (it stopped in between)
         self.catch_up(&mut state)?;
         self.rotate_if_large(&mut state)?;
+        // An older build (or a restored file) can have added rows the log never saw; ids continue after the
+        // highest one in the table, or the next insert would collide with it and be lost.
+        let top: i64 = self.conn.query_row("SELECT COALESCE(MAX(id), 0) FROM requests", [], |r| r.get(0))?;
+        state.last_request_id = state.last_request_id.max(top);
+        let top_run: i64 = self.conn.query_row("SELECT COALESCE(MAX(id), 0) FROM workflow_runs", [], |r| r.get(0))?;
+        state.last_run_id = state.last_run_id.max(top_run);
         let mut id = 0;
         match event {
             Event::RequestAdded { id: slot, .. } => {
@@ -891,6 +897,17 @@ mod tests {
         assert!(restored.body_mode == BodyMode::Json);
         assert_eq!(restored.json_body, "{\"k\": 1}");
         assert!(restored.raw_body.is_empty());
+    }
+
+    #[test]
+    fn a_row_an_older_build_added_does_not_block_new_history() {
+        let h = history();
+        h.insert(&state("http://a", BodyMode::Json), Some(200), Some(1)).unwrap();
+        // an older build wrote rows the log's counter never saw
+        h.conn.execute("INSERT INTO requests (id, created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body) VALUES (50, '2026-01-01T00:00:00Z', 'GET', 'http://old', '', 'None', '', '', '')", []).unwrap();
+        let id = h.insert(&state("http://new", BodyMode::Json), Some(200), Some(1)).unwrap();
+        assert!(id > 50, "the new row continues after the highest id, got {id}");
+        assert_eq!(h.search_recent("", 10).unwrap()[0].url, "http://new");
     }
 
     fn history() -> History {
