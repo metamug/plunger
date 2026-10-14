@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The accent used for the active tab, focused-field borders, and the Send
 /// button — one color, used consistently, in both themes.
-pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(90, 125, 230);
+pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(240, 150, 40);
 
 /// Breathing room inside text fields; egui's default (4×2) makes them cramped.
 pub const FIELD_MARGIN: egui::Margin = egui::Margin::symmetric(8, 6);
@@ -63,13 +63,13 @@ const DARK: Palette = Palette {
     button: rgb(40, 44, 53),
     checkbox: rgb(66, 72, 87),
     hover: rgb(46, 51, 62),
-    accent_soft: rgb(58, 79, 139),
-    border: rgb(48, 53, 63),
+    accent_soft: rgb(98, 66, 22),
+    border: rgb(66, 58, 50),
     text: rgb(222, 222, 222),
     text_widget: rgb(205, 205, 205),
     text_hover: rgb(240, 240, 240),
     text_active: rgb(255, 255, 255),
-    accent_text: rgb(170, 195, 255),
+    accent_text: rgb(255, 205, 130),
     amber: rgb(210, 160, 60),
     error: rgb(230, 100, 90),
     ok: rgb(90, 210, 140),
@@ -104,13 +104,13 @@ const LIGHT: Palette = Palette {
     button: rgb(234, 236, 241),
     checkbox: rgb(255, 255, 255),
     hover: rgb(225, 229, 236),
-    accent_soft: rgb(200, 216, 247),
-    border: rgb(203, 208, 217),
+    accent_soft: rgb(255, 224, 178),
+    border: rgb(225, 205, 175),
     text: rgb(33, 36, 43),
     text_widget: rgb(48, 52, 60),
     text_hover: rgb(15, 17, 22),
     text_active: rgb(0, 0, 0),
-    accent_text: rgb(35, 70, 185),
+    accent_text: rgb(150, 70, 0),
     amber: rgb(175, 115, 15),
     error: rgb(195, 50, 40),
     ok: rgb(25, 140, 80),
@@ -193,15 +193,22 @@ pub fn apply_theme(ctx: &egui::Context, choice: ThemeChoice) {
     visuals.panel_fill = p.panel;
     visuals.extreme_bg_color = p.input; // TextEdit / ScrollArea background
     visuals.faint_bg_color = p.card;
-    visuals.window_stroke = egui::Stroke::new(1.0_f32, p.border);
+    visuals.window_stroke = egui::Stroke::new(1.0_f32, ACCENT.linear_multiply(0.55));
+    // a soft, warm glow under dialogs and menus instead of a flat black shadow
+    let glow = match choice {
+        ThemeChoice::Dark => egui::Color32::from_rgba_unmultiplied(255, 160, 40, 60),
+        ThemeChoice::Light => egui::Color32::from_rgba_unmultiplied(230, 140, 20, 70),
+    };
+    visuals.window_shadow = egui::epaint::Shadow { offset: [0, 4], blur: 22, spread: 1, color: glow };
+    visuals.popup_shadow = egui::epaint::Shadow { offset: [0, 3], blur: 14, spread: 0, color: glow };
 
     // selection.stroke is also the text color of the selected tab, so it has
     // to stay readable on top of selection.bg_fill.
     // Opaque, conventional selection colours (VS Code dark / Chrome light). Scaling
     // the accent's alpha instead blended into a washed-out cyan.
     visuals.selection.bg_fill = match choice {
-        ThemeChoice::Dark => egui::Color32::from_rgb(38, 79, 120),
-        ThemeChoice::Light => egui::Color32::from_rgb(173, 214, 255),
+        ThemeChoice::Dark => egui::Color32::from_rgb(104, 72, 24),
+        ThemeChoice::Light => egui::Color32::from_rgb(255, 222, 165),
     };
     visuals.selection.stroke = egui::Stroke::new(1.0_f32, p.accent_text);
 
@@ -218,7 +225,7 @@ pub fn apply_theme(ctx: &egui::Context, choice: ThemeChoice) {
 
     visuals.widgets.hovered.bg_fill = p.checkbox;
     visuals.widgets.hovered.weak_bg_fill = p.hover;
-    visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0_f32, ACCENT.linear_multiply(0.7));
+    visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.5_f32, ACCENT.linear_multiply(0.85));
     visuals.widgets.hovered.corner_radius = rounding;
     visuals.widgets.hovered.expansion = 0.0;
 
