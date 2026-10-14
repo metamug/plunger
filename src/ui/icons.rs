@@ -17,8 +17,6 @@ pub enum Icon {
     Check,
     /// Save to a file.
     Download,
-    /// Import a request (curl / HAR).
-    Import,
     /// Pick a file from disk.
     Folder,
     /// Remove / clear / forget. The one icon for every destructive action.
@@ -31,8 +29,6 @@ pub enum Icon {
     Format,
     /// Switch to editing as raw text.
     Code,
-    /// Save the request.
-    Save,
     /// Open a new tab.
     Plus,
     /// Close a tab (not a delete — that is always the trash can).
@@ -166,11 +162,6 @@ pub fn paint(painter: &egui::Painter, r: egui::Rect, icon: Icon, color: egui::Co
             line(vec![p(3.0, 5.5), p(7.0, 9.5), p(11.0, 5.5)]);
             line(vec![p(0.5, 10.0), p(0.5, 13.5), p(13.5, 13.5), p(13.5, 10.0)]);
         }
-        Icon::Import => {
-            line(vec![p(0.0, 7.0), p(9.0, 7.0)]);
-            line(vec![p(5.5, 3.5), p(9.0, 7.0), p(5.5, 10.5)]);
-            line(vec![p(8.0, 0.5), p(13.5, 0.5), p(13.5, 13.5), p(8.0, 13.5)]);
-        }
         Icon::Folder => {
             line(vec![
                 p(0.5, 2.0),
@@ -215,19 +206,6 @@ pub fn paint(painter: &egui::Painter, r: egui::Rect, icon: Icon, color: egui::Co
             line(vec![p(4.0, 3.0), p(0.5, 7.0), p(4.0, 11.0)]);
             line(vec![p(10.0, 3.0), p(13.5, 7.0), p(10.0, 11.0)]);
             line(vec![p(8.5, 1.5), p(5.5, 12.5)]);
-        }
-        Icon::Save => {
-            // A floppy disk: body with a clipped corner, the shutter and the label.
-            line(vec![
-                p(0.5, 0.5),
-                p(10.5, 0.5),
-                p(13.5, 3.5),
-                p(13.5, 13.5),
-                p(0.5, 13.5),
-                p(0.5, 0.5),
-            ]);
-            line(vec![p(3.5, 0.5), p(3.5, 4.5), p(9.5, 4.5), p(9.5, 0.5)]);
-            line(vec![p(3.5, 13.5), p(3.5, 8.5), p(10.5, 8.5), p(10.5, 13.5)]);
         }
         Icon::Plus => {
             line(vec![p(7.0, 1.0), p(7.0, 13.0)]);

@@ -1,6 +1,6 @@
 use super::copy_button;
 use super::ApiTesterApp;
-use crate::ui::icons::{self, Icon};
+use crate::ui::icons::{self};
 use crate::ui::theme::{self, palette};
 use eframe::egui;
 
@@ -11,41 +11,26 @@ pub(super) fn url_field_id(tab_id: u64) -> egui::Id {
 const METHODS: [&str; 7] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
 impl ApiTesterApp {
-    /// Method + URL (one joined control), then Send, Save and Import.
+    /// Method + URL (one joined control), then Send. Save and Import live in the File menu.
     pub(super) fn render_command_bar(&mut self, ui: &mut egui::Ui) {
         let loading = self.tab().is_loading();
-        let (mut send, mut cancel, mut save) = (false, false, false);
-        let (mut open_curl, mut open_har) = (false, false);
+        let (mut send, mut cancel) = (false, false);
 
         ui.horizontal(|ui| {
             // Right-hand buttons first (right to left), so the URL bar can take
             // exactly the width that is left.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let import = icons::button(ui, Icon::Import, "Import a request: paste a curl command or open a HAR file");
-                egui::Popup::from_toggle_button_response(&import).close_behavior(egui::PopupCloseBehavior::CloseOnClick).show(|ui| {
-                    ui.set_min_width(190.0);
-                    if menu_item(ui, "Paste a curl command\u{2026}") {
-                        open_curl = true;
-                    }
-                    if menu_item(ui, "Open a HAR file\u{2026}") {
-                        open_har = true;
-                    }
-                });
-
-                let save_tip = if self.tab().saved_id.is_some() {
-                    "Save changes to this request (Ctrl+S)"
-                } else {
-                    "Save this request to the Saved list (Ctrl+S)"
-                };
-                save = icons::button(ui, Icon::Save, save_tip).clicked();
-
                 if loading {
                     cancel = ui.button("Cancel").on_hover_text("Stop waiting for the response").clicked();
                 }
+                // as tall as the URL box beside it (its text row, field margin and frame)
+                let height = ui.text_style_height(&egui::TextStyle::Body) + 2.0 * 6.0 + 2.0 * 2.0 + 2.0;
                 send = ui
                     .add_enabled(
                         !loading,
-                        egui::Button::new(if loading { "Sending\u{2026}" } else { "Send" }).fill(palette().accent_soft),
+                        egui::Button::new(egui::RichText::new(if loading { "Sending\u{2026}" } else { "Send" }).strong())
+                            .fill(palette().accent_soft)
+                            .min_size(egui::vec2(96.0, height)),
                     )
                     .on_hover_text("Send the request (Ctrl+Enter)")
                     .clicked();
@@ -59,15 +44,6 @@ impl ApiTesterApp {
         }
         if cancel {
             self.tab_mut().cancel();
-        }
-        if save {
-            self.save_active();
-        }
-        if open_curl {
-            self.open_curl_dialog();
-        }
-        if open_har {
-            self.open_har_file();
         }
     }
 
@@ -125,10 +101,4 @@ impl ApiTesterApp {
                 });
             });
     }
-}
-
-/// A full-width, frameless menu entry.
-fn menu_item(ui: &mut egui::Ui, label: &str) -> bool {
-    ui.add(egui::Button::new(label).frame(false).min_size(egui::vec2(ui.available_width(), 0.0)))
-        .clicked()
 }
