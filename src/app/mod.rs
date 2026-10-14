@@ -308,6 +308,7 @@ impl ApiTesterApp {
 
     fn poll_responses(&mut self, ctx: &egui::Context) {
         let mut recorded = false;
+        let mut failed: Option<String> = None;
         for tab in &mut self.tabs {
             if !tab.is_loading() {
                 continue;
@@ -315,12 +316,16 @@ impl ApiTesterApp {
             ctx.request_repaint();
             let Some(done) = tab.poll() else { continue };
             if let Some(h) = &self.history {
-                if let Ok(id) = h.insert(&done.sent, done.status, done.elapsed_ms) {
+                match h.insert(&done.sent, done.status, done.elapsed_ms) {
                     // The request just sent is now the newest row; highlight it.
-                    tab.history_id = Some(id);
+                    Ok(id) => tab.history_id = Some(id),
+                    Err(e) => failed = Some(format!("History was not saved: {e}")),
                 }
             }
             recorded = true;
+        }
+        if let Some(message) = failed {
+            self.notify(message);
         }
         if recorded {
             self.refresh_lists();

@@ -284,7 +284,7 @@ impl ApiTesterApp {
         let Some(name) = self.workflow_delete.clone() else { return };
         let runs = self.history.as_ref().and_then(|h| h.workflow_runs(&name, WORKFLOW_RUNS_KEPT).ok()).map_or(0, |r| r.len());
         let (mut delete, mut keep) = (false, false);
-        egui::Window::new("Delete workflow")
+        crate::ui::fit_window(ctx, egui::Window::new("Delete workflow"))
             .id(egui::Id::new("workflow-delete"))
             .collapsible(false)
             .resizable(false)
@@ -463,7 +463,7 @@ impl ApiTesterApp {
         let (mut run, mut cancel, mut copy, mut delete) = (false, false, false, false);
         let mut open_step: Option<usize> = None;
         let mut select_run: Option<i64> = None;
-        egui::Window::new(format!("Workflow: {name}"))
+        crate::ui::fit_window(ctx, egui::Window::new(format!("Workflow: {name}")))
             .id(egui::Id::new("workflow-window"))
             .collapsible(false)
             .resizable(true)

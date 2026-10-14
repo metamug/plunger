@@ -73,7 +73,7 @@ impl ApiTesterApp {
         let mut open = true;
         let (mut install_now, mut close, mut changed) = (false, false, false);
         let mut note = None;
-        egui::Window::new("Set up AI agents")
+        crate::ui::fit_window(ctx, egui::Window::new("Set up AI agents"))
             .collapsible(false)
             .resizable(true)
             .default_width(560.0)

@@ -47,7 +47,7 @@ impl ApiTesterApp {
         let mut open = true;
         let mut import = false;
         let mut cancel = false;
-        egui::Window::new("Import a command")
+        crate::ui::fit_window(ctx, egui::Window::new("Import a command"))
             .collapsible(false)
             .resizable(true)
             .default_width(560.0)
@@ -104,7 +104,7 @@ impl ApiTesterApp {
         let ImportDialog::Har { candidates } = &mut self.import else { return };
         let mut open = true;
         let mut pick = None;
-        egui::Window::new("Import from HAR")
+        crate::ui::fit_window(ctx, egui::Window::new("Import from HAR"))
             .collapsible(false)
             .resizable(true)
             .default_width(620.0)

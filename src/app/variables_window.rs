@@ -17,7 +17,7 @@ impl ApiTesterApp {
         let mut open = true;
         let mut forget = false;
         let mut delete_agent = None;
-        egui::Window::new("Variables")
+        crate::ui::fit_window(ctx, egui::Window::new("Variables"))
             .id(egui::Id::new("variables-window"))
             .collapsible(false)
             .resizable(true)

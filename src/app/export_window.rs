@@ -34,7 +34,7 @@ impl ApiTesterApp {
         let (mut copy, mut close) = (false, false);
         // Computed from the tab every frame, so an edit made while the dialog is open shows up.
         let text = commands::export(&self.tabs[self.active].state, dialect);
-        egui::Window::new("Export request")
+        crate::ui::fit_window(ctx, egui::Window::new("Export request"))
             .collapsible(false)
             .resizable(true)
             .default_width(620.0)

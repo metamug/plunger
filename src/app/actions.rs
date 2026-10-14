@@ -436,7 +436,7 @@ impl ApiTesterApp {
     pub(super) fn render_help_windows(&mut self, ctx: &egui::Context) {
         if self.shortcuts_open {
             let mut open = true;
-            egui::Window::new("Keyboard shortcuts").collapsible(false).resizable(false).open(&mut open).show(ctx, |ui| {
+            crate::ui::fit_window(ctx, egui::Window::new("Keyboard shortcuts")).collapsible(false).resizable(false).open(&mut open).show(ctx, |ui| {
                 egui::Grid::new("shortcuts").num_columns(2).spacing([28.0, 4.0]).show(ui, |ui| {
                     for (menu, items) in MENUS {
                         for action in items.iter().flatten() {
@@ -455,7 +455,7 @@ impl ApiTesterApp {
         }
         if self.about_open {
             let mut open = true;
-            egui::Window::new("About Plunger").collapsible(false).resizable(false).open(&mut open).show(ctx, |ui| {
+            crate::ui::fit_window(ctx, egui::Window::new("About Plunger")).collapsible(false).resizable(false).open(&mut open).show(ctx, |ui| {
                 ui.heading("Plunger");
                 ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
                 ui.label("A quick, lightweight API client for you and your AI agent.");
