@@ -41,6 +41,9 @@ USAGE
                                         verify finds an edited, removed or reordered line
                                         (exit 4); show lists it; rebuild recreates the
                                         database from it
+  plunger where                         The version, this program, and the data folder it uses (history,
+                                        audit log), with how many requests are in it: for finding out
+                                        whether the window and an agent share one history
   plunger vars                          List variables (secret values are never shown)
   plunger vars set <name> <value>       Set a variable for later requests ({{name}}); --secret keeps it
                                         in the credential store (use `-` as the value to read stdin)
@@ -207,6 +210,9 @@ plunger save <name> [--url] <url> [send options] [--overwrite]
 Saves the request without sending it. {{placeholders}} (including in Authorization headers) are
 kept as written. An existing name is refused unless --overwrite is given, which replaces it.
 Options are those of `plunger send`: -X, -H, --json, -d, --form, --timeout, --insecure, --no-follow.
+",
+        "where" => "\
+plunger where                         version, program path, data folder, history database and audit log, and the number of saved and history requests
 ",
         "audit" => "\
 plunger audit verify                the log's chain: ok with the number of entries and the head hash, or the first bad entry (exit 4)
@@ -487,6 +493,23 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
                 }
                 Some(other) => return Err(usage_error(format!("Unexpected argument `{other}`"))),
             }
+            Ok(EXIT_OK)
+        }
+        "where" => {
+            args.finish()?;
+            let dir = crate::store::history::app_data_dir();
+            let history = crate::store::history::History::open().map_err(|e| error(e.to_string()))?;
+            let (saved, in_history) = history.counts().map_err(|e| error(e.to_string()))?;
+            print_json(&serde_json::json!({
+                "version": env!("CARGO_PKG_VERSION"),
+                "program": std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default(),
+                "data_dir": dir.display().to_string(),
+                "data_dir_from_env": std::env::var(crate::store::history::DATA_DIR_ENV).is_ok(),
+                "database": dir.join("history.sqlite3").display().to_string(),
+                "audit_log": history.log_path().map(|p| p.display().to_string()),
+                "saved_requests": saved,
+                "history_requests": in_history,
+            }));
             Ok(EXIT_OK)
         }
         "audit" => {
@@ -888,7 +911,7 @@ mod tests {
 
     #[test]
     fn every_command_in_the_usage_has_its_own_help() {
-        for command in ["send", "vars", "saved", "save", "workflow", "install", "history", "import", "export", "mcp"] {
+        for command in ["send", "vars", "saved", "save", "workflow", "install", "history", "import", "export", "mcp", "where"] {
             assert!(command_help(command).is_some(), "{command}");
         }
         assert!(command_help("nonsense").is_none());

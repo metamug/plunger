@@ -853,6 +853,13 @@ impl History {
         rows.collect()
     }
 
+    /// How many requests are saved (named) and how many are in the history list.
+    pub fn counts(&self) -> rusqlite::Result<(i64, i64)> {
+        let saved = self.conn.query_row("SELECT COUNT(*) FROM requests WHERE name IS NOT NULL", [], |r| r.get(0))?;
+        let listed = self.conn.query_row("SELECT COUNT(*) FROM requests WHERE in_history = 1", [], |r| r.get(0))?;
+        Ok((saved, listed))
+    }
+
     /// Empties the history list. Saved requests are kept (and stay in the
     /// Saved list); they just stop appearing under History.
     pub fn clear(&self) -> rusqlite::Result<()> {

@@ -4,6 +4,11 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-14
+
+### Added
+- `plunger where` prints the version, the program, the data folder, the history database and audit log in use, and how many saved and history requests are in it, so you can tell whether the window and an agent share one history (they do not when they run with different data folders, for example from a sandboxed app).
+
 ### Fixed
 - `$.items[*].owner.n` gives one entry per item: an item that lacks the value, or whose parent is null, gives `null` instead of being left out, so the list lines up with `$.items[*].id`.
 - A step's own `variables` win over the run's: a workflow-level value no longer replaces a step's override.
@@ -283,7 +288,8 @@ Workflows get a window of their own, the toolkit is current (egui 0.36), and the
 
 First public release: send requests with params, headers, JSON, form-urlencoded, raw and multipart bodies; `{{variables}}`; secrets kept in Windows Credential Manager on request; curl and HAR import; local history; TLS-skip for local servers.
 
-[Unreleased]: https://github.com/metamug/plunger/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/metamug/plunger/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/metamug/plunger/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/metamug/plunger/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/metamug/plunger/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/metamug/plunger/compare/v0.5.3...v0.6.0
