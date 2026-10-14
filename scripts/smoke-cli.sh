@@ -30,8 +30,8 @@ fi
 
 out=$("$BIN" send --url http://127.0.0.1:18080/ok.json --fail)
 echo "$out"
-echo "$out" | grep -q '"ok": *true'   || { echo "send: not ok"; exit 1; }
-echo "$out" | grep -q '"hello": *"linux"' || { echo "send: body missing"; exit 1; }
+grep -q '"ok": *true' <<<"$out"   || { echo "send: not ok"; exit 1; }
+grep -q '"hello": *"linux"' <<<"$out" || { echo "send: body missing"; exit 1; }
 
 set +e
 "$BIN" send --url "http://127.0.0.1:18080/{{missing}}" >/dev/null
@@ -53,8 +53,8 @@ if command -v timeout >/dev/null 2>&1; then limit="timeout 20"; elif command -v 
 resp=""
 for attempt in 1 2 3; do
   resp=$( { printf '%s\n%s\n%s\n' "$init" "$note" "$list"; sleep 6; } | $limit "$BIN" mcp || true)
-  if echo "$resp" | grep -q send_request; then break; fi
+  if grep -q send_request <<<"$resp"; then break; fi
   echo "mcp: no tool list yet (attempt $attempt)"
 done
-echo "$resp" | grep -q send_request || { echo "mcp: tools/list has no send_request"; echo "$resp"; exit 1; }
+grep -q send_request <<<"$resp" || { echo "mcp: tools/list has no send_request"; echo "$resp"; exit 1; }
 echo "smoke test passed"
