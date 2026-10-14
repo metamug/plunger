@@ -103,6 +103,16 @@ Run `plunger install` (or **File > Set up AI agents...** in the window) to regis
 
 Tools: `send_request`, `import_curl`, `list_saved_requests`, `get_history`, `list_variables`, `export_curl`. From a terminal: `plunger send "Saved request name"`, `plunger send --url ...`, `plunger history`. Setup, every tool and option, exit codes and the fine print are in [docs/agents.md](docs/agents.md).
 
+## Workflows
+
+When one response feeds the next request (log in, then use the token; look up an id, then act on it), save the steps as a **workflow**. An agent runs it in one call (`run_workflow`, or `plunger workflow run`), and you see it as a flow in the window: a card per step on a rail of connected dots, the values a step hands on written on the connector, and every step lit up as it runs.
+
+<p align="center">
+  <img src="docs/images/workflow-run.gif" alt="The workflow window running two steps against a local issue tracker: transitions finishes with 200 and hands transition_id to the second step, move to Done returns 204, and the run ends with all 2 steps passed" width="760">
+</p>
+
+<p align="center"><sub>Step 1 looks up the id of the "Done" transition and keeps it for this run only; step 2 uses it. Steps can expect several statuses, be skipped or stop the run on a condition. Details in <a href="docs/agents.md">docs/agents.md</a>.</sub></p>
+
 ## Small by design
 
 Built in Rust with [egui](https://github.com/emilk/egui) because we wanted a small, fast, native application. No webview, no bundled browser: one exe of about 7 MB, which is also a command-line client and an MCP server for AI agents.
@@ -123,11 +133,11 @@ A few promises, so you know what you're picking up:
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/hero.png" alt="Plunger with four request tabs, saved requests and history in the sidebar, query params in sync with the URL, and a JSON response"><br><sub>Request, response, JSON. Saved requests and history on the left.</sub></td>
+    <td width="50%"><img src="docs/images/hero.png" alt="Plunger with saved requests grouped into folders, workflows and history in the sidebar (each tagged CLI or MCP when an agent sent it), the variables the open request uses under the URL, and a JSON response"><br><sub>Saved requests in groups, workflows and history on the left; the variables a request uses sit under its URL.</sub></td>
     <td width="50%"><img src="docs/images/form-data.png" alt="A multipart form-data request with a text field and a file field, and the server's echo of the upload"><br><sub>Multipart uploads with real files.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/images/variables.png" alt="The Variables window with a base URL and a masked secret token, used as {{base}} in the URL"><br><sub>Variables, with secrets masked and kept off disk.</sub></td>
+    <td><img src="docs/images/variables.png" alt="The Variables window: values shared by every request, the command line and agents, with who set each one"><br><sub>Variables are shared by every request and agent; secrets are masked and kept off disk.</sub></td>
     <td><img src="docs/images/undefined-variables.png" alt="A request refused because {{base}} and {{token}} are not defined"><br><sub>Undefined variables stop the request instead of leaking a placeholder.</sub></td>
   </tr>
   <tr>

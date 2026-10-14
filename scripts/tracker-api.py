@@ -16,8 +16,10 @@ Every request needs "Authorization: Bearer tok_tracker".
   GET  /blob                     a small PNG (binary)
 """
 import json
+import os
 import re
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -47,6 +49,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Authorization") != f"Bearer {TOKEN}":
             return self.send(401, {"errorMessages": ["You are not authenticated"]})
         path = url.path
+        # TRACKER_DELAY=0.6 makes every answer take that long, so a screen recording can show a workflow's
+        # steps one after the other
+        time.sleep(float(os.environ.get("TRACKER_DELAY", "0")))
         if path == "/boom":
             return self.send(500, raw=b"<html><body>Internal Server Error</body></html>", ctype="text/html")
         if path == "/old":
