@@ -4,6 +4,9 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed
+- What an agent is told matches what Plunger does: the server instructions and the installed skill (`plunger install`) now cover groups, `select` filters, optional and default placeholders, JSON escaping, conditional workflow steps, `include_headers`, redirect and binary fields. A test fails if a tool is missing from the instructions, if a send option has no description in the tool schema, or if the skill loses a key feature. Re-run `plunger install` to refresh an installed skill.
+
 ## [0.7.0] - 2026-10-14
 
 Agents get answers they can use and cannot fail on quietly, requests can be organised in groups, and every change is written to a log the database is derived from.

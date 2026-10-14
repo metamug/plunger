@@ -30,7 +30,7 @@ TOOLS
 - list_saved_requests: the requests the user saved, by name (optionally one `group`). Check it before building a request from scratch. `group` on save_request / save_workflow files them (`Jira`, `Jira/Issues`); set_group moves one.
 - list_variables: the {{variables}} in use (secrets by name only; `source` says whether the user defined it in the window or an agent set it), the built-ins ($uuid, $timestamp, $randomInt, $env:NAME) and whether a Bearer token is saved.
 - set_variable / delete_variable: keep a value for later requests as {{name}} (for example a token from a login response). It persists, and the user sees it in the window. A secret (or a name like token, password, api_key) goes to the system credential store and is masked in results. You cannot change or delete variables the user defined.
-- send_request: send a request, or a saved one by name (`saved_request`) with overrides. Use `json`, `body` or `form` for the body; `headers` is an object like {\"Accept\": \"application/json\"}. `select: [\"$.data[0].id\", \"header:Location\"]` returns only those values (under `selected`) instead of the whole body and headers, so a big response costs a few tokens; `[?(@.name=='Done')]` filters an array by a field, and if a path cannot be read the whole response is returned with the reason in `problems`. `extract: [{\"name\": \"token\", \"from\": \"json:$.access_token\"}]` keeps a value from the response as {{token}} for later requests in the same call (hidden if it looks like a credential); `variables_set` lists what was set and `problems` anything that did not work. `request.sent_at` is when it was fired.
+- send_request: send a request, or a saved one by name (`saved_request`) with overrides. Use `json`, `body` or `form` for the body; `headers` is an object like {\"Accept\": \"application/json\"}. `select: [\"$.data[0].id\", \"header:Location\"]` returns only those values (under `selected`) instead of the whole body and headers, so a big response costs a few tokens (`include_headers`: `all`, `none` or `relevant` chooses which headers come back); `[?(@.name=='Done')]` filters an array by a field, and if a path cannot be read the whole response is returned with the reason in `problems`. `extract: [{\"name\": \"token\", \"from\": \"json:$.access_token\"}]` keeps a value from the response as {{token}} for later requests in the same call (hidden if it looks like a credential); `variables_set` lists what was set and `problems` anything that did not work. `request.sent_at` is when it was fired.
 - save_request / get_saved_request / delete_saved_request: save a request without sending it (same fields as send_request, plus `name`; `overwrite: true` replaces an existing one), read one back in full, or remove one. {{placeholders}} are kept, so Authorization: Bearer {{token}} works when it is sent later. `timeout_secs`, `follow_redirects`, `insecure_tls` and `select` are kept with it and used when it is sent by name; anything it cannot keep is listed in `not_saved`. A {{variable}} inside a JSON body string is JSON-escaped for you (do not pre-escape), and outside a string it is inserted as JSON, so a variable can hold a number or an array.
 - import_curl: parse a curl command into a request, and with `save_as` keep it in the user's Saved list.
 - export_curl: a saved request or a history entry as a curl command.
@@ -41,8 +41,10 @@ HOW IT BEHAVES
 - {{variables}} work in the URL, headers and body. Secret values are filled in for you and never shown; if a server echoes one back it appears as [redacted:name]. A request with an undefined {{variable}} is refused, not sent.
 - `variables` on send_request sets values for that one request only; set_variable keeps them. {{$env:NAME}} reads an environment variable of the Plunger process when the request is sent (a name like API_TOKEN is masked in results); an agent cannot set one, because the environment is fixed when the server starts.
 - A saved request keeps its {{placeholders}}, including in credential headers such as Authorization: Bearer {{token}}. Literal credentials are blanked when a request is saved.
-- Redirects are followed unless `follow_redirects` is false. `timeout_secs` defaults to the user's setting.
-- A response comes back as structured fields: status, timing, size, headers and the parsed JSON (`json`) or text (`body`). A body over `max_body_chars` (default 50000) is cut and marked with `body_cut_from_chars`. A binary body is not returned (`binary: true`, with its size). Set-Cookie and similar response headers are shown as [redacted].
+- Optional and default values: `{{name?}}` is left out of a JSON body (the member or array item goes; elsewhere it is empty) when there is no value, and `{{name|fallback}}` uses a fallback. In a JSON body a value inside a string is escaped for you (do not pre-escape), and outside a string it is inserted as JSON, so a variable can hold a number or an array. For a body with an unquoted placeholder send `body` with a `Content-Type: application/json` header.
+- Redirects are followed unless `follow_redirects` is false; the result says where one went (`final_url`, `redirects`) and `ttfb_ms` is the time to the first byte. `timeout_secs` defaults to the user's setting.
+- A field Plunger does not have (`retries`, say) is refused by name, never ignored, so nothing runs that you did not ask for.
+- A response comes back as structured fields: status, timing, size, headers and the parsed JSON (`json`) or text (`body`). A body over `max_body_chars` (default 50000) is cut and marked with `body_cut_from_chars`. A binary body is not returned: `binary: true`, its size, `sha256` and `detected_type` (png, pdf, zip, ...) let you check it. Set-Cookie and similar response headers are shown as [redacted].
 - Failures are reported, not hidden: a request that could not be sent returns an error and is not recorded; one that got no response (DNS, refused, timeout) is recorded in the history.
 
 RESOURCES AND PROMPTS
@@ -528,5 +530,27 @@ mod tests {
             problems: vec![],
         };
         assert_eq!(missing_required_keys(&variables), Vec::<String>::new(), "list_variables");
+    }
+
+    #[test]
+    fn what_an_agent_is_told_covers_every_tool_and_every_send_field() {
+        let tools = PlungerMcp::new().tool_router.list_all();
+        for tool in &tools {
+            let name = tool.name.as_ref();
+            assert!(INSTRUCTIONS.contains(name), "the instructions do not mention the `{name}` tool");
+        }
+        // every option of a send is in the tool's input schema with a description: that is how a client shows it
+        let send = tools.iter().find(|t| t.name == "send_request").unwrap();
+        let schema = serde_json::to_value(&send.input_schema).unwrap();
+        let properties = schema["properties"].as_object().expect("send_request has properties");
+        for (field, detail) in properties {
+            let described = detail.get("description").and_then(|d| d.as_str()).is_some_and(|d| d.len() > 10);
+            assert!(described, "`{field}` has no description in the send_request schema");
+        }
+        let skill = crate::headless::install::STEERING;
+        // the installed skill and the instructions agree on the features an agent most needs
+        for needle in ["select", "extract", "set_variable", "group", "include_headers", "skip_if", "{{name?}}", "cleanup"] {
+            assert!(skill.contains(needle), "the installed skill does not mention {needle}");
+        }
     }
 }

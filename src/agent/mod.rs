@@ -57,6 +57,7 @@ pub struct SendParams {
     /// Seconds to wait for a response (1-600). Defaults to the user's setting (20).
     #[serde(default)]
     pub timeout_secs: Option<u64>,
+    /// Follow redirects (default true). Set false to receive the redirect response itself and read its `Location` header.
     #[serde(default)]
     pub follow_redirects: Option<bool>,
     /// Skip TLS certificate checks, e.g. for a local server with a self-signed certificate.
