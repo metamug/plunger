@@ -112,8 +112,8 @@ trait CollectionStore {
 
 | Step | What | Size | Depends on |
 |---|---|---|---|
-| 0a | Move `workflow::extract` and `Extract` down into `domain` (removes the cycle) | S | |
-| 0b | Take the display preparation out of `domain::http` (removes `domain` to `ui`) | S | |
+| 0a | Move `workflow::extract` and `Extract` down into `domain` (removes the cycle) | S | done |
+| 0b | Take the display preparation out of `domain::http` (removes `domain` to `ui`) | S | done |
 | 0c | `domain::collection` with `RequestDoc` and the conversions; extend the round-trip test | M | |
 | 0d | Saved-request names unique per group (trigger migration) | S | groups (done) |
 | 1 | `convert/bru`: lexer, request mapping, writer, with Bruno's fixtures and our own (#204) | M | 0c |

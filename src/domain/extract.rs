@@ -3,7 +3,25 @@
 //! sent it, before any secret is masked, so a token can be passed on without an agent seeing it.
 
 use crate::domain::model::ResponseData;
+use rmcp::schemars::{self, JsonSchema};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+/// A value to take from a step's response and keep as a variable.
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+pub struct Extract {
+    /// The variable to set, used in later steps as {{name}}.
+    pub name: String,
+    /// Where to read it: `json:$.data.token` (a JSON path), `header:Name`, or `status`.
+    pub from: String,
+    /// Keep it as a secret (masked, in the credential store). A name like token or password is always secret.
+    #[serde(default)]
+    pub secret: Option<bool>,
+    /// `run`: the value exists only for the later steps of this run and is never stored. Without it
+    /// (or `global`) the value is kept as a variable, shared with the window, the CLI and other agents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+}
 
 /// The value `from` points at in `response`, as text.
 pub fn extract(response: &ResponseData, from: &str) -> Result<String, String> {

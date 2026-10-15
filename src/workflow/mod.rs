@@ -3,8 +3,10 @@
 //! response into variables (`{{name}}`) for the steps after it. A value named like a credential
 //! (`token`, `password`...) is kept as a secret: it is used in later requests but never shown.
 
-pub(crate) mod extract;
+pub use crate::domain::extract::{self, Extract};
 
+#[cfg(test)]
+use crate::domain::condition::condition_holds;
 use crate::agent::{self, SendFailure, SendParams};
 use crate::engine::{AgentResponse, VariableInfo};
 use crate::store::history::Source;
@@ -13,22 +15,6 @@ use rmcp::schemars::{self, JsonSchema};
 use serde::{Deserialize, Serialize};
 
 const MAX_STEPS: usize = 50;
-
-/// A value to take from a step's response and keep as a variable.
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
-pub struct Extract {
-    /// The variable to set, used in later steps as {{name}}.
-    pub name: String,
-    /// Where to read it: `json:$.data.token` (a JSON path), `header:Name`, or `status`.
-    pub from: String,
-    /// Keep it as a secret (masked, in the credential store). A name like token or password is always secret.
-    #[serde(default)]
-    pub secret: Option<bool>,
-    /// `run`: the value exists only for the later steps of this run and is never stored. Without it
-    /// (or `global`) the value is kept as a variable, shared with the window, the CLI and other agents.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scope: Option<String>,
-}
 
 /// The statuses a step may return: one, or a list.
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
@@ -529,26 +515,6 @@ fn substitute_plain(expression: &str, values: &std::collections::BTreeMap<String
         out.replace_range(start..end + 2, "");
     }
     out
-}
-
-/// Whether a condition, with its variables already filled in, is true: `a == b`, `a != b`, or one value
-/// that is true unless it is empty, `false`, `0` or `null`. Quotes around either side are ignored.
-pub fn condition_holds(text: &str) -> bool {
-    fn side(s: &str) -> &str {
-        let s = s.trim();
-        s.strip_prefix('\'')
-            .and_then(|r| r.strip_suffix('\''))
-            .or_else(|| s.strip_prefix('"').and_then(|r| r.strip_suffix('"')))
-            .unwrap_or(s)
-    }
-    if let Some((left, right)) = text.split_once("!=") {
-        return side(left) != side(right);
-    }
-    if let Some((left, right)) = text.split_once("==") {
-        return side(left) == side(right);
-    }
-    let value = side(text);
-    !(value.is_empty() || value.eq_ignore_ascii_case("false") || value == "0" || value.eq_ignore_ascii_case("null"))
 }
 
 #[cfg(test)]

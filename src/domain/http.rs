@@ -1,6 +1,6 @@
 //! Sends a built request over the network and turns the reply into a `ResponseData`.
 
-use crate::ui::json_view::pretty_json_if_possible;
+use crate::domain::json_display::pretty_json_if_possible;
 use crate::domain::model::{FieldKind, FormField, ResponseData, SendResult};
 use crate::domain::request::{OutgoingBody, OutgoingRequest};
 use reqwest::blocking::multipart::Form;
@@ -149,7 +149,7 @@ pub fn execute(req: OutgoingRequest) -> SendResult {
         (text, None, None)
     };
 
-    let (json_display, json_nodes) = match json_value.as_ref().and_then(crate::ui::json_view::limit_for_display) {
+    let (json_display, json_nodes) = match json_value.as_ref().and_then(crate::domain::json_display::limit_for_display) {
         Some((shown, total)) => (Some(shown), total),
         None => (None, 0),
     };

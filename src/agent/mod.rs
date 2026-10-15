@@ -70,7 +70,7 @@ pub struct SendParams {
     /// [{"name": "token", "from": "json:$.access_token"}]. `from` is `json:$.path`, `header:Name` or `status`.
     /// A name like token or password is kept as a hidden secret.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub extract: Vec<crate::workflow::Extract>,
+    pub extract: Vec<crate::domain::extract::Extract>,
     /// Return only these values instead of the whole body, e.g. ["$.data[0].id", "header:Location", "status"].
     /// Saves context on a big response; `json`, `body` and the headers are then left out. `[?(@.name=='Done')]`
     /// keeps the array items whose field equals the value. If every path fails the whole response is returned with the reasons; if only some fail, the values that could be read come back and `problems` names the rest.
@@ -289,7 +289,7 @@ pub fn send_request_full(params: &SendParams, source: Source) -> Result<(AgentRe
     let params = &params.with_saved_select(&history);
     let (mut shaped, raw) = send_prepared_raw(state, params, &session, &history, source)?;
     for e in &params.extract {
-        let stored = crate::workflow::extract::extract(&raw, &e.from).and_then(|value| set_variable(e.name.trim(), &value, e.secret, source).map(|info| (info, value)));
+        let stored = crate::domain::extract::extract(&raw, &e.from).and_then(|value| set_variable(e.name.trim(), &value, e.secret, source).map(|info| (info, value)));
         match stored {
             Ok((info, value)) => {
                 // The response that carried a new secret must not show it either.
@@ -315,17 +315,17 @@ pub fn evaluate_condition(expression: &str, values: &BTreeMap<String, String>) -
     // later entries win, as they do for a request
     variables.reverse();
     let filled = crate::domain::vars::Resolver::new(&variables).apply(expression);
-    Ok(crate::workflow::condition_holds(&filled))
+    Ok(crate::domain::condition::condition_holds(&filled))
 }
 
 /// Checks `extract` and `select` before anything is sent.
 pub(crate) fn check_reading_instructions(params: &SendParams) -> Result<(), String> {
     for e in &params.extract {
         variables::valid_variable_name(&e.name).map_err(|m| format!("`extract` name: {m}"))?;
-        crate::workflow::extract::check_source(&e.from, false).map_err(|m| format!("`extract` for `{}`: {m}", e.name.trim()))?;
+        crate::domain::extract::check_source(&e.from, false).map_err(|m| format!("`extract` for `{}`: {m}", e.name.trim()))?;
     }
     for path in params.select.iter().flatten() {
-        crate::workflow::extract::check_source(path, true).map_err(|m| format!("`select` `{path}`: {m}"))?;
+        crate::domain::extract::check_source(path, true).map_err(|m| format!("`select` `{path}`: {m}"))?;
     }
     Ok(())
 }
@@ -374,7 +374,7 @@ fn apply_select(shaped: &mut AgentResponse, raw: &ResponseData, paths: &[String]
     let mut selected = BTreeMap::new();
     let mut failed = 0;
     for path in paths {
-        match crate::workflow::extract::select(raw, path) {
+        match crate::domain::extract::select(raw, path) {
             Ok(value) => {
                 selected.insert(path.clone(), scrubber.json(&value));
             }
@@ -881,7 +881,7 @@ mod tests {
                 // extract never panics either, and says why it could not
                 for path in paths {
                     let from = if path.starts_with('$') { format!("json:{path}") } else { path.to_string() };
-                    let _ = crate::workflow::extract::extract(&raw, &from);
+                    let _ = crate::domain::extract::extract(&raw, &from);
                 }
             }
         }

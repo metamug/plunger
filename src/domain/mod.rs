@@ -8,5 +8,8 @@ pub mod vars;
 pub mod query;
 pub mod redact;
 pub mod outline;
+pub mod json_display;
+pub mod extract;
+pub mod condition;
 pub mod filename;
 pub mod timefmt;
