@@ -1,6 +1,6 @@
 # Design: Bruno `.bru` files and a collection model
 
-Status: design agreed in principle (`.bru` as the file format, a git-native workspace); decisions in section 9 are open. For #203 to #206. Written after reading Bruno's own parser and fixtures (MIT licensed, `packages/bruno-lang`) and measuring Plunger's code.
+Status: **parked** (decided 2026-10-15). Plunger does not need `.bru` to do its job. If it comes back, build the reader/writer and folder import/export first (an interchange format, no change to how requests are stored) and decide the on-disk format for a git workspace then; an own format that carries `select`, `extract` and workflows is a real alternative. The analysis below stays as the record. For #203 to #206.
 
 ## 1. Is the architecture good enough to build this on?
 
