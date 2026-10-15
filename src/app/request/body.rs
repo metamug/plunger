@@ -21,8 +21,10 @@ const MIN_EDITOR_LINES: usize = 4;
 
 /// A body editor is not wrapped in a scroll area of its own: the request pane scrolls, so there is one
 /// scroll bar, and the editor can use all the room the pane has instead of stopping at a fixed height.
-fn body_box(ui: &mut egui::Ui, _salt: &str, add: impl FnOnce(&mut egui::Ui)) {
-    add(ui);
+/// A body editor does not wrap: a long value stays on its line and the box scrolls sideways, so a value is
+/// never broken in the middle and a line number means one line.
+fn body_box(ui: &mut egui::Ui, salt: &str, add: impl FnOnce(&mut egui::Ui)) {
+    egui::ScrollArea::horizontal().id_salt(salt).auto_shrink([false, true]).show(ui, |ui| add(ui));
 }
 
 /// What a JSON body's check says, for the little status chip in the tab strip.
@@ -152,15 +154,17 @@ impl Tab {
                 let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
                     let text = text.as_str();
                     let mut job = crate::ui::highlight::body(text);
-                    job.wrap.max_width = wrap_width;
+                    job.wrap.max_width = f32::INFINITY;
+                    let _ = wrap_width;
                     ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
                 };
                 let rows = editor_lines(&self.state.raw_body, self.editor_rows, self.editor_fill);
+                let width = ui.available_width();
                 body_box(ui, "body-raw", |ui| {
                     ui.add(
                         theme::area(&mut self.state.raw_body)
                             .desired_rows(rows)
-                            .desired_width(f32::INFINITY)
+                            .desired_width(width)
                             .font(egui::TextStyle::Monospace)
                             .layouter(&mut layouter),
                     );
@@ -177,15 +181,17 @@ impl Tab {
             } else {
                 highlight_json(text)
             };
-            job.wrap.max_width = wrap_width;
+            job.wrap.max_width = f32::INFINITY;
+            let _ = wrap_width;
             ui.ctx().fonts_mut(|f| f.layout_job(job))
         };
         let rows = editor_lines(&self.state.json_body, self.editor_rows, self.editor_fill);
+        let width = ui.available_width();
         body_box(ui, "body-json", |ui| {
             ui.add(
                 theme::area(&mut self.state.json_body)
                     .desired_rows(rows)
-                    .desired_width(f32::INFINITY)
+                    .desired_width(width)
                     .layouter(&mut layouter),
             );
         });

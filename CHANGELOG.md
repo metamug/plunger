@@ -4,6 +4,11 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed
+- Move to group: the "New group" field and the list of groups in a saved request's right-click menu no longer vanish when you click them (#208).
+- The JSON and raw body editors do not wrap a long line in the middle of a value, before or after Format: the line stays whole and the box scrolls sideways (#209).
+- Agent requests you opened from the history only to look at them (not saved, not sent again from the window) are not brought back as tabs the next time Plunger starts (#210).
+
 ## [0.7.2] - 2026-10-14
 
 ### Added

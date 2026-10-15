@@ -170,7 +170,7 @@ pub(super) fn sidebar_section(
             if response.clicked() {
                 clicked = Some(ListAction::Open(item.name.clone()));
             }
-            response.context_menu(|ui| {
+            egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
                 if ui.button("Open").clicked() {
                     clicked = Some(ListAction::Open(item.name.clone()));
                     ui.close();

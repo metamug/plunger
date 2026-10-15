@@ -197,6 +197,13 @@ impl Tab {
         tab
     }
 
+    /// A request an agent sent (from MCP or the command line) that is open only to be looked at: not saved, not
+    /// sent again from here. It is in the history, so it is not brought back at the next start.
+    pub fn is_agent_preview(&self) -> bool {
+        self.saved_id.is_none()
+            && self.opened_from.as_ref().is_some_and(|m| m.source != crate::store::history::Source::Gui)
+    }
+
     pub fn to_saved(&self) -> SavedTab {
         SavedTab {
             state: self.state.redacted(),
@@ -332,6 +339,21 @@ mod tests {
         let mut named = tab("https://h.com/a");
         named.name = Some("Fixtures".into());
         assert_eq!(named.title(), "Fixtures");
+    }
+
+    #[test]
+    fn an_agent_request_open_only_to_look_at_is_not_brought_back() {
+        use crate::store::history::Source;
+        let meta = |source| HistoryMeta { created_at: "2026-10-09T06:11:03Z".into(), status: Some(200), elapsed_ms: Some(5), source };
+        let mut tab = Tab::new(1, PersistedState { url: "http://h/x".into(), ..Default::default() });
+        assert!(!tab.is_agent_preview(), "a tab you typed in is yours");
+        tab.opened_from = Some(meta(Source::Mcp));
+        assert!(tab.is_agent_preview());
+        tab.opened_from = Some(meta(Source::Gui));
+        assert!(!tab.is_agent_preview(), "a request you sent yourself is kept");
+        tab.opened_from = Some(meta(Source::Cli));
+        tab.saved_id = Some(7);
+        assert!(!tab.is_agent_preview(), "once saved it is kept");
     }
 
     #[test]

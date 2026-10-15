@@ -440,7 +440,7 @@ fn entry_row(
     };
     let response = response.on_hover_text(format!("{}\n{when}  \u{b7}  {timing}{sender}\nDouble-click to {verb}", entry.url));
     if removable {
-        response.context_menu(|ui| {
+        egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
             if ui.button("Open").clicked() {
                 action = Some(RowAction::Open);
                 ui.close();

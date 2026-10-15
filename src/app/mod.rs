@@ -344,9 +344,13 @@ impl eframe::App for ApiTesterApp {
         // Credentials must not land in the plaintext config file (the Bearer
         // field is never part of `state` at all).
         eframe::set_value(storage, eframe::APP_KEY, &self.tab().state.redacted());
+        // Agent requests opened from the history only to look at them are not brought back next time:
+        // they are in the history, and a tab per call piles up quickly.
+        let kept: Vec<usize> = (0..self.tabs.len()).filter(|&i| i == self.active || !self.tabs[i].is_agent_preview()).collect();
+        let kept = if kept.len() == 1 && self.tabs[kept[0]].is_agent_preview() { Vec::new() } else { kept };
         let open = OpenTabs {
-            tabs: self.tabs.iter().map(Tab::to_saved).collect(),
-            active: self.active,
+            tabs: kept.iter().map(|&i| self.tabs[i].to_saved()).collect(),
+            active: kept.iter().position(|&i| i == self.active).unwrap_or(0),
         };
         eframe::set_value(storage, TABS_KEY, &open);
         eframe::set_value(storage, SETTINGS_KEY, &self.settings);
