@@ -1,6 +1,6 @@
 # Design: Bruno `.bru` files and a collection model
 
-Status: proposal, for #203 to #206. Written after reading Bruno's own parser and fixtures (MIT licensed, `packages/bruno-lang`) and measuring Plunger's code.
+Status: design agreed in principle (`.bru` as the file format, a git-native workspace); decisions in section 9 are open. For #203 to #206. Written after reading Bruno's own parser and fixtures (MIT licensed, `packages/bruno-lang`) and measuring Plunger's code.
 
 ## 1. Is the architecture good enough to build this on?
 
@@ -123,9 +123,152 @@ trait CollectionStore {
 
 Each step is a pull request that keeps tests green; 1 can be taken by an outside contributor once 0c exists.
 
-## 6. Decisions needed
+## 6. The git-native workspace
 
-1. **Names unique per group** (0d): yes? It is what makes a Bruno folder importable without renaming.
-2. **A disabled header**: add an `enabled` flag to headers in Plunger (a real feature, as Bruno and Postman have), or keep disabled headers only in `foreign`?
-3. **Environments**: map a Bruno environment to Plunger variables (a set per name, switchable), or only import the active one as variables? Plunger has a single global set today.
-4. **Scripts**: kept and reported only (this design), or an explicit "not supported" refusal on import?
+This is what "git native" means concretely. A **workspace** is a folder. Everything a team would review in a pull
+request is a file in it; everything personal or large stays out of it.
+
+### 6.1 Layout
+
+```
+my-api/                       <- the workspace (a git repository)
+  bruno.json                  <- marks the folder as a collection; also what Bruno looks for
+  collection.bru              <- collection-wide headers, vars, auth (optional)
+  environments/
+    local.bru                 <- vars { base: http://localhost:3000 }   vars:secret [ token ]
+    staging.bru
+  Jira/                       <- a folder is a group
+    folder.bru                <- group-wide headers / vars (optional)
+    create-issue.bru          <- one request, one file
+    Issues/
+      get-issue.bru
+  workflows/
+    close-issue.workflow.json <- our own format: extract, skip_if, stop_if
+  .gitignore                  <- written once: .plunger/
+  .plunger/                   <- local only: the index database, the history, the audit log
+```
+
+What is **in** the folder: requests, groups, environments (names and non-secret values, secret *names* only),
+workflows, documentation. What is **not**: history (every request an agent sent), agent variables, secret values,
+the audit log, window state. Those stay in the app data folder as today, or in `.plunger/`.
+
+### 6.2 Identity, names and files
+
+- The **path relative to the workspace root** is the identity of a request: `Jira/Issues/get-issue.bru`. The name
+  in `meta { name }` is what is shown; the file name is a slug of it.
+- Rename = write the new file and delete the old one, which git sees as a rename. Moving to a group = moving the file.
+- Slugs: lower-case, spaces to `-`, none of `/ \ : * ? " < > |`, no Windows reserved names, at most 80 characters;
+  a collision on disk (including on a case-insensitive file system) gets `-2`. The slug is **stable**: renaming a
+  request does not rename the file unless the user asks ("Rename file too"), so a one-word fix to a name is a
+  one-line diff.
+- Names are unique **per folder**, which is the same rule the file system gives for free (decision 1).
+
+### 6.3 Which side wins
+
+Two modes, chosen when a collection is opened and shown in the window title:
+
+| Mode | Saved requests live in | Used for |
+|---|---|---|
+| **Personal** (today) | the SQLite database | quick work, no repository |
+| **Workspace** | the folder; SQLite is only an index and the history | a team's API, reviewed in git |
+
+In workspace mode the folder is the source of truth, the database can be thrown away and rebuilt from it (the same
+property the audit log already gives), and `plunger` finds the workspace the way `git` finds a repository: by
+walking up from the current directory to the first `bruno.json` (override with `--workspace` or `PLUNGER_WORKSPACE`).
+An agent that runs in the repository therefore sees that repository's requests without any configuration, and
+`plunger send "Jira/create-issue"` means the file in front of it.
+
+Moving between modes is explicit: **Open folder as workspace**, **Import folder into my requests** (copy into the
+database), **Export my requests to a folder**. Nothing is converted silently.
+
+### 6.4 Reading and writing
+
+- **Read**: scan on open (depth-capped, no symlinks out of the folder, size-capped), parse every `.bru`, fill the
+  index. A file that does not parse is shown in the sidebar as a **broken item** with its error and is never
+  rewritten or deleted.
+- **Write is minimal.** The lexer keeps each block's original text. Saving re-renders only the blocks that changed
+  and leaves the rest, the unknown blocks and the line endings alone, so *a request you opened and saved without
+  changes produces no diff*. Writes are atomic (temp file, then rename).
+- **`seq` is not renumbered.** A new request gets `max + 1`; reordering rewrites only the files that moved. Bruno's
+  numbering is the cause of noisy diffs elsewhere; here it is touched as little as possible.
+- **Outside changes** (a `git pull`, an editor): the folder is rescanned on a short timer by comparing modification
+  times and a content hash, not by a file-watcher dependency. A tab with unsaved edits whose file changed shows a
+  **"changed on disk"** bar with *Reload* and *Keep mine*; it never overwrites silently in either direction.
+- **The audit log** records `RequestSaved { path, content_hash }` for what Plunger wrote, so `audit verify` can
+  say which files changed outside the app.
+
+### 6.5 Secrets
+
+The rule is that a file in the folder can always be committed.
+
+- A literal credential in a header, auth block or body is **never written**: the writer replaces it with
+  `{{name}}`, stores the value as a secret variable, and tells the user once. A literal token found when reading is
+  reported as a warning and shown masked.
+- An environment file holds names and non-secret values; `vars:secret [ token ]` holds only *names*. The values
+  come from the credential store, per workspace and environment.
+- The existing masking of responses and history is unchanged.
+
+### 6.6 What an agent sees
+
+- `list_saved_requests` and `get_saved_request` read the index, so they show the folder's requests with `path` and
+  `group`.
+- `save_request` writes a file in workspace mode and says which one (`path`); it never touches files outside the
+  workspace root.
+- A request an agent saves is a normal file in the working tree: the user reviews it in `git diff` and commits or
+  discards it. That is the point of the feature.
+- Sending, history, extract, `select` and workflows behave as before.
+
+### 6.7 Failure modes handled up front
+
+| Case | Behaviour |
+|---|---|
+| File does not parse | Broken item in the list; never rewritten |
+| Two files with the same name in one folder (case-insensitive file system) | Both shown with their path; the second is marked a duplicate |
+| Folder is read-only or the disk is full | Save fails with the path and the reason; the tab keeps its edits |
+| File deleted while its tab is open | Tab stays, marked "deleted on disk"; *Save* recreates it |
+| Huge or binary file | Skipped with a warning (size cap) |
+| Windows path length / reserved names | Slug rules above; refused with a message rather than a silent rename |
+| Line endings | The file's own are kept (CRLF stays CRLF) |
+| Merge conflict markers in a `.bru` | Parse fails, so it is a broken item; the user resolves it in git |
+
+## 7. Tests this needs
+
+- **Fixture corpus**: Bruno's own `.bru` files (MIT) plus ours; every file must lex, and every file that parses must
+  re-render **byte-identical** when unchanged.
+- **Property**: `parse(write(doc)) == doc` for generated `RequestDoc`s, with awkward values (quotes, `}`, `'''`,
+  tabs, unicode, empty bodies, disabled rows).
+- **Fuzz** the lexer: it must never panic and never loop on arbitrary bytes.
+- **Minimal diff**: change one field, write, assert that only that block differs.
+- **Round trip across the five representations** (the existing save/show/send test extended to `RequestDoc`).
+- **Windows names**, long paths, case collisions, CRLF files.
+- **Scenario**: the Jira scenario in CI runs once against a workspace folder instead of the database.
+
+## 8. Rollout
+
+1. `domain::collection::RequestDoc` and its conversions (0c), names per group (0d). No user-visible change.
+2. `convert/bru` lexer, reader, minimal-diff writer (#204). Library only.
+3. **Import / export folder** (#205): the lowest-risk way for users to try it, and it needs no mode switch.
+4. **Workspace mode** (#206), behind an explicit "Open folder as workspace" menu item.
+5. `plunger audit export --http` (#207) and `.http` export of a single request, for sharing.
+
+Step 3 ships on its own and is already useful (take a Bruno collection, work in Plunger, export back). Step 4 is
+the larger change and is only started once 1 to 3 are in use.
+
+## 9. Decisions needed
+
+1. **Names unique per group** (0d). *Recommended: yes.* It is what the file system gives anyway and what makes a
+   Bruno folder importable without renaming.
+2. **A disabled header.** *Recommended: add an `enabled` flag to headers in Plunger.* Bruno and Postman both have it,
+   it is a real feature, and without it a round trip drops information. The alternative is keeping them only in
+   `foreign`, which works but can never be edited in the window.
+3. **Environments.** *Recommended: workspace environments become a switchable set of variables* (one active at a
+   time, shown in the status bar and in the **Uses** line), with secret values per workspace in the credential
+   store. Importing only the active one loses the switch that makes environment files worth having.
+4. **Scripts.** *Recommended: keep and report, never run, never refuse.* Refusing makes a Bruno collection
+   un-openable for the sake of a few `script:` blocks; keeping them verbatim means the file still round-trips for
+   whoever runs them in Bruno.
+5. **File name stability** (new, 6.2). *Recommended: the file name does not follow a rename unless asked.* It keeps
+   diffs small and links in documents valid.
+6. **When a workspace is the source of truth, may an agent create and delete files?** *Recommended: create and
+   overwrite inside the workspace yes; delete only with a user confirmation in the window,* since a deleted file
+   is the one change that is easy to miss in review.
