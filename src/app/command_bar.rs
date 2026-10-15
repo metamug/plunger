@@ -77,7 +77,7 @@ impl ApiTesterApp {
                             .height(300.0)
                             .show_ui(ui, |ui| {
                                 for m in METHODS {
-                                    ui.selectable_value(&mut tab.state.method, m.to_string(), m);
+                                    ui.selectable_value(&mut tab.state.method, m.to_string(), egui::RichText::new(m).color(theme::method_color(m)));
                                 }
                             });
                     });

@@ -430,11 +430,11 @@ impl ApiTesterApp {
             tab.request_height = None;
         }
         let active = response.hovered() || response.dragged();
-        let stroke = egui::Stroke::new(if active { 2.0_f32 } else { 1.0_f32 }, if active { theme::palette().accent_text } else { theme::palette().border });
+        let stroke = egui::Stroke::new(1.0_f32, if active { theme::ACCENT.linear_multiply(0.6) } else { theme::palette().border });
         ui.painter().hline(rect.x_range(), rect.center().y, stroke);
         // A grip in the middle, so it is clear the line can be pulled; it lights up under the pointer.
         let grip = egui::Rect::from_center_size(rect.center(), egui::vec2(46.0, 6.0));
-        let grip_color = if active { theme::palette().accent_text } else { theme::palette().text_widget.linear_multiply(0.5) };
+        let grip_color = if active { theme::ACCENT.linear_multiply(0.8) } else { theme::palette().text_widget.linear_multiply(0.5) };
         ui.painter().rect_filled(grip, egui::CornerRadius::same(3), theme::palette().panel);
         ui.painter().rect_stroke(grip, egui::CornerRadius::same(3), egui::Stroke::new(1.0_f32, grip_color), egui::StrokeKind::Inside);
         for dx in [-10.0_f32, 0.0, 10.0] {

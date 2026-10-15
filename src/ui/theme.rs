@@ -203,8 +203,8 @@ pub fn apply_theme(ctx: &egui::Context, choice: ThemeChoice) {
     // Opaque, conventional selection colours (VS Code dark / Chrome light). Scaling
     // the accent's alpha instead blended into a washed-out cyan.
     visuals.selection.bg_fill = match choice {
-        ThemeChoice::Dark => egui::Color32::from_rgb(38, 79, 120),
-        ThemeChoice::Light => egui::Color32::from_rgb(173, 214, 255),
+        ThemeChoice::Dark => egui::Color32::from_rgb(60, 68, 86),
+        ThemeChoice::Light => egui::Color32::from_rgb(214, 222, 238),
     };
     visuals.selection.stroke = egui::Stroke::new(1.0_f32, p.accent_text);
 

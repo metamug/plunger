@@ -163,6 +163,7 @@ impl Tab {
                 body_box(ui, "body-raw", |ui| {
                     ui.add(
                         theme::area(&mut self.state.raw_body)
+                            .hint_text("Raw body: any text. Set the Content-Type under Headers (JSON, XML and forms are recognised).")
                             .desired_rows(rows)
                             .desired_width(width)
                             .font(egui::TextStyle::Monospace)
@@ -190,6 +191,7 @@ impl Tab {
         body_box(ui, "body-json", |ui| {
             ui.add(
                 theme::area(&mut self.state.json_body)
+                    .hint_text("{ \"key\": \"value\" }")
                     .desired_rows(rows)
                     .desired_width(width)
                     .layouter(&mut layouter),

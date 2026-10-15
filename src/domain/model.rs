@@ -137,7 +137,7 @@ impl Default for PersistedState {
             params: Vec::new(),
             headers_text: String::new(),
             body_mode: BodyMode::None,
-            json_body: String::from("{\n  \"key\": \"value\"\n}"),
+            json_body: String::new(),
             urlencoded_body: String::new(),
             multipart_fields: Vec::new(),
             raw_body: String::new(),

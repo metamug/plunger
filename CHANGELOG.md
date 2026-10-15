@@ -4,6 +4,12 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed
+- The request tab strip scrolls to the tab you open or switch to, and the mouse wheel scrolls it sideways, so a tab is never cut off at the edge.
+- A new JSON body starts empty with a hint instead of a pre-filled `{"key": "value"}` that would be sent if you forgot to edit it. The Raw editor says what it is and where the Content-Type goes.
+- The method menu shows each method in its colour.
+- Selected controls (request tabs, selected options) are a calm slate with an amber label instead of saturated blue, and the divider between request and response lights up in a thin amber line instead of a thick bright one.
+
 ### Fixed
 - Move to group: the "New group" field and the list of groups in a saved request's right-click menu no longer vanish when you click them (#208).
 - The JSON and raw body editors do not wrap a long line in the middle of a value, before or after Format: the line stays whole and the box scrolls sideways (#209).

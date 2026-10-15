@@ -72,13 +72,32 @@ impl ApiTesterApp {
                 .max_width(ui.available_width() - icons::SIZE - 12.0)
                 .auto_shrink([true, true])
                 .show(ui, |ui| {
+                    // the wheel moves the strip sideways, and a tab that became active is brought into view
+                    if ui.rect_contains_pointer(ui.max_rect()) {
+                        let wheel = ui.input(|i| i.smooth_scroll_delta);
+                        if wheel.x == 0.0 && wheel.y != 0.0 {
+                            ui.scroll_with_delta(egui::vec2(wheel.y, 0.0));
+                        }
+                    }
+                    let seen_id = egui::Id::new("tab-strip-seen");
+                    let seen: Option<(usize, usize)> = ui.data(|d| d.get_temp(seen_id));
+                    let now = (self.active, self.tabs.len());
+                    let bring_into_view = seen != Some(now);
+                    ui.data_mut(|d| d.insert_temp(seen_id, now));
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         for (i, tab) in self.tabs.iter().enumerate() {
+                            let before = ui.cursor().min;
                             if let Some(a) = tab_chip(ui, tab, i == self.active) {
                                 action = Some((i, a));
                             }
+                            if bring_into_view && i == self.active {
+                                let after = ui.cursor().min;
+                                ui.scroll_to_rect(egui::Rect::from_min_max(before, egui::pos2(after.x + 16.0, before.y + TAB_HEIGHT)), None);
+                            }
                         }
+                        // room after the last tab, so it is not cut by the strip's edge
+                        ui.add_space(22.0);
                     });
                 });
             new = icons::button(ui, Icon::Plus, "New tab (Ctrl+T)").clicked();
