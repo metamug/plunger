@@ -53,6 +53,182 @@ pub fn is_placeholder_only(value: &str) -> bool {
         })
 }
 
+/// Whether a key in a request *body* (a JSON member, a form field, an XML element) names a credential.
+/// Deliberately narrower than headers and query parameters: a body is full of ordinary names, and only
+/// string values are ever blanked, so `"tokens_used": 5` is never touched.
+pub fn is_sensitive_body_key(name: &str) -> bool {
+    let n = name.trim().to_ascii_lowercase();
+    const FRAGMENTS: &[&str] = &["credential", "passphrase", "private_key", "privatekey", "access_key", "secret_key"];
+    const EXACT: &[&str] = &["pwd", "auth", "authorization", "cookie", "otp", "cvv", "cvc"];
+    EXACT.contains(&n.as_str()) || SENSITIVE_FRAGMENTS.iter().chain(FRAGMENTS).any(|f| n.contains(f))
+}
+
+fn blankable(value: &str) -> bool {
+    !value.trim().is_empty() && !is_placeholder_only(value)
+}
+
+/// The end (exclusive) of the JSON string literal that starts at `start` (a `"`), or the end of the text.
+fn json_string_end(s: &str, start: usize) -> usize {
+    let bytes = s.as_bytes();
+    let mut i = start + 1;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 2,
+            b'"' => return i + 1,
+            _ => i += 1,
+        }
+    }
+    s.len()
+}
+
+/// JSON (or JSON with `{{placeholders}}` where a value goes, which is not valid JSON) with the string
+/// values of credential-looking members blanked. Works on the text, so the layout, the key order and an
+/// unquoted `{{placeholder}}` are all kept exactly as written.
+pub fn redact_json_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    let mut depth: i32 = 0;
+    // while inside the value of a credential-looking member that is an object or array: the depth it opened at
+    let mut inside_sensitive: Option<i32> = None;
+    let bytes = text.as_bytes();
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' => {
+                let end = json_string_end(text, i);
+                let literal = &text[i..end];
+                let after = text[end..].trim_start();
+                if after.starts_with(':') {
+                    // a key
+                    out.push_str(literal);
+                    let inner = literal.trim_matches('"');
+                    if is_sensitive_body_key(inner) {
+                        let colon = end + (text[end..].len() - after.len());
+                        let value_start = colon + 1;
+                        let rest = &text[value_start..];
+                        let trimmed = rest.trim_start();
+                        let gap = rest.len() - trimmed.len();
+                        out.push_str(&text[end..value_start + gap]);
+                        i = value_start + gap;
+                        match trimmed.as_bytes().first() {
+                            Some(b'"') => {
+                                let vend = json_string_end(text, i);
+                                let inner_value = &text[i + 1..vend.saturating_sub(1).max(i + 1)];
+                                if blankable(inner_value) {
+                                    out.push_str("\"\"");
+                                } else {
+                                    out.push_str(&text[i..vend]);
+                                }
+                                i = vend;
+                            }
+                            Some(b'{') | Some(b'[') => inside_sensitive = Some(depth),
+                            _ => {}
+                        }
+                        continue;
+                    }
+                    i = end;
+                } else if inside_sensitive.is_some() && blankable(literal.trim_matches('"')) {
+                    out.push_str("\"\"");
+                    i = end;
+                } else {
+                    out.push_str(literal);
+                    i = end;
+                }
+            }
+            b'{' | b'[' => {
+                depth += 1;
+                out.push(bytes[i] as char);
+                i += 1;
+            }
+            b'}' | b']' => {
+                depth -= 1;
+                if inside_sensitive == Some(depth) {
+                    inside_sensitive = None;
+                }
+                out.push(bytes[i] as char);
+                i += 1;
+            }
+            _ => {
+                // copy one whole character (the text may hold multi-byte UTF-8)
+                let ch = text[i..].chars().next().unwrap();
+                out.push(ch);
+                i += ch.len_utf8();
+            }
+        }
+    }
+    out
+}
+
+/// `name=value` pairs separated by `&` or line breaks, with credential-looking values blanked.
+pub fn redact_form_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut segment = String::new();
+    let flush = |segment: &mut String, out: &mut String| {
+        match segment.split_once('=') {
+            Some((key, value)) if is_sensitive_body_key(key) && blankable(value) => {
+                out.push_str(key);
+                out.push('=');
+            }
+            _ => out.push_str(segment),
+        }
+        segment.clear();
+    };
+    for c in text.chars() {
+        if c == '&' || c == '\n' {
+            flush(&mut segment, &mut out);
+            out.push(c);
+        } else {
+            segment.push(c);
+        }
+    }
+    flush(&mut segment, &mut out);
+    out
+}
+
+/// XML or HTML with the text of credential-looking leaf elements blanked (`<password>x</password>`).
+pub fn redact_xml_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('<') {
+        out.push_str(&rest[..open]);
+        let tag_and_after = &rest[open..];
+        let Some(close) = tag_and_after.find('>') else {
+            out.push_str(tag_and_after);
+            return out;
+        };
+        let tag = &tag_and_after[..=close];
+        out.push_str(tag);
+        rest = &tag_and_after[close + 1..];
+        let inner = &tag[1..tag.len() - 1];
+        let name: String = inner.chars().take_while(|c| !c.is_whitespace() && *c != '/').collect();
+        let is_open = !inner.starts_with('/') && !inner.starts_with('!') && !inner.starts_with('?') && !inner.ends_with('/');
+        if is_open && is_sensitive_body_key(&name) {
+            let closing = format!("</{name}");
+            if let Some(end) = rest.find(&closing) {
+                let content = &rest[..end];
+                if !content.contains('<') && blankable(content) {
+                    rest = &rest[end..];
+                }
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A raw body of unknown kind: told apart by what it looks like, as the highlighter does.
+pub fn redact_raw_body(text: &str) -> String {
+    let t = text.trim_start();
+    if t.starts_with('{') || t.starts_with('[') {
+        redact_json_text(text)
+    } else if t.starts_with('<') {
+        redact_xml_text(text)
+    } else if text.contains('=') {
+        redact_form_text(text)
+    } else {
+        text.to_string()
+    }
+}
+
 /// `Name: Value` lines with credential-bearing values blanked out.
 pub fn redact_headers_text(text: &str) -> String {
     text.lines()
@@ -154,6 +330,52 @@ mod tests {
         assert_eq!(redact_urls_in_text("a http://h/ok?x=1 and b https://h2/y?password=p"), "a http://h/ok?x=1 and b https://h2/y?password=");
         // a placeholder is a reference, not a secret
         assert_eq!(redact_urls_in_text("url (http://h/x?token={{t}})"), "url (http://h/x?token={{t}})");
+    }
+
+    #[test]
+    fn credential_members_of_a_json_body_are_blanked_and_the_rest_is_untouched() {
+        let body = r#"{"user": "ann", "password": "hunter2", "profile": {"api_key": "sk_live_1", "n": 3}, "tokens_used": 5, "note": "ok"}"#;
+        assert_eq!(
+            redact_json_text(body),
+            r#"{"user": "ann", "password": "", "profile": {"api_key": "", "n": 3}, "tokens_used": 5, "note": "ok"}"#
+        );
+        // an object under a credential-looking key: every string inside goes, structure stays
+        assert_eq!(
+            redact_json_text(r#"{"credentials": {"user": "a", "pass": "b"}, "x": "keep"}"#),
+            r#"{"credentials": {"user": "", "pass": ""}, "x": "keep"}"#
+        );
+        // placeholders are references, not secrets; an unquoted placeholder is not valid JSON and still works
+        assert_eq!(
+            redact_json_text(r#"{"password": "{{pw}}", "labels": {{labels}}, "token": "abc"}"#),
+            r#"{"password": "{{pw}}", "labels": {{labels}}, "token": ""}"#
+        );
+        // escapes, unicode and multi-line layout survive
+        let nasty = "{\n  \"note\": \"quote \\\" and \u{e9}\",\n  \"secret\": \"a\\\"b\"\n}";
+        assert_eq!(redact_json_text(nasty), "{\n  \"note\": \"quote \\\" and \u{e9}\",\n  \"secret\": \"\"\n}");
+        // a key that merely contains a quote-colon in a value is not a key
+        assert_eq!(redact_json_text(r#"{"a": "x\": \"password\": \"y"}"#), r#"{"a": "x\": \"password\": \"y"}"#);
+        assert_eq!(redact_json_text(""), "");
+    }
+
+    #[test]
+    fn credential_fields_of_form_and_xml_bodies_are_blanked() {
+        assert_eq!(redact_form_text("user=ann&password=hunter2&page=2"), "user=ann&password=&page=2");
+        assert_eq!(redact_form_text("a=1\nclient_secret=zzz\nb={{x}}\npassword={{pw}}"), "a=1\nclient_secret=\nb={{x}}\npassword={{pw}}");
+        assert_eq!(
+            redact_xml_text("<login><user>ann</user><password>hunter2</password><note>x</note></login>"),
+            "<login><user>ann</user><password></password><note>x</note></login>"
+        );
+        assert_eq!(redact_raw_body(r#"{"password":"p"}"#), r#"{"password":""}"#);
+        assert_eq!(redact_raw_body("<a><token>t</token></a>"), "<a><token></token></a>");
+        assert_eq!(redact_raw_body("grant_type=password&password=p"), "grant_type=password&password=");
+        assert_eq!(redact_raw_body("plain words, no secrets"), "plain words, no secrets");
+    }
+
+    #[test]
+    fn redacting_twice_changes_nothing_more() {
+        let body = r#"{"password": "a", "nested": {"token": "b"}}"#;
+        let once = redact_json_text(body);
+        assert_eq!(redact_json_text(&once), once);
     }
 
     #[test]

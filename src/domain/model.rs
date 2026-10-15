@@ -185,6 +185,10 @@ impl PersistedState {
         // The URL carries the query params too, so it needs the same treatment.
         s.url = crate::domain::redact::redact_url(&s.url);
         s.headers_text = crate::domain::redact::redact_headers_text(&s.headers_text);
+        // the body is stored as sent unless it says otherwise: credential-looking members and fields go too
+        s.json_body = crate::domain::redact::redact_raw_body(&s.json_body);
+        s.urlencoded_body = crate::domain::redact::redact_form_text(&s.urlencoded_body);
+        s.raw_body = crate::domain::redact::redact_raw_body(&s.raw_body);
         for p in &mut s.params {
             if is_sensitive_param(&p.key) {
                 p.value.clear();

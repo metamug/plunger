@@ -1,5 +1,5 @@
 use crate::domain::model::{BodyMode, FormField, KeyValue, PersistedState};
-use crate::domain::redact::{redact_headers_text, redact_url};
+use crate::domain::redact::{redact_form_text, redact_headers_text, redact_raw_body, redact_url};
 use rmcp::schemars::{self, JsonSchema};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -327,17 +327,18 @@ impl History {
     /// Redacts rows written before redaction existed. Idempotent, so it is
     /// cheap to run on every start.
     fn scrub_credentials(&self) -> rusqlite::Result<()> {
-        let rows: Vec<(i64, String, String)> = self
+        let rows: Vec<(i64, String, String, String, String, String)> = self
             .conn
-            .prepare("SELECT id, url, headers_text FROM requests")?
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .prepare("SELECT id, url, headers_text, json_body, urlencoded_body, raw_body FROM requests")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))?
             .collect::<rusqlite::Result<_>>()?;
-        for (id, url, headers) in rows {
+        for (id, url, headers, json, form, raw) in rows {
             let (clean_url, clean_headers) = (redact_url(&url), redact_headers_text(&headers));
-            if clean_url != url || clean_headers != headers {
+            let (clean_json, clean_form, clean_raw) = (redact_raw_body(&json), redact_form_text(&form), redact_raw_body(&raw));
+            if clean_url != url || clean_headers != headers || clean_json != json || clean_form != form || clean_raw != raw {
                 self.conn.execute(
-                    "UPDATE requests SET url = ?1, headers_text = ?2 WHERE id = ?3",
-                    params![clean_url, clean_headers, id],
+                    "UPDATE requests SET url = ?1, headers_text = ?2, json_body = ?3, urlencoded_body = ?4, raw_body = ?5 WHERE id = ?6",
+                    params![clean_url, clean_headers, clean_json, clean_form, clean_raw, id],
                 )?;
             }
         }
@@ -1003,6 +1004,55 @@ mod tests {
         assert!(!h.delete_agent_variable("base").unwrap());
         assert_eq!(h.clear_agent_variables().unwrap(), vec!["token".to_string()]);
         assert!(h.list_agent_variables().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_secret_in_a_request_body_reaches_neither_the_database_nor_the_audit_log() {
+        let dir = std::env::temp_dir().join(format!("plunger-bodysecret-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("history.sqlite3");
+        let h = History::open_at(&path);
+        let mut s = state("http://h/login", BodyMode::Json);
+        s.json_body = r#"{"user": "ann", "password": "HUNTER2-SECRET", "nested": {"api_key": "SK-LIVE-ABC"}}"#.into();
+        let sent = h.insert(&s, Some(200), Some(3)).unwrap();
+        let mut form = state("http://h/token", BodyMode::UrlEncoded);
+        form.urlencoded_body = "grant_type=password
+client_secret=FORM-SECRET-XYZ".into();
+        h.insert(&form, Some(200), Some(3)).unwrap();
+        let mut raw = state("http://h/raw", BodyMode::Raw);
+        raw.raw_body = r#"{"token": "RAW-TOKEN-123"}"#.into();
+        h.save_new(&raw, "raw one").unwrap();
+        // the copy that is kept still says who and what, with the secret's value gone
+        let row = h.get(sent).unwrap().unwrap();
+        assert!(row.json_body.contains(r#""user": "ann""#) && row.json_body.contains(r#""password": """#), "{}", row.json_body);
+        // nothing on disk, in the database or in the log, holds any of the values
+        drop(h);
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let bytes = std::fs::read(entry.unwrap().path()).unwrap();
+            let text = String::from_utf8_lossy(&bytes);
+            for secret in ["HUNTER2-SECRET", "SK-LIVE-ABC", "FORM-SECRET-XYZ", "RAW-TOKEN-123"] {
+                assert!(!text.contains(secret), "{secret} reached disk");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rows_written_before_bodies_were_masked_are_scrubbed_at_open() {
+        let dir = std::env::temp_dir().join(format!("plunger-bodyscrub-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("history.sqlite3");
+        let h = History::open_at(&path);
+        h.insert(&state("http://h/a", BodyMode::Json), Some(200), Some(1)).unwrap();
+        // an old row, as a build before body masking wrote it
+        h.conn.execute("UPDATE requests SET json_body = ?1", [r#"{"password": "OLD-SECRET"}"#]).unwrap();
+        drop(h);
+        let again = History::open_at(&path);
+        let body: String = again.conn.query_row("SELECT json_body FROM requests", [], |r| r.get(0)).unwrap();
+        assert_eq!(body, r#"{"password": ""}"#);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
