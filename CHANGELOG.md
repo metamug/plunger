@@ -4,6 +4,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-10-15
+
 ### Changed
 - The request tab strip scrolls to the tab you open or switch to, and the mouse wheel scrolls it sideways, so a tab is never cut off at the edge.
 - A new JSON body starts empty with a hint instead of a pre-filled `{"key": "value"}` that would be sent if you forgot to edit it. The Raw editor says what it is and where the Content-Type goes.
@@ -300,7 +302,8 @@ Workflows get a window of their own, the toolkit is current (egui 0.36), and the
 
 First public release: send requests with params, headers, JSON, form-urlencoded, raw and multipart bodies; `{{variables}}`; secrets kept in Windows Credential Manager on request; curl and HAR import; local history; TLS-skip for local servers.
 
-[Unreleased]: https://github.com/metamug/plunger/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/metamug/plunger/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/metamug/plunger/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/metamug/plunger/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/metamug/plunger/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/metamug/plunger/compare/v0.6.0...v0.7.0
