@@ -91,8 +91,50 @@ switch ($Scene) {
   }
   "workflow" {
     Start-Recording "workflow" 16
-    At 1.0;  Press 95 670 700                       # the workflow in the sidebar
+    At 0.6;  Press 40 136 400                       # fold Saved (every start opens it)
+    At 1.6;  Press 95 238 600                       # the workflow
     At 3.5;  Keys "^+r"                              # run it
+    Finish-Recording
+  }
+  "bodies" {
+    Start-Recording "bodies" 22
+    At 0.6;  Keys "^t"
+    At 1.2;  Press 650 138 500
+    At 1.6;  Type-Slow "http://127.0.0.1:18111/orders" 45
+    At 4.2;  Press 315 138 500                      # method
+    At 5.0;  Press 315 217 300                      # POST
+    At 5.8;  Press 490 189 400                      # Body
+    At 6.6;  Press 1075 189 400                     # body kind
+    At 7.3;  Press 1000 268 300                     # JSON
+    At 8.0;  Press 700 262 400
+    At 8.4;  Type-Slow '{"customer": "ann", ' 45
+    [System.Windows.Forms.Clipboard]::SetText('"items": [{"sku": "A-1", "qty": 2}, {"sku": "B-7", "qty": 1}], "note": "Leave it at the door, ring twice, the bell is broken so please knock as well"}')
+    At 10.2; Keys "^v"                               # the rest, pasted
+    At 12.5; Press 1112 189 500                     # Format
+    At 15.0; Keys "^{ENTER}"
+    Finish-Recording
+  }
+  "save" {
+    Start-Recording "save" 16
+    At 1.0;  Keys "^s"                               # save; the name is ready to type
+    At 2.0;  Keys "^a"
+    At 2.3;  Type-Slow "Create order" 70
+    At 3.6;  Keys "{ENTER}"
+    At 5.0;  Glide 100 166 500; Click 100 166 -Right
+    At 6.2;  Glide 140 268 500
+    At 7.6;  Glide 300 444 500; Click 300 444
+    At 8.2;  Type-Slow "Orders" 90
+    At 9.4;  Keys "{ENTER}"
+    Finish-Recording
+  }
+  "history" {
+    Start-Recording "history" 16
+    At 0.8;  Press 40 136 500                       # fold Saved
+    At 2.0;  Press 140 372 600                      # a request an agent sent (below the two the workflow sent)
+    At 6.5;  Press 110 49 500                       # View
+    At 7.3;  Glide 160 86 400
+    At 8.0;  Glide 300 86 300                       # along the Theme row, into its submenu
+    At 8.5;  Glide 300 125 300; Click 300 125       # Light
     Finish-Recording
   }
   default { throw "unknown scene $Scene" }

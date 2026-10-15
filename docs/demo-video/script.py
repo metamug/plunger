@@ -36,6 +36,16 @@ SCENES = [
                "your saved requests live in groups on the left.",
     },
     {
+        "id": "04b_bodies",
+        "say": "Need a body? Pick J S O N, a form, multipart with real files, or raw text. Format tidies it up, "
+               "the editor never breaks a long value in half, and the response shows exactly what the server received.",
+    },
+    {
+        "id": "04c_save",
+        "say": "Save it with Control S, and file it in a group straight from its menu. Groups nest, so a big A P I "
+               "stays tidy, and an agent can file its requests in the same groups.",
+    },
+    {
         "id": "05_variables",
         "say": "Put the parts that change in variables. Here the base address and the key are variables, so the "
                "request holds only references. <break time='300ms'/> Forget to define one, and Plunger refuses "
@@ -53,6 +63,11 @@ SCENES = [
         "say": "When one response feeds the next request, save the steps as a workflow. The agent runs it in "
                "one call, and you watch it as a flow. Each step lights up, and the value one step hands to "
                "the next is written on the connector.",
+    },
+    {
+        "id": "07b_history",
+        "say": "Every request, yours or your agent's, lands in the history. Open one, and it still says how it went, "
+               "and who sent it. And if you prefer a lighter look, there's a light theme, one click away.",
     },
     {
         "id": "08_safe",

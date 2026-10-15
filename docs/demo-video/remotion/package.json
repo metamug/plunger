@@ -1,0 +1,22 @@
+{
+  "name": "plunger-demo-film",
+  "private": true,
+  "description": "The Plunger demo film, built with Remotion. Not part of Plunger's build.",
+  "scripts": {
+    "prepare-media": "node prepare.mjs",
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts Film out/plunger-demo.mp4 --codec h264 --crf 18"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.535",
+    "@remotion/google-fonts": "4.0.535",
+    "@remotion/transitions": "4.0.535",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.535"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "typescript": "5.6.3"
+  }
+}

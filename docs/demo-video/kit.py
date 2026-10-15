@@ -200,27 +200,31 @@ def terminal(img, box, t, script, title="plunger", font_size=24):
     put_text(img, ((x0 + x1) / 2, y0 + 23), title, font(20), WEAK, anchor="mm")
     f = font(font_size, mono=True)
     line_h = int(font_size * 1.42)
-    lines = []  # (text, color, visible_chars)
+    lines = []  # (text, color, is_cmd_start, is_cmd_cont, typing)
     for (ts, kind, text) in script:
         if t < ts:
             break
         if kind == "cmd":
             n = int((t - ts) * 38)
             shown = text[: max(0, n)]
-            lines.append(("$ " + shown, TEXT, True, len(shown) < len(text)))
+            typing = len(shown) < len(text)
+            parts = shown.split("\n")
+            for i, part in enumerate(parts):
+                lines.append((part, TEXT, i == 0, i > 0, typing and i == len(parts) - 1))
         else:
             for ln in text.split("\n"):
-                lines.append((ln, WEAK if kind == "out" else GREEN if kind == "ok" else RED, False, False))
+                lines.append((ln, WEAK if kind == "out" else GREEN if kind == "ok" else RED, False, False, False))
     max_lines = int((y1 - y0 - 46 - 30) / line_h)
     lines = lines[-max_lines:]
     y = y0 + 46 + 18
     d = ImageDraw.Draw(img)
-    for text, color, is_cmd, typing in lines:
-        if is_cmd:
-            d.text((x0 + 24, y), "$", font=f, fill=AMBER)
-            d.text((x0 + 24 + d.textlength("$ ", font=f), y), text[2:], font=f, fill=color)
+    for text, color, start, cont, typing in lines:
+        if start or cont:
+            d.text((x0 + 24, y), "$" if start else " ", font=f, fill=AMBER)
+            tx = x0 + 24 + d.textlength("$ ", font=f)
+            d.text((tx, y), text, font=f, fill=color)
             if typing:
-                cx = x0 + 24 + d.textlength(text, font=f) + 2
+                cx = tx + d.textlength(text, font=f) + 2
                 d.rectangle((cx, y + 4, cx + 12, y + line_h - 8), fill=AMBER)
         else:
             d.text((x0 + 24, y), text, font=f, fill=color)
