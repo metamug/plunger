@@ -292,6 +292,48 @@ fn every_menu_action_runs_and_the_window_still_draws() {
     assert!(!a.tabs.is_empty());
 }
 
+/// Every dialog, opened together, on a laptop-sized screen and a small one, in both themes: none of them may
+/// reach past the edges (the window you cannot get to the button of is the bug this guards).
+#[test]
+fn every_dialog_stays_inside_a_small_screen_in_both_themes() {
+    use super::actions::Action;
+    for (width, height) in [(1024.0_f32, 600.0_f32), (800.0, 480.0)] {
+        for choice in [ThemeChoice::Dark, ThemeChoice::Light] {
+            let mut a = app(busy_state());
+            a.tab_mut().outcome = Outcome::Response(Box::new(response("{\"a\": 1}", true, false)));
+            let ctx = egui::Context::default();
+            theme::apply_theme(&ctx, choice);
+            for action in Action::all() {
+                if action == Action::ImportHar {
+                    continue;
+                }
+                a.run_action(&ctx, action);
+            }
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+            for _ in 0..4 {
+                let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+                crate::test_support::pass(&ctx, input, |ui| a.render_ui(ui));
+            }
+            let mut seen = 0;
+            ctx.memory(|m| {
+                for layer in m.layer_ids() {
+                    if layer.order == egui::Order::Background {
+                        continue;
+                    }
+                    let Some(rect) = m.area_rect(layer.id) else { continue };
+                    seen += 1;
+                    assert!(
+                        screen.expand(2.0).contains_rect(rect),
+                        "{width}x{height} {choice:?}: a dialog ({:?}) reaches outside the screen: {rect:?}",
+                        layer.id
+                    );
+                }
+            });
+            assert!(seen > 0, "no dialog was drawn, so nothing was checked");
+        }
+    }
+}
+
 #[test]
 fn zoom_stays_in_range_and_the_sidebar_toggles() {
     use super::actions::Action;

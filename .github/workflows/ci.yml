@@ -16,6 +16,16 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Advisories (RustSec), licences and sources of every dependency in Cargo.lock; see deny.toml.
+  supply-chain:
+    name: Supply chain (advisories and licences)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories licenses bans sources
+
   windows:
     name: Windows (test, lint, build)
     runs-on: windows-latest
