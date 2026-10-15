@@ -86,9 +86,10 @@ impl ApiTesterApp {
                     ui.data_mut(|d| d.insert_temp(seen_id, now));
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
+                        let titles = super::tab::display_titles(&self.tabs);
                         for (i, tab) in self.tabs.iter().enumerate() {
                             let before = ui.cursor().min;
-                            if let Some(a) = tab_chip(ui, tab, i == self.active) {
+                            if let Some(a) = tab_chip(ui, tab, &titles[i], i == self.active) {
                                 action = Some((i, a));
                             }
                             if bring_into_view && i == self.active {
@@ -129,12 +130,12 @@ fn small(ui: &mut egui::Ui, text: String, color: Option<egui::Color32>) {
 
 /// One request tab: method, title, and a close button (a spinner while the
 /// request is in flight). Middle-click also closes.
-fn tab_chip(ui: &mut egui::Ui, tab: &Tab, active: bool) -> Option<TabAction> {
+fn tab_chip(ui: &mut egui::Ui, tab: &Tab, shown_title: &str, active: bool) -> Option<TabAction> {
     let p = palette();
     let small_font = egui::TextStyle::Small.resolve(ui.style());
     let title_color = if active { p.text } else { ui.visuals().weak_text_color() };
     let method = one_line(ui, &tab.state.method, small_font, theme::method_color(&tab.state.method), 70.0);
-    let title = one_line(ui, &tab.title(), egui::FontId::proportional(13.5), title_color, TAB_TITLE_MAX);
+    let title = one_line(ui, shown_title, egui::FontId::proportional(13.5), title_color, TAB_TITLE_MAX);
     let close_size = 18.0;
     let width = 10.0 + method.size().x + 6.0 + title.size().x + 8.0 + close_size + 6.0;
 

@@ -7,6 +7,7 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 ### Changed
 - The request tab strip scrolls to the tab you open or switch to, and the mouse wheel scrolls it sideways, so a tab is never cut off at the edge.
 - A new JSON body starts empty with a hint instead of a pre-filled `{"key": "value"}` that would be sent if you forgot to edit it. The Raw editor says what it is and where the Content-Type goes.
+- Tabs that would read the same (same method and title) are told apart on the strip by host, then query, then a count: `items (2)`.
 - The method menu shows each method in its colour.
 - Selected controls (request tabs, selected options) are a calm slate with an amber label instead of saturated blue, and the divider between request and response lights up in a thin amber line instead of a thick bright one.
 

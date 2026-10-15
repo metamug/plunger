@@ -133,6 +133,47 @@ pub fn title_from_url(url: &str) -> String {
     }
 }
 
+/// The host (with port) and the query of a URL written with or without a scheme.
+fn host_and_query(url: &str) -> (String, String) {
+    let without_scheme = url.trim().split_once("://").map_or(url.trim(), |(_, rest)| rest);
+    let before_fragment = without_scheme.split('#').next().unwrap_or(without_scheme);
+    let (path, query) = before_fragment.split_once('?').unwrap_or((before_fragment, ""));
+    let host = path.split('/').next().unwrap_or("").to_string();
+    (host, query.to_string())
+}
+
+/// The titles to show on the tab strip. Tabs that would read the same (same method and title) are told
+/// apart by their host, then by their query, then by a count, so two `GET items` are never two identical chips.
+pub fn display_titles(tabs: &[Tab]) -> Vec<String> {
+    let base: Vec<(String, String)> = tabs.iter().map(|t| (t.state.method.clone(), t.title())).collect();
+    let mut out: Vec<String> = base.iter().map(|(_, title)| title.clone()).collect();
+    for (i, key) in base.iter().enumerate() {
+        let group: Vec<usize> = (0..base.len()).filter(|&j| base[j] == *key).collect();
+        if group.len() < 2 || group[0] != i {
+            continue;
+        }
+        let parts: Vec<(String, String)> = group.iter().map(|&j| host_and_query(&tabs[j].state.url)).collect();
+        let distinct = |values: Vec<&String>| {
+            let mut seen = std::collections::HashSet::new();
+            values.into_iter().all(|v| seen.insert(v.clone()))
+        };
+        if distinct(parts.iter().map(|(host, _)| host).collect()) {
+            for (&j, (host, _)) in group.iter().zip(&parts) {
+                out[j] = format!("{} \u{b7} {host}", key.1);
+            }
+        } else if distinct(parts.iter().map(|(_, query)| query).collect()) {
+            for (&j, (_, query)) in group.iter().zip(&parts) {
+                out[j] = if query.is_empty() { key.1.clone() } else { format!("{}?{query}", key.1) };
+            }
+        } else {
+            for (n, &j) in group.iter().enumerate().skip(1) {
+                out[j] = format!("{} ({})", key.1, n + 1);
+            }
+        }
+    }
+    out
+}
+
 impl Tab {
     pub fn new(id: u64, mut state: PersistedState) -> Self {
         reconcile(&mut state.url, &mut state.params);
@@ -339,6 +380,26 @@ mod tests {
         let mut named = tab("https://h.com/a");
         named.name = Some("Fixtures".into());
         assert_eq!(named.title(), "Fixtures");
+    }
+
+    #[test]
+    fn tabs_that_would_read_the_same_are_told_apart() {
+        let make = |method: &str, url: &str| {
+            let mut t = Tab::new(1, PersistedState { url: url.into(), method: method.into(), ..Default::default() });
+            t.name = None;
+            t
+        };
+        // different hosts
+        let titles = display_titles(&[make("GET", "http://a:1/api/items"), make("GET", "http://b:2/api/items")]);
+        assert_eq!(titles, ["api/items \u{b7} a:1", "api/items \u{b7} b:2"]);
+        // same host, different query
+        let titles = display_titles(&[make("GET", "http://a/items?x=1"), make("GET", "http://a/items?x=2")]);
+        assert_eq!(titles, ["items?x=1", "items?x=2"]);
+        // identical: a count
+        let titles = display_titles(&[make("GET", "http://a/items"), make("GET", "http://a/items"), make("GET", "http://a/items")]);
+        assert_eq!(titles, ["items", "items (2)", "items (3)"]);
+        // a different method already tells them apart
+        assert_eq!(display_titles(&[make("GET", "http://a/items"), make("POST", "http://a/items")]), ["items", "items"]);
     }
 
     #[test]
