@@ -38,6 +38,7 @@
 <p align="center">
   <img src="docs/images/plunger-ui-demo.gif" alt="Sending a request from Plunger's window, then an AI agent calling the API over MCP: each call appears live in the history tagged MCP, the token it saved stays hidden, and Authorization: Bearer {{token}} keeps its placeholder." width="960"><br>
   <sub>The real app: every request an agent sends appears in your window, tagged <code>MCP</code>, with secrets kept hidden. <a href="docs/agents.md">Setup and details</a>.</sub>
+  <br><sub><a href="https://www.youtube.com/watch?v=35h4nL0PK5I">Watch the 2&frac12; minute walkthrough on YouTube</a> (narrated with a synthetic voice).</sub>
 </p>
 
 ## Why?
