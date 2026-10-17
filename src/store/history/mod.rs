@@ -82,6 +82,8 @@ pub struct HistoryEntry {
     pub sent_values: BTreeMap<String, String>,
     /// The group a saved request is filed under, `Jira` or `Jira/Issues`.
     pub group: Option<String>,
+    /// Why a sent request got no response (connection refused, DNS, timeout...), scrubbed of secret values.
+    pub error: Option<String>,
 }
 
 /// Settings a saved request carries besides its form: how long to wait, whether to follow redirects,
@@ -253,7 +255,7 @@ pub struct History {
 }
 
 const COLUMNS: &str = "id, created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body, \
-                       status, elapsed_ms, extra_json, name, source, group_name";
+                       status, elapsed_ms, extra_json, name, source, group_name, error";
 
 /// A request's columns as written to disk: credentials already blanked.
 struct StoredRequest {
@@ -431,6 +433,8 @@ impl History {
             ("source", "source TEXT NOT NULL DEFAULT 'gui'"),
             // the group a saved request is filed under ("Jira" or "Jira/Issues")
             ("group_name", "group_name TEXT"),
+            // why a sent request got no response, scrubbed of secret values
+            ("error", "error TEXT"),
         ] {
             if !columns.iter().any(|c| c == column) {
                 conn.execute(&format!("ALTER TABLE requests ADD COLUMN {definition}"), [])?;
@@ -699,17 +703,22 @@ impl History {
         source: Source,
     ) -> rusqlite::Result<i64> {
         // only unnamed history is pruned (when the event is applied); saved requests are kept however many there are
-        self.insert_row(state, status, elapsed_ms, None, source)
+        self.insert_row(state, status, elapsed_ms, None, None, source)
+    }
+
+    /// Records a request that was sent but got no response, with the error text the agent was given.
+    pub fn record_failure(&self, state: &PersistedState, error: &str, source: Source) -> rusqlite::Result<i64> {
+        self.insert_row(state, None, None, None, Some(error), source)
     }
 
     /// Saves a request under `name` without adding it to the history list.
     pub fn save_new(&self, state: &PersistedState, name: &str) -> rusqlite::Result<i64> {
-        self.insert_row(state, None, None, Some(name), Source::Gui)
+        self.insert_row(state, None, None, Some(name), None, Source::Gui)
     }
 
     /// Saves a request under `name`, noting who saved it.
     pub fn save_new_from(&self, state: &PersistedState, name: &str, source: Source) -> rusqlite::Result<i64> {
-        self.insert_row(state, None, None, Some(name), source)
+        self.insert_row(state, None, None, Some(name), None, source)
     }
 
     /// Changes whenever any connection (another process included) commits to
@@ -724,6 +733,7 @@ impl History {
         status: Option<u16>,
         elapsed_ms: Option<u128>,
         name: Option<&str>,
+        error: Option<&str>,
         source: Source,
     ) -> rusqlite::Result<i64> {
         let created_at = now();
@@ -747,6 +757,7 @@ impl History {
             in_history: name.is_none(),
             status: status.map(|s| s as i64),
             elapsed_ms: elapsed_ms.map(|e| e as i64),
+            error: error.map(str::to_string),
             row: row.into_row(),
         })?;
         Ok(applied.id)
@@ -848,6 +859,7 @@ impl History {
                 name: row.get(12)?,
                 source: Source::parse(&row.get::<_, String>(13)?),
                 group: row.get(14)?,
+                error: row.get(15)?,
             })
         })?;
         rows.collect()
@@ -1085,6 +1097,28 @@ X-Api-Key:");
         // opening again must not try to add the column twice
         let h2 = History::with_connection(h.conn, None).unwrap();
         h2.insert(&state("http://new", BodyMode::None), None, None).unwrap();
+    }
+
+    #[test]
+    fn a_failed_send_keeps_its_error_and_an_old_database_gets_the_column() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, method TEXT NOT NULL,
+                url TEXT NOT NULL, headers_text TEXT NOT NULL, body_mode TEXT NOT NULL,
+                json_body TEXT NOT NULL, urlencoded_body TEXT NOT NULL, raw_body TEXT NOT NULL,
+                status INTEGER, elapsed_ms INTEGER)",
+            [],
+        )
+        .unwrap();
+        let h = History::with_connection(conn, None).unwrap();
+        let id = h.record_failure(&state("http://down", BodyMode::None), "connection refused", Source::Mcp).unwrap();
+        let entry = h.get(id).unwrap().unwrap();
+        assert_eq!(entry.error.as_deref(), Some("connection refused"));
+        assert_eq!(entry.status, None);
+        // opening again must not try to add the column twice, and the error is still there
+        let h2 = History::with_connection(h.conn, None).unwrap();
+        assert_eq!(h2.get(id).unwrap().unwrap().error.as_deref(), Some("connection refused"));
     }
 
     #[test]

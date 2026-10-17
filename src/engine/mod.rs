@@ -204,12 +204,12 @@ pub struct Sent {
 pub fn send(mut state: PersistedState, bearer: &str, history: Option<&History>, source: Source) -> Result<Sent, SendError> {
     let request = prepare_to_send(&mut state, bearer).map_err(SendError::Refused)?;
     let result = http::execute(request);
-    let history_id = history.and_then(|h| {
-        let (status, elapsed) = match &result {
-            Ok(r) => (Some(r.status), Some(r.elapsed_ms)),
-            Err(_) => (None, None),
-        };
-        h.insert_from(&state, status, elapsed, source).ok()
+    let history_id = history.and_then(|h| match &result {
+        Ok(r) => h.insert_from(&state, Some(r.status), Some(r.elapsed_ms), source).ok(),
+        Err(message) => {
+            let error = Scrubber::new(&state, bearer).text(message);
+            h.record_failure(&state, &error, source).ok()
+        }
     });
     match result {
         Ok(response) => Ok(Sent { response, history_id, state }),
@@ -290,6 +290,18 @@ mod tests {
         let SendError::Refused(message) = err else { panic!("expected a refusal") };
         assert!(message.contains("{{missing}}"), "{message}");
         assert!(history.search_recent("", 5).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_failed_send_keeps_its_error_in_history_without_the_secret() {
+        let history = History::in_memory();
+        let s = session(vec![var("apiToken", "SUPER-SECRET-VALUE", true)]);
+        let spec = RequestSpec { url: "http://127.0.0.1:1/x?token={{apiToken}}".into(), ..Default::default() };
+        let err = send(spec.to_state(&s), "", Some(&history), Source::Cli).err().unwrap();
+        assert!(matches!(err, SendError::Failed { history_id: Some(_), .. }));
+        let rows = history.search_recent("", 5).unwrap();
+        let error = rows[0].error.clone().expect("the failure is stored");
+        assert!(!error.contains("SUPER-SECRET-VALUE"), "{error}");
     }
 
     #[test]

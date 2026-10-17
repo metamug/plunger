@@ -259,7 +259,7 @@ fn a_dragged_divider_and_a_history_note_draw_and_double_click_resets() {
         a.tab_mut().request_height = height;
         a.tab_mut().outcome = Outcome::Empty;
         draw(&mut a);
-        a.tab_mut().opened_from = Some(HistoryMeta { created_at: "2026-10-09T06:11:03Z".into(), status: Some(200), elapsed_ms: Some(7), source: crate::store::history::Source::Mcp });
+        a.tab_mut().opened_from = Some(HistoryMeta { created_at: "2026-10-09T06:11:03Z".into(), status: Some(200), elapsed_ms: Some(7), source: crate::store::history::Source::Mcp, error: None });
         draw(&mut a);
         a.tab_mut().opened_from = None;
         a.tab_mut().outcome = Outcome::Response(Box::new(response("{\"a\": 1}", true, false)));
