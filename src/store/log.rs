@@ -52,6 +52,8 @@ pub struct RequestFull {
     pub status: Option<i64>,
     pub elapsed_ms: Option<i64>,
     pub group: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     pub row: RequestRow,
 }
 
@@ -112,6 +114,8 @@ pub enum Event {
         in_history: bool,
         status: Option<i64>,
         elapsed_ms: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
         row: RequestRow,
     },
     /// A saved request's form was saved again.
@@ -399,15 +403,15 @@ pub struct Applied {
 /// the log fully determines the database.
 pub fn apply(conn: &Connection, event: &Event) -> rusqlite::Result<Applied> {
     let changed = match event {
-        Event::RequestAdded { id, created_at, source, name, in_history, status, elapsed_ms, row } => {
+        Event::RequestAdded { id, created_at, source, name, in_history, status, elapsed_ms, error, row } => {
             let n = conn.execute(
                 "INSERT INTO requests
                     (id, created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body,
-                     status, elapsed_ms, extra_json, name, in_history, source)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                     status, elapsed_ms, extra_json, name, in_history, source, error)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     id, created_at, row.method, row.url, row.headers_text, row.body_mode, row.json_body, row.urlencoded_body,
-                    row.raw_body, status, elapsed_ms, row.extra, name, in_history, source
+                    row.raw_body, status, elapsed_ms, row.extra, name, in_history, source, error
                 ],
             )?;
             if name.is_none() {
@@ -478,11 +482,12 @@ pub fn apply(conn: &Connection, event: &Event) -> rusqlite::Result<Applied> {
                 conn.execute(
                     "INSERT INTO requests
                         (id, created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body,
-                         status, elapsed_ms, extra_json, name, in_history, source, group_name)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                         status, elapsed_ms, extra_json, name, in_history, source, group_name, error)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
                     params![
                         r.id, r.created_at, r.row.method, r.row.url, r.row.headers_text, r.row.body_mode, r.row.json_body,
-                        r.row.urlencoded_body, r.row.raw_body, r.status, r.elapsed_ms, r.row.extra, r.name, r.in_history, r.source, r.group
+                        r.row.urlencoded_body, r.row.raw_body, r.status, r.elapsed_ms, r.row.extra, r.name, r.in_history, r.source, r.group,
+                        r.error
                     ],
                 )?;
             }
@@ -515,7 +520,7 @@ pub fn snapshot_of(conn: &Connection, note: Option<String>) -> rusqlite::Result<
     let mut requests = Vec::new();
     let mut stmt = conn.prepare(
         "SELECT id, created_at, method, url, headers_text, body_mode, json_body, urlencoded_body, raw_body,
-                status, elapsed_ms, extra_json, name, in_history, source, group_name FROM requests ORDER BY id",
+                status, elapsed_ms, extra_json, name, in_history, source, group_name, error FROM requests ORDER BY id",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok(RequestFull {
@@ -537,6 +542,7 @@ pub fn snapshot_of(conn: &Connection, note: Option<String>) -> rusqlite::Result<
             in_history: r.get(13)?,
             source: r.get(14)?,
             group: r.get(15)?,
+            error: r.get(16)?,
         })
     })?;
     for row in rows {
@@ -683,6 +689,7 @@ mod tests {
             in_history: true,
             status: Some(201),
             elapsed_ms: Some(7),
+            error: None,
             row: RequestRow { method: "POST".into(), url: "http://h/orphan".into(), body_mode: "None".into(), extra: "{}".into(), ..Default::default() },
         };
         append(&log, &state_at, orphan).unwrap();

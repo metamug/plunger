@@ -234,6 +234,7 @@ impl ApiTesterApp {
                     status: entry.status,
                     elapsed_ms: entry.elapsed_ms,
                     source: entry.source,
+                    error: entry.error.clone(),
                 });
                 tab.sent_values = entry.sent_values.clone();
             }
