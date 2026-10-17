@@ -33,7 +33,7 @@ rfd = { version = "0.17", default-features = false }
 # The TLS provider reqwest uses: ring is far smaller than the aws-lc-rs that reqwest 0.13 picks by default.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 # hashes the lines of the audit log
-sha2 = { version = "0.10", default-features = false }
+sha2 = { version = "0.11", default-features = false }
 time = { version = "0.3", features = ["formatting", "parsing", "local-offset"] }
 # Headless modes: read the GUI's saved state, and serve MCP over stdio.
 ron = "0.12"
