@@ -708,7 +708,9 @@ impl History {
 
     /// Records a request that was sent but got no response, with the error text the agent was given.
     pub fn record_failure(&self, state: &PersistedState, error: &str, source: Source) -> rusqlite::Result<i64> {
-        self.insert_row(state, None, None, None, Some(error), source)
+        // the client's message names the URL it called: keep a credential in it out of the database and the log
+        let error = crate::domain::redact::redact_urls_in_text(error);
+        self.insert_row(state, None, None, None, Some(&error), source)
     }
 
     /// Saves a request under `name` without adding it to the history list.
@@ -1119,6 +1121,17 @@ X-Api-Key:");
         // opening again must not try to add the column twice, and the error is still there
         let h2 = History::with_connection(h.conn, None).unwrap();
         assert_eq!(h2.get(id).unwrap().unwrap().error.as_deref(), Some("connection refused"));
+    }
+
+    #[test]
+    fn a_credential_in_the_url_of_a_failed_send_does_not_reach_the_error_text() {
+        let h = history();
+        let id = h
+            .record_failure(&state("http://h/x?api_key=LITERAL-SECRET", BodyMode::None), "error sending request for url (http://h/x?api_key=LITERAL-SECRET&page=2): refused", Source::Cli)
+            .unwrap();
+        let error = h.get(id).unwrap().unwrap().error.unwrap();
+        assert!(!error.contains("LITERAL-SECRET"), "{error}");
+        assert!(error.contains("page=2") && error.contains("refused"), "{error}");
     }
 
     #[test]

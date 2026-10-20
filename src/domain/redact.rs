@@ -95,6 +95,29 @@ pub fn redact_url(url: &str) -> String {
     out
 }
 
+/// A message (an error from the HTTP client, say) with every URL in it passed through [`redact_url`], so a
+/// credential in a query string or in `user:password@` does not reach the disk through the error text.
+pub fn redact_urls_in_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("://") {
+        // the scheme starts at the letters just before "://"
+        let scheme_start = rest[..at].rfind(|c: char| !c.is_ascii_alphanumeric() && c != '+' && c != '-' && c != '.').map_or(0, |i| i + 1);
+        out.push_str(&rest[..scheme_start]);
+        let after = &rest[at + 3..];
+        let end = after.find(|c: char| c.is_whitespace() || matches!(c, ')' | '"' | '\'' | '<' | '>' | ',')).unwrap_or(after.len());
+        let token = &after[..end];
+        // trailing punctuation belongs to the sentence, not the URL
+        let trimmed = token.trim_end_matches(['.', ':', ';', '!', '?']);
+        let url = format!("{}://{}", &rest[scheme_start..at], trimmed);
+        out.push_str(&redact_url(&url));
+        out.push_str(&token[trimmed.len()..]);
+        rest = &after[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 fn redact_userinfo(base: &str) -> String {
     let (scheme, rest) = match base.split_once("://") {
         Some((s, r)) => (Some(s), r),
@@ -119,6 +142,19 @@ fn redact_userinfo(base: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn urls_inside_a_message_are_redacted_and_the_words_around_them_are_not() {
+        assert_eq!(
+            redact_urls_in_text("error sending request for url (http://h/x?api_key=SECRET&page=2): client error (Connect): refused."),
+            "error sending request for url (http://h/x?api_key=&page=2): client error (Connect): refused."
+        );
+        assert_eq!(redact_urls_in_text("failed: https://bob:hunter2@h/p?token=abc."), "failed: https://bob@h/p?token=.");
+        assert_eq!(redact_urls_in_text("no urls here"), "no urls here");
+        assert_eq!(redact_urls_in_text("a http://h/ok?x=1 and b https://h2/y?password=p"), "a http://h/ok?x=1 and b https://h2/y?password=");
+        // a placeholder is a reference, not a secret
+        assert_eq!(redact_urls_in_text("url (http://h/x?token={{t}})"), "url (http://h/x?token={{t}})");
+    }
 
     #[test]
     fn secret_looking_environment_names_are_recognised() {

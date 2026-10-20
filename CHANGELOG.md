@@ -4,6 +4,9 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed
+- A request an agent sent that got no response (connection refused, DNS failure, timeout) now keeps the reason: opening it from the history shows the error text in the response pane instead of "no response". A secret variable's value, and a credential in the URL's query string or `user:password@`, is masked in that text before it is stored, in the database and in the audit log. Thanks @jay23606 (#211, #118).
+
 ## [0.7.3] - 2026-10-15
 
 ### Changed
