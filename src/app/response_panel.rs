@@ -41,7 +41,7 @@ impl Tab {
                         if let Some(meta) = &self.opened_from {
                             // Opened from the history: say how it went; the response itself is not stored.
                             // A request that was only saved, never sent, has no status and no time: say so.
-                            let never_sent = meta.status.is_none() && meta.elapsed_ms.is_none();
+                            let never_sent = meta.status.is_none() && meta.elapsed_ms.is_none() && meta.error.is_none();
                             ui.horizontal(|ui| {
                                 // Centre the line: the badge, then who sent it and when.
                                 ui.add_space(((ui.available_width() - 330.0) / 2.0).max(0.0));
@@ -60,7 +60,10 @@ impl Tab {
                                 ui.label(egui::RichText::new(format!("{verb} by {by} {}{time}", crate::domain::timefmt::full(&meta.created_at))).weak());
                             });
                             let note = if never_sent { "Not sent yet. Ctrl+Enter sends it" } else { "The response is not stored. Ctrl+Enter sends it again" };
-                            ui.label(egui::RichText::new(note).weak().small());
+                            match &meta.error {
+                                Some(error) => ui.label(egui::RichText::new(error).color(crate::ui::theme::palette().error)),
+                                None => ui.label(egui::RichText::new(note).weak().small()),
+                            };
                         } else {
                             ui.label(egui::RichText::new("Send a request to see the response here").weak());
                             ui.label(egui::RichText::new("Ctrl+Enter sends from anywhere").weak().small());

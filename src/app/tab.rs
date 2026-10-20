@@ -111,6 +111,8 @@ pub struct HistoryMeta {
     pub status: Option<i64>,
     pub elapsed_ms: Option<i64>,
     pub source: crate::store::history::Source,
+    /// Why no response came back, if that is what happened.
+    pub error: Option<String>,
 }
 
 /// A short name for a request that has none: the last two path segments (or the host when the URL has no
@@ -226,6 +228,7 @@ impl Tab {
             status: entry.status,
             elapsed_ms: entry.elapsed_ms,
             source: entry.source,
+            error: entry.error.clone(),
         });
         tab
     }
@@ -405,7 +408,7 @@ mod tests {
     #[test]
     fn an_agent_request_open_only_to_look_at_is_not_brought_back() {
         use crate::store::history::Source;
-        let meta = |source| HistoryMeta { created_at: "2026-10-09T06:11:03Z".into(), status: Some(200), elapsed_ms: Some(5), source };
+        let meta = |source| HistoryMeta { created_at: "2026-10-09T06:11:03Z".into(), status: Some(200), elapsed_ms: Some(5), source, error: None };
         let mut tab = Tab::new(1, PersistedState { url: "http://h/x".into(), ..Default::default() });
         assert!(!tab.is_agent_preview(), "a tab you typed in is yours");
         tab.opened_from = Some(meta(Source::Mcp));
@@ -421,7 +424,7 @@ mod tests {
     fn sending_folds_the_request_away_and_forgets_the_history_note() {
         let mut tab = Tab::new(1, PersistedState { url: "http://127.0.0.1:1/x".into(), ..Default::default() });
         tab.pane = Pane::RequestExpanded;
-        tab.opened_from = Some(HistoryMeta { created_at: "2026-10-09T06:11:03Z".into(), status: Some(200), elapsed_ms: Some(5), source: crate::store::history::Source::Mcp });
+        tab.opened_from = Some(HistoryMeta { created_at: "2026-10-09T06:11:03Z".into(), status: Some(200), elapsed_ms: Some(5), source: crate::store::history::Source::Mcp, error: None });
         tab.send("", &[]);
         assert_eq!(tab.pane, Pane::ResponseExpanded, "the response is what you see after a send");
         assert!(tab.opened_from.is_none());
@@ -455,6 +458,7 @@ mod tests {
             options: Default::default(),
             sent_values: Default::default(),
             group: None,
+            error: None,
         };
         let tab = Tab::from_entry(1, &entry, &PersistedState::default());
         let meta = tab.opened_from.expect("opened from history");
