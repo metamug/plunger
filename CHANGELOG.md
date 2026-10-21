@@ -4,11 +4,16 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-10-21
+
+Secrets stay out of what is stored, and two TLS advisories are fixed.
+
 ### Added
 - CI checks every dependency for RustSec advisories, licences and sources (`cargo deny`, configured in `deny.toml`) (#148).
 - A headless test draws every dialog at laptop and small-screen sizes in both themes and fails if one reaches past the screen (#147).
 
 ### Security
+- Updated `rustls` (0.23.46), `rustls-webpki` (0.103.16, RUSTSEC-2026-0382: certificate verification could accept distrusted intermediates) and `webpki-root-certs` (1.0.10, RUSTSEC-2026-0383: bundled roots allowed distrusted emSign intermediates). CI now fails on a new advisory.
 - Credentials in a request **body** are no longer written to disk. In a JSON, form or XML body, and in a raw body that looks like one, the string value of a member or field named like a credential (`password`, `token`, `secret`, `api_key`, ...) is blanked before the request is stored in the history, a saved request or the audit log. The request that is sent is not changed, a `{{placeholder}}` is kept, and `"tokens_used": 5` is left alone. The history database is scrubbed of earlier rows when it is opened. A value that an earlier version already wrote to a hash-chained `audit.log` stays there; delete the file if that matters (a new one starts). See `docs/privacy.md`.
 
 ### Fixed
@@ -312,7 +317,8 @@ Workflows get a window of their own, the toolkit is current (egui 0.36), and the
 
 First public release: send requests with params, headers, JSON, form-urlencoded, raw and multipart bodies; `{{variables}}`; secrets kept in Windows Credential Manager on request; curl and HAR import; local history; TLS-skip for local servers.
 
-[Unreleased]: https://github.com/metamug/plunger/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/metamug/plunger/compare/v0.7.4...HEAD
+[0.7.4]: https://github.com/metamug/plunger/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/metamug/plunger/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/metamug/plunger/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/metamug/plunger/compare/v0.7.0...v0.7.1
