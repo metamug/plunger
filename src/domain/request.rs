@@ -197,6 +197,10 @@ pub fn build_request(state: &PersistedState, bearer_token: &str) -> Result<Outgo
                 .collect();
             OutgoingBody::Text(lines.join("&"))
         }
+        BodyMode::Xml => {
+            ensure_header(&mut headers, "Content-Type", "application/xml");
+            OutgoingBody::Text(r.apply(&state.raw_body))
+        }
         BodyMode::Raw => {
             // A raw body that says it is JSON gets the same care as the JSON editor: values are escaped inside
             // strings and `{{x?}}` can leave a member out. This is how an agent sends a body with an unquoted
@@ -372,6 +376,21 @@ mod tests {
         s.urlencoded_body = "a={{v}}".into();
         s.variables = vec![var("v", "x y&z=1")];
         assert_eq!(text_body(&build(&s, "")), Some("a=x%20y%26z%3D1"));
+    }
+
+    #[test]
+    fn an_xml_body_is_sent_as_application_xml_unless_the_headers_say_otherwise() {
+        let mut s = state();
+        s.body_mode = BodyMode::Xml;
+        s.raw_body = "<order><sku>{{sku}}</sku></order>".into();
+        s.variables = vec![var("sku", "A-1")];
+        let r = build(&s, "");
+        assert_eq!(text_body(&r), Some("<order><sku>A-1</sku></order>"));
+        assert!(r.headers.contains(&("Content-Type".into(), "application/xml".into())), "{:?}", r.headers);
+        s.headers_text = "Content-Type: text/xml; charset=utf-8".into();
+        let r = build(&s, "");
+        assert_eq!(r.headers.iter().filter(|(k, _)| k.eq_ignore_ascii_case("content-type")).count(), 1);
+        assert!(r.headers.contains(&("Content-Type".into(), "text/xml; charset=utf-8".into())), "{:?}", r.headers);
     }
 
     #[test]

@@ -230,6 +230,7 @@ fn body_mode_to_str(mode: BodyMode) -> &'static str {
     match mode {
         BodyMode::None => "None",
         BodyMode::Json => "Json",
+        BodyMode::Xml => "Xml",
         BodyMode::UrlEncoded => "UrlEncoded",
         BodyMode::Multipart => "Multipart",
         BodyMode::Raw => "Raw",
@@ -239,6 +240,7 @@ fn body_mode_to_str(mode: BodyMode) -> &'static str {
 fn body_mode_from_str(s: &str) -> BodyMode {
     match s {
         "Json" => BodyMode::Json,
+        "Xml" => BodyMode::Xml,
         "UrlEncoded" => BodyMode::UrlEncoded,
         "Multipart" => BodyMode::Multipart,
         "Raw" => BodyMode::Raw,
@@ -1007,6 +1009,17 @@ mod tests {
     }
 
     #[test]
+    fn an_xml_request_comes_back_as_xml_with_its_credentials_blanked() {
+        let h = history();
+        let mut s = state("http://h/soap", BodyMode::Xml);
+        s.raw_body = "<login><user>ann</user><password>XML-SECRET</password></login>".into();
+        let id = h.insert(&s, Some(200), Some(1)).unwrap();
+        let restored = h.get(id).unwrap().unwrap().to_persisted_state();
+        assert!(restored.body_mode == BodyMode::Xml);
+        assert_eq!(restored.raw_body, "<login><user>ann</user><password></password></login>");
+    }
+
+    #[test]
     fn a_secret_in_a_request_body_reaches_neither_the_database_nor_the_audit_log() {
         let dir = std::env::temp_dir().join(format!("plunger-bodysecret-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -1305,7 +1318,7 @@ X-Api-Key:");
 
     #[test]
     fn body_mode_string_round_trip() {
-        for m in [BodyMode::None, BodyMode::Json, BodyMode::UrlEncoded, BodyMode::Raw] {
+        for m in [BodyMode::None, BodyMode::Json, BodyMode::Xml, BodyMode::UrlEncoded, BodyMode::Raw] {
             assert!(body_mode_from_str(body_mode_to_str(m)) == m);
         }
         assert!(body_mode_from_str("garbage") == BodyMode::None);

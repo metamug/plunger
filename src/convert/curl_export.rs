@@ -25,6 +25,12 @@ pub fn to_curl(state: &PersistedState) -> String {
             }
             body_args.push(format!("--data-raw {}", quote(&state.json_body)));
         }
+        BodyMode::Xml => {
+            if !has_header("content-type") {
+                body_args.push(format!("-H {}", quote("Content-Type: application/xml")));
+            }
+            body_args.push(format!("--data-raw {}", quote(&state.raw_body)));
+        }
         BodyMode::Raw => body_args.push(format!("--data-raw {}", quote(&state.raw_body))),
         BodyMode::UrlEncoded => {
             for line in state.urlencoded_body.lines().map(str::trim).filter(|l| !l.is_empty()) {
@@ -87,6 +93,25 @@ mod tests {
         assert_eq!(parsed.url, "{{base}}/users?q=it's");
         assert!(parsed.headers.contains(&("Authorization".into(), "Bearer {{token}}".into())));
         assert_eq!(parsed.body.as_deref(), Some("{\"name\": \"O'Brien\"}"));
+    }
+
+    #[test]
+    fn an_xml_body_exports_with_its_content_type_and_imports_as_xml_again() {
+        let state = PersistedState {
+            method: "POST".into(),
+            url: "https://h/orders".into(),
+            body_mode: BodyMode::Xml,
+            raw_body: "<order><sku>A-1</sku></order>".into(),
+            ..Default::default()
+        };
+        let curl = to_curl(&state);
+        assert!(curl.contains("Content-Type: application/xml"), "{curl}");
+        let again = parse_curl(&curl).unwrap().into_state();
+        assert!(again.body_mode == BodyMode::Xml);
+        assert_eq!(again.raw_body, "<order><sku>A-1</sku></order>");
+        // a Content-Type the user set is not doubled
+        let own = PersistedState { headers_text: "Content-Type: text/xml".into(), ..state };
+        assert_eq!(to_curl(&own).matches("Content-Type").count(), 1);
     }
 
     #[test]

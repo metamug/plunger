@@ -343,7 +343,7 @@ pub struct StoredRequestInfo {
     pub url: String,
     /// Credential headers are stored with their values blanked.
     pub headers: Vec<NameValue>,
-    /// none, json, form-data, x-www-form-urlencoded or raw.
+    /// none, json, xml, form-data, x-www-form-urlencoded or raw.
     pub body_type: String,
     /// `{{variables}}` this request needs. Built-ins like `{{$uuid}}` are filled in automatically.
     pub variables_used: Vec<String>,
@@ -391,6 +391,7 @@ pub fn body_type_name(mode: BodyMode) -> &'static str {
     match mode {
         BodyMode::None => "none",
         BodyMode::Json => "json",
+        BodyMode::Xml => "xml",
         BodyMode::Multipart => "form-data",
         BodyMode::UrlEncoded => "x-www-form-urlencoded",
         BodyMode::Raw => "raw",

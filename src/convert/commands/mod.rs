@@ -88,6 +88,12 @@ impl Parts {
                 }
                 PartBody::Text(state.json_body.clone())
             }
+            BodyMode::Xml => {
+                if !has_type(&headers) {
+                    headers.push(("Content-Type".into(), "application/xml".into()));
+                }
+                PartBody::Text(state.raw_body.clone())
+            }
             BodyMode::Raw => PartBody::Text(state.raw_body.clone()),
             BodyMode::UrlEncoded => {
                 // curl and PowerShell both send this Content-Type on their own.

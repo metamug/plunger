@@ -59,7 +59,7 @@ Seeing is believing. Plunger is for the moment between "I think it works" and "I
 A small desktop app that sends an HTTP request and shows you what came back.
 
 - **Request:** GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS. Params, headers and a Bearer token field.
-- **Body:** JSON, form-urlencoded, raw text, or multipart form-data with real file uploads.
+- **Body:** JSON, XML, form-urlencoded, raw text, or multipart form-data with real file uploads.
 - **Response:** status, time and size, the headers, and the body as a collapsible JSON tree. Copy it or save it to a file.
 - **Variables:** `{{name}}` anywhere in the request, plus `{{$uuid}}`, `{{$timestamp}}`, `{{$randomInt}}` and `{{$env:NAME}}` for reading an OS environment variable at send time. A request with an undefined variable is refused, never sent with the placeholder in it.
 - **Import and export:** paste a curl command (bash or Windows cmd, including `-F` uploads) or a PowerShell `Invoke-WebRequest` / `Invoke-RestMethod` command, such as DevTools' Copy as cURL or Copy as PowerShell; or open a HAR file. Copy any request back out as curl (bash), curl (Windows cmd), PowerShell or a JavaScript `fetch` call with **Ctrl+Shift+C** or **File > Export request**, shown with syntax highlighting.

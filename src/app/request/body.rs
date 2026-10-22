@@ -61,6 +61,7 @@ fn mode_label(mode: BodyMode) -> &'static str {
     match mode {
         BodyMode::None => "No body",
         BodyMode::Json => "JSON",
+        BodyMode::Xml => "XML",
         BodyMode::Multipart => "form-data",
         BodyMode::UrlEncoded => "urlencoded",
         BodyMode::Raw => "Raw",
@@ -112,6 +113,7 @@ impl Tab {
                 for (mode, label) in [
                     (BodyMode::None, "No body"),
                     (BodyMode::Json, "JSON"),
+                    (BodyMode::Xml, "XML"),
                     (BodyMode::Multipart, "form-data"),
                     (BodyMode::UrlEncoded, "x-www-form-urlencoded"),
                     (BodyMode::Raw, "Raw"),
@@ -129,6 +131,7 @@ impl Tab {
                 ui.label(egui::RichText::new("This request has no body.").weak());
             }
             BodyMode::Json => self.render_json_editor(ui),
+            BodyMode::Xml => self.render_xml_editor(ui),
             BodyMode::Multipart => self.render_multipart_editor(ui),
             BodyMode::UrlEncoded => {
                 ui.label(egui::RichText::new("One key=value per line").weak());
@@ -172,6 +175,28 @@ impl Tab {
                 });
             }
         }
+    }
+
+    fn render_xml_editor(&mut self, ui: &mut egui::Ui) {
+        let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+            let text = text.as_str();
+            let mut job = crate::ui::highlight::body(text);
+            job.wrap.max_width = f32::INFINITY;
+            let _ = wrap_width;
+            ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
+        };
+        let rows = editor_lines(&self.state.raw_body, self.editor_rows, self.editor_fill);
+        let width = ui.available_width();
+        body_box(ui, "body-xml", |ui| {
+            ui.add(
+                theme::area(&mut self.state.raw_body)
+                    .hint_text("<order><sku>A-1</sku></order>  (sent as application/xml unless you set a Content-Type under Headers)")
+                    .desired_rows(rows)
+                    .desired_width(width)
+                    .font(egui::TextStyle::Monospace)
+                    .layouter(&mut layouter),
+            );
+        });
     }
 
     fn render_json_editor(&mut self, ui: &mut egui::Ui) {

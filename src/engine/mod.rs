@@ -56,6 +56,10 @@ impl RequestSpec {
         })
     }
 
+    fn has_xml_content_type(&self) -> bool {
+        self.headers.iter().any(|(name, value)| name.eq_ignore_ascii_case("content-type") && crate::domain::model::is_xml_type(value))
+    }
+
     /// The form state the window would have for this request, with the
     /// session's variables and options underneath.
     pub fn to_state(&self, session: &Session) -> PersistedState {
@@ -78,6 +82,10 @@ impl RequestSpec {
             Body::Text(text) if self.has_json_content_type() && serde_json::from_str::<serde_json::Value>(text).is_ok() => {
                 state.body_mode = BodyMode::Json;
                 state.json_body = text.clone();
+            }
+            Body::Text(text) if self.has_xml_content_type() => {
+                state.body_mode = BodyMode::Xml;
+                state.raw_body = text.clone();
             }
             Body::Text(text) => {
                 state.body_mode = BodyMode::Raw;
@@ -277,7 +285,9 @@ mod tests {
         let raw = |headers: &[(&str, &str)], text: &str| spec(headers, Body::Text(text.into())).to_state(&s).body_mode == BodyMode::Raw;
         assert!(raw(&json_ct, "not json"), "invalid JSON stays raw");
         assert!(raw(&[("Content-Type", "text/plain")], "123"), "plain text that happens to parse stays raw");
-        assert!(raw(&[("Content-Type", "application/xml")], "<a/>"));
+        let xml = |headers: &[(&str, &str)]| spec(headers, Body::Text("<a/>".into())).to_state(&s).body_mode == BodyMode::Xml;
+        assert!(xml(&[("Content-Type", "application/xml")]) && xml(&[("content-type", "text/xml; charset=utf-8")]) && xml(&[("Content-Type", "application/soap+xml")]), "an XML Content-Type opens in the XML editor");
+        assert!(raw(&[("Content-Type", "text/html")], "<a/>"), "markup that is not XML stays raw");
         assert!(raw(&[], "{\"a\":1}"), "no Content-Type stays raw");
     }
 

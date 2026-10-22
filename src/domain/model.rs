@@ -6,9 +6,17 @@ pub enum BodyMode {
     #[default]
     None,
     Json,
+    /// An XML body: its text lives in `raw_body`, and the Content-Type defaults to application/xml.
+    Xml,
     UrlEncoded,
     Multipart,
     Raw,
+}
+
+/// Whether a Content-Type value names an XML body (`application/xml`, `text/xml`, `application/soap+xml`).
+pub fn is_xml_type(value: &str) -> bool {
+    let v = value.to_ascii_lowercase();
+    v.contains("/xml") || v.contains("+xml")
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -282,7 +290,8 @@ impl ParsedRequest {
                 state.json_body = body;
             }
             Some(body) => {
-                state.body_mode = BodyMode::Raw;
+                let is_xml = self.headers.iter().any(|(name, value)| name.eq_ignore_ascii_case("content-type") && is_xml_type(value));
+                state.body_mode = if is_xml { BodyMode::Xml } else { BodyMode::Raw };
                 state.raw_body = body;
             }
             None if !self.form_fields.is_empty() => state.body_mode = BodyMode::Multipart,

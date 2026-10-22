@@ -130,7 +130,7 @@ fn tab_labels(state: &PersistedState) -> TabLabels {
         BodyMode::None => false,
         BodyMode::Json => !state.json_body.trim().is_empty(),
         BodyMode::UrlEncoded => !state.urlencoded_body.trim().is_empty(),
-        BodyMode::Raw => !state.raw_body.trim().is_empty(),
+        BodyMode::Raw | BodyMode::Xml => !state.raw_body.trim().is_empty(),
         BodyMode::Multipart => !state.multipart_fields.is_empty(),
     };
     TabLabels {

@@ -210,7 +210,7 @@ fn every_request_tab_draws_and_keeps_one_spare_row() {
 fn every_body_mode_draws_and_form_data_keeps_a_spare_row() {
     let mut a = app(busy_state());
     a.tab_mut().request_tab = RequestTab::Body;
-    for mode in [BodyMode::None, BodyMode::Json, BodyMode::Multipart, BodyMode::UrlEncoded, BodyMode::Raw] {
+    for mode in [BodyMode::None, BodyMode::Json, BodyMode::Xml, BodyMode::Multipart, BodyMode::UrlEncoded, BodyMode::Raw] {
         a.tab_mut().state.body_mode = mode;
         draw(&mut a);
     }

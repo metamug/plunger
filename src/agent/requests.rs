@@ -41,7 +41,7 @@ pub struct ImportedRequest {
 pub(super) fn imported_from_state(state: &PersistedState, saved_id: Option<i64>) -> ImportedRequest {
     let body = match state.body_mode {
         BodyMode::Json => Some(state.json_body.clone()),
-        BodyMode::Raw => Some(state.raw_body.clone()),
+        BodyMode::Raw | BodyMode::Xml => Some(state.raw_body.clone()),
         BodyMode::UrlEncoded => Some(state.urlencoded_body.clone()),
         _ => None,
     };

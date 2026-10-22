@@ -4,6 +4,8 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+- An **XML** body type next to JSON: the editor is highlighted, the request is sent as `application/xml` unless you set a Content-Type yourself, and `{{variables}}` are filled in. A curl command or an agent's text body that says XML (`application/xml`, `text/xml`, `+xml`) opens in it, and the curl, PowerShell, Python and JavaScript exports carry the right Content-Type. Thanks @tayfuryldz (#58, #9); the change is ported onto the current code.
 ## [0.7.4] - 2026-10-21
 
 Secrets stay out of what is stored, and two TLS advisories are fixed.
