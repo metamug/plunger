@@ -194,6 +194,10 @@ From a terminal: `plunger workflow save shop @steps.json`, `plunger workflow run
 
 ## Workflows in the window
 
+<p align="center">
+  <img src="images/workflow-window.png" alt="The workflow window: a card per step on a rail of connected dots, the value the first step hands to the second written on the connector" width="640">
+</p>
+
 Workflows are made by agents (or `plunger workflow save`), but the window shows them: a **WORKFLOWS** section in the sidebar lists each one with its step count and a dot for its last run (green all passed, red a step failed, amber cancelled, grey never run) and how long ago.
 
 Click one to open it. The window draws the steps as a flow: a card per step on a rail of connected dots (coloured by the last or running run; a diamond can be skipped, a square can end the run), with the values a step hands on written on the connector and what the workflow needs from outside listed on top. Each card shows the request, the status it expects and its conditions, **Run** with live progress and a **Cancel** that stops before the next step, an optional "Values for this run" box (`name=value`, one per line), and **Last run**: every recorded run, whoever made it (you, the CLI or an agent over MCP), with each step's status, time and the variables it set (by name; a secret never shows). **Open as request** puts a step in an ordinary tab to try by hand, and **Copy as JSON** copies the steps. Right-click a workflow in the sidebar for Open, Run, Copy as JSON and Delete (which asks first, and removes its recorded runs too).
