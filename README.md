@@ -128,7 +128,9 @@ When one response feeds the next request (log in, then use the token; look up an
 ]}
 ```
 
-There is no scripting language to learn or sandbox to trust: a script is data, so it diffs and reviews like data. See `plunger run --help` for every option.
+Steps can also page through a list (`paginate`), repeat for each item of a list (`for_each`), wait for a job (`poll`), retry after a rate limit (`retry`), and finish with a `return` that boils everything collected down to the answer, so an agent reads ten lines instead of two hundred issues. The reshaping is a [jq](https://jqlang.org/manual/) program that cannot touch files, the network or the environment.
+
+There is no scripting language to learn or sandbox to trust: a script is data, so it diffs and reviews like data. And when a job needs real code, a Python or shell script can call `plunger send` and still get Plunger's secret masking and history. See `plunger run --help` for every option, and [docs/agents.md](docs/agents.md#checks-paging-loops-and-an-answer) for the full list.
 
 ## Small by design
 

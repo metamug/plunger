@@ -1,0 +1,41 @@
+{
+  "name": "shop report",
+  "variables": { "base": "http://127.0.0.1:18095", "per_page": "5" },
+  "steps": [
+    {
+      "label": "log in",
+      "method": "POST",
+      "url": "{{base}}/login",
+      "json": { "username": "demo", "password": "demo" },
+      "extract": [{ "name": "token", "from": "json:$.token", "scope": "run" }]
+    },
+    {
+      "label": "every item, page by page",
+      "url": "{{base}}/items?page=1&per_page={{per_page}}",
+      "paginate": { "style": "link", "items": "json:$.items" },
+      "collect": "items",
+      "asserts": [{ "from": "json:$.total", "equals": 12 }]
+    },
+    {
+      "label": "a rate-limited endpoint",
+      "url": "{{base}}/flaky",
+      "retry": { "attempts": 4, "backoff_ms": 100 },
+      "asserts": [{ "from": "status", "equals": 200 }]
+    },
+    {
+      "label": "place three orders",
+      "for_each": "[1, 2, 3]",
+      "as": "n",
+      "method": "POST",
+      "url": "{{base}}/orders",
+      "headers": { "Authorization": "Bearer {{token}}", "Content-Type": "application/json" },
+      "body": "{\"item_id\": {{n}}, \"qty\": 1}",
+      "continue_on_error": true,
+      "collect": "orders"
+    },
+    {
+      "label": "summary",
+      "return": "{items: (.items|length), pages_of: .per_page, stock_total: ([.items[].stock]|add), most_expensive: (.items|max_by(.price_cents)|{id, name, price_cents}), orders_placed: ([.orders[]|select(. != null)]|length), has_token: (.token != null)}"
+    }
+  ]
+}

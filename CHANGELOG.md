@@ -4,9 +4,15 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-26
+
+Plunger can run scripts: files of requests that check their responses, page through lists, loop, wait, retry and boil the result down to an answer, with no scripting language to run.
+
 ### Added
 - An **XML** body type next to JSON: the editor is highlighted, the request is sent as `application/xml` unless you set a Content-Type yourself, and `{{variables}}` are filled in. A curl command or an agent's text body that says XML (`application/xml`, `text/xml`, `+xml`) opens in it, and the curl, PowerShell, Python and JavaScript exports carry the right Content-Type. Thanks @tayfuryldz (#58, #9); the change is ported onto the current code.
 - **Scripts, without code:** `plunger run script.json` runs a file of requests and exits non-zero when one fails, so it works in CI in place of Newman or `bru run`. Each step can have `asserts` (`{"from": "json:$.id", "equals": 7}`; `from` is a JSON path, `header:Name`, `status`, `time` or `body`; checks are `equals`, `not_equals`, `contains`, `exists`, `gt`, `gte`, `lt`, `lte`, `type`, `length`), and every assert is reported, not just the first failure. `--env FILE` (NAME=value lines or JSON), `--var`, `--data FILE` (CSV or JSON, one run per row) and `--junit FILE` (JUnit XML for GitHub Actions, Jenkins, GitLab). Saved workflows and `save_workflow` take `asserts` too.
+- **Paging, loops, waiting and an answer, in the steps themselves:** `paginate` (offset, page, cursor or `Link` header; `{{page.offset}}`, `{{page.number}}`, `{{page.cursor}}`), `for_each` (one request per element of a collected list, with `{{item.field}}`), `collect`, `poll` (repeat until a condition holds), `retry` (after a 429, a 5xx or a dropped connection, honouring `Retry-After`), `continue_on_error`, `delay_ms`, and `return`: a jq program (the `jaq` engine, with no access to files, the network or the environment) that turns what was collected into the run's `output`. Secrets are kept out of the program's input and masked in its result. A step may hold only a `return`.
+- `plunger run --validate` checks a script without sending anything, and a misspelt step field (`paginat`) is refused with a suggestion instead of being ignored.
 - More built-in variables: `{{$timestampMs}}`, `{{$isoTimestamp}}`, `{{$randomHex}}` and `{{$randomString}}`.
 
 ## [0.7.4] - 2026-10-21

@@ -1,6 +1,6 @@
 [package]
 name = "plunger"
-version = "0.7.4"
+version = "0.8.0"
 edition = "2021"
 description = "Plunger: a quick, lightweight desktop tool for sending HTTP requests, with no CORS restrictions."
 license = "MIT"
@@ -39,6 +39,9 @@ time = { version = "0.3", features = ["formatting", "parsing", "local-offset"] }
 ron = "0.12"
 rmcp = { version = "3.5", default-features = false, features = ["server", "macros", "transport-io"] }
 tokio = { version = "1", features = ["rt", "macros", "io-std"] }
+jaq-core = "3"
+jaq-std = "3"
+jaq-json = "2"
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

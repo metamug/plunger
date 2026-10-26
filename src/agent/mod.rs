@@ -306,6 +306,12 @@ pub fn send_request_full(params: &SendParams, source: Source) -> Result<(AgentRe
     Ok((shaped, raw))
 }
 
+/// `text` with every secret the session knows masked.
+pub fn scrub_text(text: &str) -> String {
+    let session = Session::load();
+    Scrubber::new(&session.state, &session.bearer).text(text)
+}
+
 /// Whether a workflow condition holds: `expression` with the session's variables and `values` filled in
 /// (a variable with no value is empty, never an error), then `==`, `!=` or truthiness.
 pub fn evaluate_condition(expression: &str, values: &BTreeMap<String, String>) -> Result<bool, String> {

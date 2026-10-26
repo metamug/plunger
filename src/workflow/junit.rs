@@ -74,7 +74,7 @@ mod tests {
     use crate::workflow::{AssertOutcome, StepResult};
 
     fn step(n: usize, label: &str, ok: bool) -> StepResult {
-        StepResult { step: n, label: label.into(), ok, skipped: false, status: Some(200), elapsed_ms: Some(250), set: vec![], asserts: vec![], error: None }
+        StepResult { step: n, label: label.into(), ok, status: Some(200), elapsed_ms: Some(250), ..Default::default() }
     }
 
     #[test]
@@ -92,6 +92,7 @@ mod tests {
             stopped_early: false,
             steps_run: 3,
             steps: vec![step(1, "log in", true), bad, skipped],
+            output: None,
             last_response: None,
         };
         let xml = to_junit(&[("w".to_string(), &run)]);

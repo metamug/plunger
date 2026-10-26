@@ -3,11 +3,13 @@
 //! response into variables (`{{name}}`) for the steps after it. A value named like a credential
 //! (`token`, `password`...) is kept as a secret: it is used in later requests but never shown.
 
+pub mod flow;
 pub mod junit;
 pub mod script;
 
 pub use crate::domain::assertion::{Assert, AssertOutcome};
 pub use crate::domain::extract::{self, Extract};
+pub use flow::{Paginate, Poll, Retry};
 
 #[cfg(test)]
 use crate::domain::condition::condition_holds;
@@ -15,8 +17,11 @@ use crate::agent::{self, SendFailure, SendParams};
 use crate::engine::{AgentResponse, VariableInfo};
 use crate::store::history::Source;
 use crate::domain::model::ResponseData;
+use crate::domain::transform;
 use rmcp::schemars::{self, JsonSchema};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_STEPS: usize = 50;
 
@@ -70,10 +75,53 @@ pub struct Step {
     /// End the workflow here, successfully, when the condition holds (same form as `skip_if`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stop_if: Option<String>,
+    /// Send this step once for every element of a list: the name of a variable that holds a JSON array (one a
+    /// `collect` filled), or an array written out. The element is `{{item}}` (or the name in `as`), and for an
+    /// object its fields are `{{item.key}}`, `{{item.fields.name}}`. `{{loop.index}}` counts from 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub for_each: Option<String>,
+    /// The name of the element in a `for_each` (default `item`).
+    #[serde(default, rename = "as", skip_serializing_if = "Option::is_none")]
+    pub item_name: Option<String>,
+    /// Page through a list: send the request again for the next page and gather the items. See `Paginate`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paginate: Option<Paginate>,
+    /// Send the request again until a condition holds, for a job that finishes later. See `Poll`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll: Option<Poll>,
+    /// Try again after a 429, a 5xx or a dropped connection. See `Retry`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry: Option<Retry>,
+    /// Keep what the step fetched as the run's value `{{name}}` for the later steps (and for `return`): the items
+    /// of every page for a `paginate`, the response body otherwise; with `for_each`, a list with one entry per
+    /// element. It lives for this run only and is never stored. Known secrets in it are masked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collect: Option<String>,
+    /// With `for_each`: an element that fails is recorded (as null in the collected list) and the step goes on,
+    /// instead of ending the run. The step fails only if every element fails.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub continue_on_error: bool,
+    /// Wait this long between the requests of one step (pages, elements), to stay under a rate limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delay_ms: Option<u64>,
+    /// A jq program that turns the run's values into the answer the run returns, e.g.
+    /// `{count: (.issues|length), points: ([.issues[].fields.points]|add)}`. The input is an object of the run's
+    /// values (`collect`ed lists, `scope: run` extracts, the variables passed in), without secrets. A step may have
+    /// only this and no request. The last `return` of the run is its `output`. jq here has no file, network or
+    /// environment access.
+    #[serde(default, rename = "return", skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+}
+
+impl Step {
+    /// Whether the step sends anything (a step may only `return`).
+    pub fn has_request(&self) -> bool {
+        self.request.saved_request.is_some() || self.request.url.as_deref().is_some_and(|u| !u.trim().is_empty())
+    }
 }
 
 /// What one step did.
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, Default)]
 pub struct StepResult {
     /// 1-based position in the workflow.
     pub step: usize,
@@ -93,8 +141,18 @@ pub struct StepResult {
     /// What each of the step's `asserts` found.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub asserts: Vec<AssertOutcome>,
+    /// How many requests the step sent (pages, elements, polling attempts and retries each count). Shown when it is not 1.
+    #[serde(default, skip_serializing_if = "is_zero_or_one")]
+    pub requests: usize,
+    /// Something that did not fail the step but should be known: paging stopped at `max_pages`, some elements failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+fn is_zero_or_one(n: &usize) -> bool {
+    *n <= 1
 }
 
 /// One step as it is stored with a recorded run: the variables it set by name, never by value.
@@ -156,6 +214,9 @@ pub struct WorkflowResult {
     /// How many steps ran (a failed step stops the rest).
     pub steps_run: usize,
     pub steps: Vec<StepResult>,
+    /// What the last `return` step produced (see `Step::return`): the answer the run was written to give.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<Value>,
     /// The last response that came back, in full.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_response: Option<AgentResponse>,
@@ -183,9 +244,10 @@ fn check(steps: &[Step]) -> Result<(), String> {
         return Err(format!("A workflow can have at most {MAX_STEPS} steps."));
     }
     for (i, step) in steps.iter().enumerate() {
-        if step.request.saved_request.is_none() && step.request.url.as_deref().is_none_or(|u| u.trim().is_empty()) {
-            return Err(format!("Step {} needs a `url` or a `saved_request`.", i + 1));
+        if !step.has_request() && step.output.is_none() {
+            return Err(format!("Step {} needs a `url` or a `saved_request` (or only a `return`).", i + 1));
         }
+        check_flow(step).map_err(|m| format!("Step {}: {m}", i + 1))?;
         agent::check_reading_instructions(&step.request).map_err(|m| format!("Step {}: {m}", i + 1))?;
         if matches!(&step.expect_status, Some(ExpectStatus::Any(list)) if list.is_empty()) {
             return Err(format!("Step {}: `expect_status` is an empty list.", i + 1));
@@ -207,6 +269,62 @@ fn check(steps: &[Step]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// The mistakes in a step's `for_each`, `paginate`, `poll`, `retry`, `collect` and `return`.
+fn check_flow(step: &Step) -> Result<(), String> {
+    if let Some(p) = &step.paginate {
+        p.validate().map_err(|m| format!("`paginate`: {m}"))?;
+        if p.style() == "link" && (step.request.saved_request.is_some() || !step.has_request()) {
+            return Err("`paginate` style `link` needs an inline `url`, not a saved request".into());
+        }
+    }
+    if let Some(p) = &step.poll {
+        p.validate().map_err(|m| format!("`poll`: {m}"))?;
+    }
+    if let Some(r) = &step.retry {
+        r.validate().map_err(|m| format!("`retry`: {m}"))?;
+    }
+    if step.paginate.is_some() && step.poll.is_some() {
+        return Err("`paginate` and `poll` cannot be used in one step".into());
+    }
+    if !step.has_request() {
+        let sends = step.paginate.is_some() || step.poll.is_some() || step.retry.is_some() || step.for_each.is_some() || step.collect.is_some();
+        if sends {
+            return Err("this step has no `url` or `saved_request` to send".into());
+        }
+    }
+    if step.for_each.as_deref().is_some_and(|f| f.trim().is_empty()) {
+        return Err("`for_each` is empty".into());
+    }
+    if let Some(name) = step.item_name.as_deref() {
+        if step.for_each.is_none() {
+            return Err("`as` names the element of a `for_each`, which this step does not have".into());
+        }
+        if !flow::valid_name(name) {
+            return Err(format!("`as` is `{name}`; use letters, digits, - and _"));
+        }
+    }
+    if let Some(name) = step.collect.as_deref() {
+        if !flow::valid_name(name) {
+            return Err(format!("`collect` is `{name}`; use letters, digits, - and _ (at most 64 characters)"));
+        }
+    }
+    if step.continue_on_error && step.for_each.is_none() {
+        return Err("`continue_on_error` goes with a `for_each`".into());
+    }
+    if step.delay_ms.is_some_and(|d| d > flow::MAX_WAIT_MS) {
+        return Err(format!("`delay_ms` is at most {}", flow::MAX_WAIT_MS));
+    }
+    if let Some(program) = step.output.as_deref() {
+        transform::check(program).map_err(|m| format!("`return`: {m}"))?;
+    }
+    Ok(())
+}
+
+/// Checks steps without sending anything: the mistakes `save` would refuse.
+pub fn validate(steps: &[Step]) -> Result<(), String> {
+    check(steps)
 }
 
 fn valid_name(name: &str) -> Result<&str, String> {
@@ -276,7 +394,7 @@ pub fn delete(name: &str) -> Result<WorkflowInfo, String> {
 /// variables the run stored are removed again afterwards (the run's own steps have seen them by then).
 pub fn run(
     name: &str,
-    variables: &std::collections::BTreeMap<String, String>,
+    variables: &BTreeMap<String, String>,
     source: Source,
     cleanup: bool,
 ) -> Result<WorkflowResult, String> {
@@ -299,7 +417,7 @@ pub fn run(
 /// `cancel` is set. This is what the window uses to show progress.
 pub fn run_reporting(
     name: &str,
-    variables: &std::collections::BTreeMap<String, String>,
+    variables: &BTreeMap<String, String>,
     source: Source,
     cancel: &std::sync::atomic::AtomicBool,
     report: &mut dyn FnMut(Progress),
@@ -312,7 +430,7 @@ pub fn run_reporting(
 pub fn run_inline(
     name: &str,
     steps: &[Step],
-    variables: &std::collections::BTreeMap<String, String>,
+    variables: &BTreeMap<String, String>,
     source: Source,
 ) -> Result<WorkflowResult, String> {
     check(steps)?;
@@ -322,7 +440,7 @@ pub fn run_inline(
 fn run_loaded(
     name: &str,
     steps: &[Step],
-    variables: &std::collections::BTreeMap<String, String>,
+    variables: &BTreeMap<String, String>,
     source: Source,
     cancel: &std::sync::atomic::AtomicBool,
     report: &mut dyn FnMut(Progress),
@@ -337,11 +455,23 @@ fn run_loaded(
         |params| agent::send_request_raw(params, source),
         |name, value, secret| agent::set_variable(name, value, secret, source),
         &mut |expression, values| agent::evaluate_condition(expression, values),
+        &mut |ms| sleep_unless_cancelled(ms, cancel),
+        &mut agent::scrub_text,
         cancel,
         report,
     );
     record(&result, &started_at, source);
     result
+}
+
+/// Waits, in short pieces so a cancel is noticed.
+fn sleep_unless_cancelled(ms: u64, cancel: &std::sync::atomic::AtomicBool) {
+    let mut left = ms;
+    while left > 0 && !cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        let piece = left.min(100);
+        std::thread::sleep(std::time::Duration::from_millis(piece));
+        left -= piece;
+    }
 }
 
 /// Writes the run to the history database; a failure to do so never fails the run.
@@ -365,7 +495,7 @@ fn record(result: &WorkflowResult, started_at: &str, source: Source) {
 fn run_steps(
     workflow: &str,
     steps: &[Step],
-    variables: &std::collections::BTreeMap<String, String>,
+    variables: &BTreeMap<String, String>,
     send: impl FnMut(&SendParams) -> Result<(AgentResponse, ResponseData), SendFailure>,
     set: impl FnMut(&str, &str, Option<bool>) -> Result<VariableInfo, String>,
 ) -> WorkflowResult {
@@ -376,32 +506,451 @@ fn run_steps(
         send,
         set,
         &mut |expression, values| Ok(condition_holds(&substitute_plain(expression, values))),
+        &mut |_| {},
+        &mut |text| text.to_string(),
         &std::sync::atomic::AtomicBool::new(false),
         &mut |_| {},
     )
 }
 
 /// Decides whether a condition holds, given the run's variables.
-type Evaluate = dyn FnMut(&str, &std::collections::BTreeMap<String, String>) -> Result<bool, String>;
+type Evaluate<'a> = dyn FnMut(&str, &BTreeMap<String, String>) -> Result<bool, String> + 'a;
+/// Sends one request.
+type SendFn<'a> = dyn FnMut(&SendParams) -> Result<(AgentResponse, ResponseData), SendFailure> + 'a;
+/// Stores a variable for good (`extract` without `scope: run`).
+type SetVar<'a> = dyn FnMut(&str, &str, Option<bool>) -> Result<VariableInfo, String> + 'a;
+
+/// Everything a running workflow needs from the outside, so it can be tested without a network or a clock.
+struct Hooks<'a> {
+    send: &'a mut SendFn<'a>,
+    set: &'a mut SetVar<'a>,
+    evaluate: &'a mut Evaluate<'a>,
+    /// Waits this many milliseconds.
+    sleep: &'a mut dyn FnMut(u64),
+    /// Masks the secrets Plunger knows in some text.
+    scrub: &'a mut dyn FnMut(&str) -> String,
+    cancel: &'a std::sync::atomic::AtomicBool,
+}
+
+/// What lives for one run: the values `scope: run` extracted or a step collected.
+#[derive(Default)]
+struct RunState {
+    values: BTreeMap<String, String>,
+    /// Names of values that are secrets: kept out of what `return` can see.
+    secret_names: BTreeSet<String>,
+    /// The secret values themselves, to mask them in what `return` produces.
+    secret_values: Vec<(String, String)>,
+}
+
+/// What one step has done so far.
+#[derive(Default)]
+struct Tally {
+    /// The last response that came back.
+    last: Option<AgentResponse>,
+    status: Option<u16>,
+    requests: usize,
+    elapsed_ms: u64,
+    set: Vec<VariableInfo>,
+    asserts: Vec<AssertOutcome>,
+    warning: Option<String>,
+    output: Option<Value>,
+}
+
+impl Tally {
+    fn record(&mut self, shaped: AgentResponse) {
+        self.status = Some(shaped.status);
+        self.elapsed_ms += shaped.elapsed_ms;
+        self.last = Some(shaped);
+    }
+
+    fn remember(&mut self, info: VariableInfo) {
+        match self.set.iter_mut().find(|v| v.name == info.name) {
+            Some(existing) => *existing = info,
+            None => self.set.push(info),
+        }
+    }
+}
+
+/// What a unit of requests (one request, all the pages, or all the polling attempts) leaves to check.
+struct Unit {
+    raw: ResponseData,
+    /// The items of every page, for a paginated step.
+    items: Option<Vec<Value>>,
+    /// `extract` already ran (polling reads each response).
+    extracted: bool,
+}
+
+fn status_ok(step: &Step, status: u16) -> Result<(), String> {
+    let passed = match &step.expect_status {
+        Some(want) => want.matches(status),
+        None => (200..300).contains(&status),
+    };
+    if passed {
+        return Ok(());
+    }
+    let want = step.expect_status.as_ref().map(ExpectStatus::describe).unwrap_or_else(|| "2xx".into());
+    Err(format!("expected {want}, got {status}"))
+}
+
+fn is_cancelled(hooks: &Hooks) -> bool {
+    hooks.cancel.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn with_variables(params: &SendParams, scope: &BTreeMap<String, String>) -> SendParams {
+    let mut params = params.clone();
+    if !scope.is_empty() {
+        // the step's own `variables` are the most specific, so they win over the run's
+        let mut merged = scope.clone();
+        merged.extend(params.variables.take().unwrap_or_default());
+        params.variables = Some(merged);
+    }
+    params
+}
+
+/// Sends the request, trying again as `retry` says.
+fn send_retrying(step: &Step, params: &SendParams, hooks: &mut Hooks, tally: &mut Tally) -> Result<(AgentResponse, ResponseData), String> {
+    let (retry, attempts) = match &step.retry {
+        Some(r) => (r.clone(), r.attempts()),
+        None => (Retry::default(), 1),
+    };
+    let statuses = retry.statuses();
+    for attempt in 1..=attempts {
+        tally.requests += 1;
+        match (hooks.send)(params) {
+            Ok((shaped, raw)) => {
+                if attempt < attempts && step.retry.is_some() && statuses.contains(&shaped.status) {
+                    let after = raw.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("retry-after")).map(|(_, v)| v.as_str());
+                    (hooks.sleep)(retry.wait_ms(attempt, after));
+                    continue;
+                }
+                return Ok((shaped, raw));
+            }
+            Err(SendFailure::Failed(_)) if attempt < attempts && step.retry.is_some() => (hooks.sleep)(retry.wait_ms(attempt, None)),
+            Err(failure) => return Err(failure.to_string()),
+        }
+    }
+    Err("no request was sent".into())
+}
+
+/// The items of one page.
+fn page_items(raw: &ResponseData, paginate: &Paginate) -> Result<Vec<Value>, String> {
+    let spec = paginate.items.as_deref().unwrap_or("$");
+    match extract::select(raw, spec)? {
+        Value::Array(items) => Ok(items),
+        _ => Err(format!("`items` ({spec}) is not an array in the response; point it at the list, e.g. json:$.issues")),
+    }
+}
+
+fn number_at(raw: &ResponseData, spec: &str) -> Option<u64> {
+    match extract::select(raw, spec).ok()? {
+        Value::Number(n) => n.as_u64(),
+        Value::String(s) => s.trim().parse().ok(),
+        _ => None,
+    }
+}
+
+fn single_unit(step: &Step, scope: &BTreeMap<String, String>, hooks: &mut Hooks, tally: &mut Tally) -> Result<Unit, String> {
+    let params = with_variables(&step.request, scope);
+    let (shaped, raw) = send_retrying(step, &params, hooks, tally)?;
+    tally.record(shaped);
+    status_ok(step, raw.status)?;
+    Ok(Unit { raw, items: None, extracted: false })
+}
+
+fn paginate_unit(
+    step: &Step,
+    paginate: &Paginate,
+    scope: &BTreeMap<String, String>,
+    hooks: &mut Hooks,
+    tally: &mut Tally,
+) -> Result<Unit, String> {
+    let style = paginate.style();
+    let max_pages = paginate.max_pages();
+    let mut items: Vec<Value> = Vec::new();
+    let mut cursor: Option<String> = None;
+    let mut next_url: Option<String> = None;
+    for page in 1..=max_pages {
+        if is_cancelled(hooks) {
+            return Err("the run was cancelled".into());
+        }
+        let mut vars = scope.clone();
+        vars.insert("page.number".into(), page.to_string());
+        vars.insert("page.offset".into(), items.len().to_string());
+        if let Some(c) = &cursor {
+            vars.insert("page.cursor".into(), c.clone());
+        }
+        let mut params = with_variables(&step.request, &vars);
+        if let Some(url) = &next_url {
+            params.url = Some(url.clone());
+        }
+        let (shaped, raw) = send_retrying(step, &params, hooks, tally)?;
+        tally.record(shaped);
+        status_ok(step, raw.status).map_err(|m| format!("page {page}: {m}"))?;
+        let fetched = page_items(&raw, paginate).map_err(|m| format!("page {page}: {m}"))?;
+        let count = fetched.len();
+        items.extend(fetched);
+        if items.len() > flow::MAX_ITEMS {
+            return Err(format!("more than {} items; narrow the request", flow::MAX_ITEMS));
+        }
+        let more = match style {
+            "cursor" => {
+                let spec = paginate.next.as_deref().unwrap_or("");
+                cursor = extract::select(&raw, spec).ok().map(|v| flow::text_of(&v)).filter(|c| !c.is_empty());
+                count > 0 && cursor.is_some()
+            }
+            "link" => {
+                let link = raw.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("link")).and_then(|(_, v)| flow::next_link(v));
+                next_url = match link {
+                    Some(next) => {
+                        let written = params.url.clone().unwrap_or_default();
+                        Some(flow::resolve_link(&next, &written).map_err(|m| format!("page {page}: {m}"))?)
+                    }
+                    None => None,
+                };
+                next_url.is_some()
+            }
+            "page" => count > 0 && paginate.page_size.is_none_or(|size| count >= size),
+            _ => {
+                let by_total = paginate.total.as_deref().and_then(|spec| number_at(&raw, spec)).map(|total| (items.len() as u64) < total);
+                count > 0 && by_total.unwrap_or_else(|| paginate.page_size.is_none_or(|size| count >= size))
+            }
+        };
+        if !more {
+            return Ok(Unit { raw, items: Some(items), extracted: false });
+        }
+        if page == max_pages {
+            tally.warning = Some(format!("stopped after {max_pages} pages with more to fetch (raise `max_pages`, at most {})", flow::MAX_PAGES));
+            return Ok(Unit { raw, items: Some(items), extracted: false });
+        }
+        if let Some(ms) = step.delay_ms {
+            (hooks.sleep)(ms.min(flow::MAX_WAIT_MS));
+        }
+    }
+    Err("no page was fetched".into())
+}
+
+fn poll_unit(
+    step: &Step,
+    poll: &Poll,
+    scope: &BTreeMap<String, String>,
+    state: &mut RunState,
+    hooks: &mut Hooks,
+    tally: &mut Tally,
+) -> Result<Unit, String> {
+    let attempts = poll.max_attempts();
+    for attempt in 1..=attempts {
+        if is_cancelled(hooks) {
+            return Err("the run was cancelled".into());
+        }
+        let params = with_variables(&step.request, scope);
+        let (shaped, raw) = send_retrying(step, &params, hooks, tally)?;
+        tally.record(shaped);
+        status_ok(step, raw.status).map_err(|m| format!("attempt {attempt}: {m}"))?;
+        apply_extracts(step, &raw, state, hooks, tally)?;
+        let mut visible = scope.clone();
+        visible.extend(state.values.iter().map(|(k, v)| (k.clone(), v.clone())));
+        if (hooks.evaluate)(&poll.until, &visible).map_err(|m| format!("`until` could not be evaluated: {m}"))? {
+            return Ok(Unit { raw, items: None, extracted: true });
+        }
+        if attempt == attempts {
+            return Err(format!("gave up after {attempts} attempts: `{}` never held", poll.until));
+        }
+        (hooks.sleep)(poll.every_ms());
+    }
+    Err("no request was sent".into())
+}
+
+/// Reads the step's `extract` values from a response: into the run's values (`scope: run`) or into variables
+/// that stay.
+fn apply_extracts(step: &Step, raw: &ResponseData, state: &mut RunState, hooks: &mut Hooks, tally: &mut Tally) -> Result<(), String> {
+    for e in &step.request.extract {
+        let name = e.name.trim().to_string();
+        let fail = |err: String| format!("could not set `{}` from `{}`: {err}", e.name, e.from);
+        let value = extract::extract(raw, &e.from).map_err(fail)?;
+        if e.scope.as_deref() == Some("run") {
+            if e.secret == Some(true) || crate::domain::redact::is_sensitive_header(&name) {
+                state.secret_names.insert(name.clone());
+                state.secret_values.push((name.clone(), value.clone()));
+            }
+            state.values.insert(name.clone(), value);
+            tally.remember(VariableInfo { name, secret: false, has_value: true, remembered: false, value: None, source: "run".to_string() });
+        } else {
+            let info = (hooks.set)(&name, &value, e.secret).map_err(|err| format!("could not set `{}` from `{}`: {err}", e.name, e.from))?;
+            tally.remember(info);
+        }
+    }
+    Ok(())
+}
+
+/// The response body as JSON, or as text when it is not JSON.
+fn body_value(raw: &ResponseData) -> Value {
+    let text = raw.raw_text.as_deref().unwrap_or(&raw.body);
+    serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.to_string()))
+}
+
+/// One element of a `for_each` (or the only one): its requests, its checks, its `extract`. Returns what `collect` keeps.
+fn run_one(
+    step: &Step,
+    scope: &BTreeMap<String, String>,
+    state: &mut RunState,
+    hooks: &mut Hooks,
+    tally: &mut Tally,
+) -> Result<Value, String> {
+    let unit = if let Some(p) = &step.paginate {
+        paginate_unit(step, p, scope, hooks, tally)?
+    } else if let Some(p) = &step.poll {
+        poll_unit(step, p, scope, state, hooks, tally)?
+    } else {
+        single_unit(step, scope, hooks, tally)?
+    };
+    let elapsed = tally.last.as_ref().map_or(0, |l| l.elapsed_ms);
+    let outcomes: Vec<AssertOutcome> = step.asserts.iter().map(|a| crate::domain::assertion::evaluate(a, &unit.raw, elapsed)).collect();
+    let failed: Vec<String> =
+        outcomes.iter().filter(|o| !o.ok).map(|o| format!("{}: {}", o.name, o.message.as_deref().unwrap_or("failed"))).collect();
+    let total = outcomes.len();
+    if !outcomes.is_empty() {
+        tally.asserts = outcomes;
+    }
+    if !failed.is_empty() {
+        return Err(format!("{} of {total} asserts failed: {}", failed.len(), failed.join("; ")));
+    }
+    if !unit.extracted {
+        apply_extracts(step, &unit.raw, state, hooks, tally)?;
+    }
+    Ok(match unit.items {
+        Some(items) => Value::Array(items),
+        None => body_value(&unit.raw),
+    })
+}
+
+/// A step's requests: once, or once for every element of its `for_each`; then `collect`.
+fn run_requests(step: &Step, visible: &BTreeMap<String, String>, state: &mut RunState, hooks: &mut Hooks, tally: &mut Tally) -> Result<(), String> {
+    let elements: Vec<Option<Value>> = match &step.for_each {
+        Some(source) => flow::list_for_each(source, visible)?.into_iter().map(Some).collect(),
+        None => vec![None],
+    };
+    let many = step.for_each.is_some();
+    let name = step.item_name.as_deref().unwrap_or("item").trim().to_string();
+    let total = elements.len();
+    // a big collected list stays out of the requests' variables: it is there for `for_each` and `return`
+    let base: BTreeMap<String, String> =
+        visible.iter().filter(|(_, v)| v.len() <= flow::MAX_REQUEST_VARIABLE_BYTES).map(|(k, v)| (k.clone(), v.clone())).collect();
+    let mut collected: Vec<Value> = Vec::new();
+    let mut failures: Vec<String> = Vec::new();
+    for (index, element) in elements.into_iter().enumerate() {
+        if is_cancelled(hooks) {
+            return Err("the run was cancelled".into());
+        }
+        let mut scope = base.clone();
+        if let Some(item) = &element {
+            flow::bind_item(&mut scope, &name, item, index);
+        }
+        match run_one(step, &scope, state, hooks, tally) {
+            Ok(value) => collected.push(value),
+            Err(message) if many && step.continue_on_error => {
+                failures.push(format!("{name} {}: {message}", index + 1));
+                collected.push(Value::Null);
+            }
+            Err(message) if many => return Err(format!("{name} {} of {total}: {message}", index + 1)),
+            Err(message) => return Err(message),
+        }
+        if many && index + 1 < total {
+            if let Some(ms) = step.delay_ms {
+                (hooks.sleep)(ms.min(flow::MAX_WAIT_MS));
+            }
+        }
+    }
+    if !failures.is_empty() {
+        if failures.len() == total {
+            return Err(format!("every element failed; the first: {}", failures[0]));
+        }
+        tally.warning = Some(format!("{} of {total} elements failed (continue_on_error): {}", failures.len(), failures[0]));
+    }
+    if let Some(collect) = step.collect.as_deref() {
+        let value = if many { Value::Array(collected) } else { collected.into_iter().next().unwrap_or(Value::Null) };
+        let text = (hooks.scrub)(&serde_json::to_string(&value).map_err(|e| e.to_string())?);
+        if text.len() > flow::MAX_COLLECTED_BYTES {
+            return Err(format!("`collect` {collect}: {} bytes is more than the limit of {}", text.len(), flow::MAX_COLLECTED_BYTES));
+        }
+        let name = collect.trim().to_string();
+        state.values.insert(name.clone(), text);
+        tally.remember(VariableInfo { name, secret: false, has_value: true, remembered: false, value: None, source: "run".to_string() });
+    }
+    Ok(())
+}
+
+/// The data a `return` program sees: the values of the run and the variables it was started with, minus secrets.
+fn return_input(variables: &BTreeMap<String, String>, state: &RunState) -> Value {
+    let mut map = serde_json::Map::new();
+    for (name, text) in variables.iter().chain(state.values.iter()) {
+        if state.secret_names.contains(name) || crate::domain::redact::is_sensitive_header(name) {
+            continue;
+        }
+        let trimmed = text.trim_start();
+        let value = if trimmed.starts_with('[') || trimmed.starts_with('{') {
+            serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.clone()))
+        } else {
+            Value::String(text.clone())
+        };
+        map.insert(name.clone(), value);
+    }
+    Value::Object(map)
+}
+
+/// Runs the step's `return` program and masks any secret in what it produced.
+fn run_return(program: &str, variables: &BTreeMap<String, String>, state: &RunState, hooks: &mut Hooks) -> Result<Value, String> {
+    let output = transform::run(program, &return_input(variables, state))?;
+    let mut text = (hooks.scrub)(&serde_json::to_string(&output).map_err(|e| e.to_string())?);
+    for (name, value) in &state.secret_values {
+        if let Some(scrubber) = crate::engine::Scrubber::only(name, value) {
+            text = scrubber.text(&text);
+        }
+    }
+    if text.chars().count() > flow::MAX_OUTPUT_CHARS {
+        return Err(format!("the result is {} characters; the limit is {}. Make the jq program return less.", text.chars().count(), flow::MAX_OUTPUT_CHARS));
+    }
+    Ok(serde_json::from_str(&text).unwrap_or(Value::String(text)))
+}
+
+/// One step that was not skipped: its requests, then its `return`.
+fn execute_step(
+    step: &Step,
+    variables: &BTreeMap<String, String>,
+    visible: &BTreeMap<String, String>,
+    state: &mut RunState,
+    hooks: &mut Hooks,
+    tally: &mut Tally,
+) -> Result<(), String> {
+    if step.has_request() {
+        run_requests(step, visible, state, hooks, tally)?;
+    }
+    if let Some(program) = step.output.as_deref() {
+        tally.output = Some(run_return(program, variables, state, hooks)?);
+    }
+    Ok(())
+}
 
 #[allow(clippy::too_many_arguments)]
 fn run_steps_reporting(
     workflow: &str,
     steps: &[Step],
-    variables: &std::collections::BTreeMap<String, String>,
+    variables: &BTreeMap<String, String>,
     mut send: impl FnMut(&SendParams) -> Result<(AgentResponse, ResponseData), SendFailure>,
     mut set: impl FnMut(&str, &str, Option<bool>) -> Result<VariableInfo, String>,
     evaluate: &mut Evaluate,
+    sleep: &mut dyn FnMut(u64),
+    scrub: &mut dyn FnMut(&str) -> String,
     cancel: &std::sync::atomic::AtomicBool,
     report: &mut dyn FnMut(Progress),
 ) -> WorkflowResult {
     let mut results: Vec<StepResult> = Vec::new();
     let mut last_response = None;
+    let mut output = None;
     let mut ok = true;
     let mut cancelled = false;
     let mut stopped_early = false;
-    // values that live for this run only: what `scope: run` extracted, and the status of the step before
-    let mut run_values: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    // values that live for this run only: what `scope: run` extracted, what a step collected, the status before
+    let mut state = RunState::default();
     for (i, step) in steps.iter().enumerate() {
         if cancel.load(std::sync::atomic::Ordering::Relaxed) {
             ok = false;
@@ -409,15 +958,17 @@ fn run_steps_reporting(
             break;
         }
         let label = step.label.clone().unwrap_or_else(|| {
+            if !step.has_request() {
+                return "return".to_string();
+            }
             step.request.saved_request.clone().unwrap_or_else(|| format!("{} {}", step.request.method.as_deref().unwrap_or("GET"), step.request.url.as_deref().unwrap_or("")))
         });
         report(Progress::Started { step: i + 1 });
-        let mut result =
-            StepResult { step: i + 1, label, ok: false, skipped: false, status: None, elapsed_ms: None, set: Vec::new(), asserts: Vec::new(), error: None };
+        let mut result = StepResult { step: i + 1, label, ..Default::default() };
 
         // what a condition and the request itself can see: the run's variables, then the run-scoped values
         let mut visible = variables.clone();
-        visible.extend(run_values.iter().map(|(k, v)| (k.clone(), v.clone())));
+        visible.extend(state.values.iter().map(|(k, v)| (k.clone(), v.clone())));
 
         // conditions come before the request, so a step that is skipped or ends the run is never sent
         let mut verdict: Result<Option<&'static str>, String> = Ok(None);
@@ -456,76 +1007,31 @@ fn run_steps_reporting(
             Ok(None) => {}
         }
 
-        let mut params = step.request.clone();
-        if !visible.is_empty() {
-            // the step's own `variables` are the most specific, so they win over the run's
-            let mut merged: std::collections::BTreeMap<String, String> = visible.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-            merged.extend(params.variables.take().unwrap_or_default());
-            params.variables = Some(merged);
+        let mut tally = Tally::default();
+        let outcome = {
+            let mut hooks = Hooks { send: &mut send, set: &mut set, evaluate: &mut *evaluate, sleep: &mut *sleep, scrub: &mut *scrub, cancel };
+            execute_step(step, variables, &visible, &mut state, &mut hooks, &mut tally)
+        };
+        result.status = tally.status;
+        result.elapsed_ms = tally.status.map(|_| tally.elapsed_ms);
+        result.requests = tally.requests;
+        result.set = std::mem::take(&mut tally.set);
+        result.asserts = std::mem::take(&mut tally.asserts);
+        result.warning = tally.warning.take();
+        if let Some(status) = tally.status {
+            state.values.insert("previous_status".to_string(), status.to_string());
         }
-
-        match send(&params) {
-            Err(failure) => result.error = Some(failure.to_string()),
-            Ok((shaped, raw)) => {
-                result.status = Some(shaped.status);
-                result.elapsed_ms = Some(shaped.elapsed_ms);
-                run_values.insert("previous_status".to_string(), shaped.status.to_string());
-                let passed = match &step.expect_status {
-                    Some(want) => want.matches(shaped.status),
-                    None => (200..300).contains(&shaped.status),
-                };
-                if !passed {
-                    let want = step.expect_status.as_ref().map(ExpectStatus::describe).unwrap_or_else(|| "2xx".into());
-                    result.error = Some(format!("expected {want}, got {}", shaped.status));
-                } else {
-                    result.ok = true;
-                    result.asserts = step.asserts.iter().map(|a| crate::domain::assertion::evaluate(a, &raw, shaped.elapsed_ms)).collect();
-                    let failed: Vec<String> = result
-                        .asserts
-                        .iter()
-                        .filter(|o| !o.ok)
-                        .map(|o| format!("{}: {}", o.name, o.message.as_deref().unwrap_or("failed")))
-                        .collect();
-                    if !failed.is_empty() {
-                        result.ok = false;
-                        result.error = Some(format!("{} of {} asserts failed: {}", failed.len(), result.asserts.len(), failed.join("; ")));
-                    }
-                    let extracts: &[Extract] = if result.ok { &step.request.extract } else { &[] };
-                    for e in extracts {
-                        if e.scope.as_deref() == Some("run") {
-                            match extract::extract(&raw, &e.from) {
-                                Ok(value) => {
-                                    run_values.insert(e.name.trim().to_string(), value);
-                                    result.set.push(VariableInfo {
-                                        name: e.name.trim().to_string(),
-                                        secret: false,
-                                        has_value: true,
-                                        remembered: false,
-                                        value: None,
-                                        source: "run".to_string(),
-                                    });
-                                    continue;
-                                }
-                                Err(err) => {
-                                    result.ok = false;
-                                    result.error = Some(format!("could not set `{}` from `{}`: {err}", e.name, e.from));
-                                    break;
-                                }
-                            }
-                        }
-                        let stored = extract::extract(&raw, &e.from).and_then(|value| set(e.name.trim(), &value, e.secret));
-                        match stored {
-                            Ok(info) => result.set.push(info),
-                            Err(err) => {
-                                result.ok = false;
-                                result.error = Some(format!("could not set `{}` from `{}`: {err}", e.name, e.from));
-                                break;
-                            }
-                        }
-                    }
+        if let Some(shaped) = tally.last.take() {
+            last_response = Some(shaped);
+        }
+        match outcome {
+            Ok(()) => {
+                result.ok = true;
+                if tally.output.is_some() {
+                    output = tally.output.take();
                 }
-                last_response = Some(shaped);
             }
+            Err(message) => result.error = Some(message),
         }
 
         let stop = !result.ok;
@@ -544,6 +1050,7 @@ fn run_steps_reporting(
         stopped_early,
         steps_run: results.len(),
         steps: results,
+        output,
         last_response,
     }
 }
@@ -551,7 +1058,7 @@ fn run_steps_reporting(
 /// `{{name}}` replaced by the value in `values` (an unknown name becomes empty). The runner uses the full
 /// variable resolver; this is the same thing for tests, with no session behind it.
 #[cfg(test)]
-fn substitute_plain(expression: &str, values: &std::collections::BTreeMap<String, String>) -> String {
+fn substitute_plain(expression: &str, values: &BTreeMap<String, String>) -> String {
     let mut out = expression.to_string();
     for (name, value) in values {
         out = out.replace(&format!("{{{{{name}}}}}"), value);
@@ -689,6 +1196,8 @@ mod tests {
             |_| Ok(reply(200, "{}")),
             |n, _, _| Ok(info(n)),
             &mut |_, _| Ok(false),
+            &mut |_| {},
+            &mut |text| text.to_string(),
             &cancel,
             &mut |p| {
                 if let Progress::Finished(r) = &p {
@@ -718,7 +1227,7 @@ mod tests {
             elapsed_ms: Some(12),
             set: vec![VariableInfo { name: "token".into(), secret: true, has_value: true, remembered: false, value: Some("tok_SECRET".into()), source: "agent".into() }],
             asserts: vec![],
-            error: None,
+            ..Default::default()
         };
         let json = serde_json::to_string(&StoredStep::from(&result)).unwrap();
         assert!(json.contains("\"token\"") && !json.contains("tok_SECRET"), "{json}");
@@ -953,5 +1462,325 @@ mod tests {
         let mut blank = step("http://h");
         blank.skip_if = Some("  ".into());
         assert!(check(&[blank]).unwrap_err().contains("skip_if"));
+    }
+
+    // ---- control flow: paging, loops, polling, retries, return ----
+
+    fn reply_with(status: u16, body: &str, headers: &[(&str, &str)]) -> (AgentResponse, ResponseData) {
+        let (shaped, mut raw) = reply(status, body);
+        raw.headers = headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        (shaped, raw)
+    }
+
+    /// Runs steps with a fake clock: returns the result and the waits the run asked for.
+    fn run_timed(
+        steps: &[Step],
+        variables: &BTreeMap<String, String>,
+        send: impl FnMut(&SendParams) -> Result<(AgentResponse, ResponseData), SendFailure>,
+    ) -> (WorkflowResult, Vec<u64>) {
+        let mut sleeps = Vec::new();
+        let result = run_steps_reporting(
+            "w",
+            steps,
+            variables,
+            send,
+            |n, _, _| Ok(info(n)),
+            &mut |expression, values| Ok(condition_holds(&substitute_plain(expression, values))),
+            &mut |ms| sleeps.push(ms),
+            &mut |text| text.replace("s3cr3t-value", "[masked]"),
+            &std::sync::atomic::AtomicBool::new(false),
+            &mut |_| {},
+        );
+        (result, sleeps)
+    }
+
+    fn var(p: &SendParams, name: &str) -> Option<String> {
+        p.variables.as_ref().and_then(|v| v.get(name).cloned())
+    }
+
+    #[test]
+    fn offset_paging_gathers_every_page_and_stops_at_the_total() {
+        let mut s = step("http://h/search?startAt={{page.offset}}");
+        s.paginate = Some(Paginate { items: Some("json:$.issues".into()), total: Some("json:$.total".into()), ..Default::default() });
+        s.collect = Some("issues".into());
+        let mut offsets = Vec::new();
+        let (result, _) = run_timed(&[s], &BTreeMap::new(), |p| {
+            let offset: usize = var(p, "page.offset").unwrap().parse().unwrap();
+            offsets.push(offset);
+            let issues: Vec<usize> = (offset..(offset + 2).min(5)).collect();
+            Ok(reply(200, &serde_json::json!({"total": 5, "issues": issues}).to_string()))
+        });
+        assert!(result.ok, "{:?}", result.steps[0].error);
+        assert_eq!(offsets, [0, 2, 4], "the last page has one item and the total says that is all");
+        assert_eq!(result.steps[0].requests, 3);
+        assert_eq!(result.steps[0].set[0].name, "issues");
+    }
+
+    #[test]
+    fn collected_pages_reach_a_return_program() {
+        let mut fetch = step("http://h/search");
+        fetch.paginate = Some(Paginate { items: Some("json:$.issues".into()), page_size: Some(2), ..Default::default() });
+        fetch.collect = Some("issues".into());
+        let summary = Step { output: Some("{count: (.issues|length), points: ([.issues[].p]|add), sprint: .sprint}".into()), ..Default::default() };
+        let mut vars = BTreeMap::new();
+        vars.insert("sprint".to_string(), "12".to_string());
+        let mut page = 0;
+        let (result, _) = run_timed(&[fetch, summary], &vars, |_| {
+            page += 1;
+            let body = match page {
+                1 => r#"{"issues": [{"p": 3}, {"p": 5}]}"#,
+                _ => r#"{"issues": [{"p": 2}]}"#,
+            };
+            Ok(reply(200, body))
+        });
+        assert!(result.ok, "{:?}", result.steps);
+        assert_eq!(result.output, Some(serde_json::json!({"count": 3, "points": 10, "sprint": "12"})));
+        assert_eq!(result.steps[1].label, "return");
+    }
+
+    #[test]
+    fn cursor_paging_follows_the_cursor_until_it_runs_out() {
+        let mut s = step("http://h/items?after={{page.cursor?}}");
+        s.paginate = Some(Paginate { style: Some("cursor".into()), items: Some("json:$.data".into()), next: Some("json:$.next".into()), ..Default::default() });
+        s.collect = Some("all".into());
+        let mut cursors = Vec::new();
+        let (result, _) = run_timed(&[s, Step { output: Some(".all".into()), ..Default::default() }], &BTreeMap::new(), |p| {
+            cursors.push(var(p, "page.cursor"));
+            Ok(match var(p, "page.cursor").as_deref() {
+                None => reply(200, r#"{"data": [1, 2], "next": "c2"}"#),
+                Some("c2") => reply(200, r#"{"data": [3], "next": "c3"}"#),
+                _ => reply(200, r#"{"data": [4], "next": null}"#),
+            })
+        });
+        assert_eq!(cursors, [None, Some("c2".to_string()), Some("c3".to_string())]);
+        assert_eq!(result.output, Some(serde_json::json!([1, 2, 3, 4])));
+    }
+
+    #[test]
+    fn link_paging_follows_the_next_url() {
+        let mut s = step("http://h/repos");
+        s.paginate = Some(Paginate { style: Some("link".into()), ..Default::default() });
+        s.collect = Some("repos".into());
+        let mut urls = Vec::new();
+        let (result, _) = run_timed(&[s, Step { output: Some(".repos|length".into()), ..Default::default() }], &BTreeMap::new(), |p| {
+            urls.push(p.url.clone().unwrap());
+            Ok(if p.url.as_deref() == Some("http://h/repos") {
+                reply_with(200, "[1, 2]", &[("Link", r#"<http://h/repos?page=2>; rel="next", <http://h/repos?page=2>; rel="last""#)])
+            } else {
+                reply_with(200, "[3]", &[("Link", r#"<http://h/repos?page=1>; rel="prev""#)])
+            })
+        });
+        assert_eq!(urls, ["http://h/repos", "http://h/repos?page=2"]);
+        assert_eq!(result.output, Some(serde_json::json!(3)));
+    }
+
+    #[test]
+    fn paging_stops_at_max_pages_and_says_so() {
+        let mut s = step("http://h/forever?p={{page.number}}");
+        s.paginate = Some(Paginate { max_pages: Some(3), ..Default::default() });
+        let (result, _) = run_timed(&[s], &BTreeMap::new(), |_| Ok(reply(200, "[1]")));
+        assert!(result.ok);
+        assert_eq!(result.steps[0].requests, 3);
+        assert!(result.steps[0].warning.as_deref().unwrap().contains("3 pages"), "{:?}", result.steps[0].warning);
+    }
+
+    #[test]
+    fn a_page_that_fails_names_the_page() {
+        let mut s = step("http://h/x");
+        s.paginate = Some(Paginate::default());
+        let mut n = 0;
+        let (result, _) = run_timed(&[s], &BTreeMap::new(), |_| {
+            n += 1;
+            Ok(if n == 1 { reply(200, "[1]") } else { reply(500, "[]") })
+        });
+        assert!(!result.ok);
+        assert_eq!(result.steps[0].error.as_deref(), Some("page 2: expected 2xx, got 500"));
+    }
+
+    #[test]
+    fn for_each_sends_once_per_element_with_its_fields() {
+        let mut list = step("http://h/search");
+        list.paginate = Some(Paginate { items: Some("json:$.issues".into()), page_size: Some(100), ..Default::default() });
+        list.collect = Some("issues".into());
+        let mut per = step("http://h/issue/{{issue.key}}/worklog");
+        per.for_each = Some("issues".into());
+        per.item_name = Some("issue".into());
+        per.collect = Some("worklogs".into());
+        let report = Step { output: Some("{keys: [.issues[].key], hours: ([.worklogs[].hours]|add)}".into()), ..Default::default() };
+        let mut sent = Vec::new();
+        let (result, _) = run_timed(&[list, per, report], &BTreeMap::new(), |p| {
+            let url = p.url.clone().unwrap();
+            let key = var(p, "issue.key");
+            sent.push((key.clone(), var(p, "loop.number")));
+            Ok(if url.ends_with("/search") {
+                reply(200, r#"{"issues": [{"key": "A-1"}, {"key": "A-2"}]}"#)
+            } else if key.as_deref() == Some("A-1") {
+                reply(200, r#"{"hours": 2}"#)
+            } else {
+                reply(200, r#"{"hours": 5}"#)
+            })
+        });
+        assert!(result.ok, "{:?}", result.steps);
+        assert_eq!(sent[1], (Some("A-1".to_string()), Some("1".to_string())));
+        assert_eq!(sent[2], (Some("A-2".to_string()), Some("2".to_string())));
+        assert_eq!(result.output, Some(serde_json::json!({"keys": ["A-1", "A-2"], "hours": 7})));
+        assert_eq!(result.steps[1].requests, 2);
+    }
+
+    #[test]
+    fn a_failing_element_ends_the_run_unless_told_to_continue() {
+        let make = |continue_on_error: bool| {
+            let mut per = step("http://h/x/{{id}}");
+            per.for_each = Some("[1, 2, 3]".into());
+            per.item_name = Some("id".into());
+            per.collect = Some("got".into());
+            per.continue_on_error = continue_on_error;
+            vec![per, Step { output: Some(".got".into()), ..Default::default() }]
+        };
+        let send = |p: &SendParams| Ok(if var(p, "id").as_deref() == Some("2") { reply(404, "{}") } else { reply(200, r#"{"ok": true}"#) });
+        let (strict, _) = run_timed(&make(false), &BTreeMap::new(), send);
+        assert!(!strict.ok);
+        assert_eq!(strict.steps[0].error.as_deref(), Some("id 2 of 3: expected 2xx, got 404"));
+        let (lenient, _) = run_timed(&make(true), &BTreeMap::new(), send);
+        assert!(lenient.ok);
+        assert!(lenient.steps[0].warning.as_deref().unwrap().starts_with("1 of 3 elements failed"));
+        assert_eq!(lenient.output, Some(serde_json::json!([{"ok": true}, null, {"ok": true}])));
+    }
+
+    #[test]
+    fn polling_repeats_until_the_condition_holds() {
+        let mut s = step("http://h/jobs/1");
+        s.request.extract = vec![Extract { name: "state".into(), from: "json:$.state".into(), secret: None, scope: Some("run".into()) }];
+        s.poll = Some(Poll { until: "{{state}} == DONE".into(), every_ms: Some(250), max_attempts: Some(5) });
+        let mut n = 0;
+        let (result, sleeps) = run_timed(&[s], &BTreeMap::new(), |_| {
+            n += 1;
+            Ok(reply(200, if n < 3 { r#"{"state": "RUNNING"}"# } else { r#"{"state": "DONE"}"# }))
+        });
+        assert!(result.ok);
+        assert_eq!(result.steps[0].requests, 3);
+        assert_eq!(sleeps, [250, 250]);
+    }
+
+    #[test]
+    fn polling_gives_up_and_says_what_never_held() {
+        let mut s = step("http://h/jobs/1");
+        s.request.extract = vec![Extract { name: "state".into(), from: "json:$.state".into(), secret: None, scope: Some("run".into()) }];
+        s.poll = Some(Poll { until: "{{state}} == DONE".into(), every_ms: Some(1), max_attempts: Some(3) });
+        let (result, _) = run_timed(&[s], &BTreeMap::new(), |_| Ok(reply(200, r#"{"state": "RUNNING"}"#)));
+        assert!(!result.ok);
+        assert_eq!(result.steps[0].error.as_deref(), Some("gave up after 3 attempts: `{{state}} == DONE` never held"));
+        assert_eq!(result.steps[0].requests, 3);
+    }
+
+    #[test]
+    fn a_rate_limit_is_waited_out_and_retried() {
+        let mut s = step("http://h/limited");
+        s.retry = Some(Retry { attempts: Some(3), backoff_ms: Some(100), ..Default::default() });
+        let mut n = 0;
+        let (result, sleeps) = run_timed(&[s], &BTreeMap::new(), |_| {
+            n += 1;
+            Ok(match n {
+                1 => reply_with(429, "{}", &[("Retry-After", "2")]),
+                2 => reply(503, "{}"),
+                _ => reply(200, "{}"),
+            })
+        });
+        assert!(result.ok);
+        assert_eq!(result.steps[0].requests, 3);
+        assert_eq!(sleeps, [2000, 200], "Retry-After first, then the back-off for the second try");
+    }
+
+    #[test]
+    fn retries_run_out_and_the_last_answer_counts() {
+        let mut s = step("http://h/down");
+        s.retry = Some(Retry { attempts: Some(2), backoff_ms: Some(10), ..Default::default() });
+        let (result, sleeps) = run_timed(&[s], &BTreeMap::new(), |_| Ok(reply(503, "{}")));
+        assert!(!result.ok);
+        assert_eq!(result.steps[0].error.as_deref(), Some("expected 2xx, got 503"));
+        assert_eq!(sleeps.len(), 1);
+        // no retry configured: no second request
+        let (plain, _) = run_timed(&[step("http://h/down")], &BTreeMap::new(), |_| Ok(reply(503, "{}")));
+        assert_eq!(plain.steps[0].requests, 1);
+    }
+
+    #[test]
+    fn a_dropped_connection_is_retried_but_a_refusal_to_send_is_not() {
+        let mut s = step("http://h/flaky");
+        s.retry = Some(Retry { attempts: Some(3), backoff_ms: Some(5), ..Default::default() });
+        let mut n = 0;
+        let (result, _) = run_timed(&[s.clone()], &BTreeMap::new(), |_| {
+            n += 1;
+            if n == 1 { Err(SendFailure::Failed("connection reset".into())) } else { Ok(reply(200, "{}")) }
+        });
+        assert!(result.ok);
+        let mut calls = 0;
+        let (refused, _) = run_timed(&[s], &BTreeMap::new(), |_| {
+            calls += 1;
+            Err(SendFailure::NotSent("Undefined variable".into()))
+        });
+        assert!(!refused.ok);
+        assert_eq!(calls, 1, "an undefined variable cannot be fixed by trying again");
+    }
+
+    #[test]
+    fn return_never_sees_or_shows_a_secret() {
+        let mut login = step("http://h/login");
+        login.request.extract = vec![Extract { name: "token".into(), from: "json:$.token".into(), secret: None, scope: Some("run".into()) }];
+        login.collect = Some("session".into());
+        let out = Step { output: Some("{has_token: (.token != null), session: .session, token: .token}".into()), ..Default::default() };
+        let (result, _) = run_timed(&[login, out], &BTreeMap::new(), |_| Ok(reply(200, r#"{"token": "s3cr3t-value", "user": "ada"}"#)));
+        assert!(result.ok);
+        let shown = serde_json::to_string(&result.output).unwrap();
+        assert!(!shown.contains("s3cr3t-value"), "{shown}");
+        assert!(shown.contains("[masked]"), "a secret inside collected data is masked: {shown}");
+        assert!(shown.contains(r#""has_token":false"#), "a secret-named value is not part of the input: {shown}");
+    }
+
+    #[test]
+    fn a_return_that_fails_fails_the_step_with_the_reason() {
+        let mut s = step("http://h/a");
+        s.output = Some(".nope | error(\"no data\")".into());
+        let (result, _) = run_timed(&[s], &BTreeMap::new(), |_| Ok(reply(200, "{}")));
+        assert!(!result.ok);
+        assert!(result.steps[0].error.as_deref().unwrap().contains("no data"));
+    }
+
+    #[test]
+    fn flow_settings_are_checked_before_saving() {
+        let bad = |edit: &dyn Fn(&mut Step)| {
+            let mut s = step("http://h/a");
+            edit(&mut s);
+            check(&[s]).unwrap_err()
+        };
+        assert!(bad(&|s| { s.paginate = Some(Paginate::default()); s.poll = Some(Poll { until: "{{a}}".into(), ..Default::default() }); }).contains("cannot be used in one step"));
+        assert!(bad(&|s| s.item_name = Some("x".into())).contains("`as`"));
+        assert!(bad(&|s| s.continue_on_error = true).contains("for_each"));
+        assert!(bad(&|s| s.collect = Some("a b".into())).contains("`collect`"));
+        assert!(bad(&|s| s.output = Some(".a | map(".into())).contains("`return`"));
+        assert!(bad(&|s| s.paginate = Some(Paginate { style: Some("cursor".into()), ..Default::default() })).contains("needs `next`"));
+        assert!(bad(&|s| s.retry = Some(Retry { attempts: Some(99), ..Default::default() })).contains("`retry`"));
+        let mut link = step("http://h/a");
+        link.request.url = None;
+        link.request.saved_request = Some("saved".into());
+        link.paginate = Some(Paginate { style: Some("link".into()), ..Default::default() });
+        assert!(check(&[link]).unwrap_err().contains("inline"));
+        // a step with only a return is fine; one with nothing is not
+        assert!(check(&[step("http://h/a"), Step { output: Some(".".into()), ..Default::default() }]).is_ok());
+        assert!(check(&[Step::default()]).is_err());
+        assert!(check(&[Step { for_each: Some("[1]".into()), output: Some(".".into()), ..Default::default() }]).unwrap_err().contains("no `url`"));
+    }
+
+    #[test]
+    fn the_new_fields_round_trip_in_a_stored_workflow() {
+        let json = r#"[{"url": "http://h/a", "paginate": {"style": "page", "page_size": 50}, "collect": "rows", "retry": {"attempts": 4}, "delay_ms": 100},
+                       {"for_each": "rows", "as": "row", "url": "http://h/{{row.id}}", "continue_on_error": true},
+                       {"return": "{n: (.rows|length)}"}]"#;
+        let steps = parse_steps(json).unwrap();
+        assert_eq!(steps[1].item_name.as_deref(), Some("row"));
+        assert_eq!(steps[2].output.as_deref(), Some("{n: (.rows|length)}"));
+        let back = serde_json::to_string(&steps).unwrap();
+        assert!(back.contains("\"as\":\"row\"") && back.contains("\"return\":"), "{back}");
+        assert!(check(&steps).is_ok());
     }
 }

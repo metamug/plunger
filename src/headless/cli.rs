@@ -201,6 +201,7 @@ plunger run @-                          ...read from standard input
   --data FILE     run the whole script once per row: a CSV with a header row, or a JSON array of objects;
                   the columns are that run's variables
   --junit FILE    also write the results as JUnit XML (GitHub Actions, Jenkins and GitLab show it as a test report)
+  --validate      only check the script (fields, paths, jq programs) and send nothing
   --quiet         no progress lines on standard error
 
 The script is a JSON array of steps (same as `plunger workflow save`), or
@@ -212,6 +213,22 @@ A step is a request (method / url / headers / json / body / form, or saved_reque
                  checks: equals, not_equals, contains, exists, gt, gte, lt, lte, type, length; `name` labels one
   extract        [{\"name\": \"token\", \"from\": \"json:$.token\"}]  keep a value as {{token}} for the next steps
   skip_if / stop_if                       conditions, see `plunger workflow --help`
+
+Loops, paging and waiting (what you would otherwise write a script for):
+  paginate       {\"items\": \"json:$.issues\", \"total\": \"json:$.total\"}  send again for the next page, gather the items
+                 style: offset (default), page, cursor (with \"next\": \"json:$.next\") or link (Link: rel=next header)
+                 the request uses {{page.offset}} {{page.number}} {{page.cursor?}}; page_size, max_pages (default 20)
+  for_each       \"issues\" (a collected list) or [1,2,3]: send once per element as {{item}} (name it with \"as\"),
+                 its fields are {{item.key}} {{item.fields.name}}; {{loop.index}} counts from 0
+  collect        \"issues\": keep what the step fetched as {{issues}} for the later steps (a list for paginate / for_each)
+  poll           {\"until\": \"{{state}} == DONE\", \"every_ms\": 2000, \"max_attempts\": 30}  repeat until it holds;
+                 read the value with an extract that has \"scope\": \"run\"
+  retry          {\"attempts\": 3, \"backoff_ms\": 500, \"on_status\": [429, 503]}  try again, honouring Retry-After
+  continue_on_error / delay_ms            keep going past a failed element / wait between requests
+  return         a jq program that turns the collected data into the answer, e.g.
+                 {count: (.issues|length), points: ([.issues[].fields.points]|add)}
+                 A step may hold only a `return`. The answer is `output` in the result. jq here cannot read
+                 files, the network or the environment, and secrets are masked in what it returns.
 Built-in variables: {{$uuid}} {{$timestamp}} {{$timestampMs}} {{$isoTimestamp}} {{$randomInt}} {{$randomHex}}
 {{$randomString}} and {{$env:NAME}}.
 
@@ -504,6 +521,9 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
                         }
                     }
                     let text = file_or_text(steps.ok_or_else(|| usage_error("Give the steps as JSON, @file.json or @-"))?)?;
+                    if let Ok(serde_json::Value::Array(listed)) = serde_json::from_str::<serde_json::Value>(&text) {
+                        workflow::script::unknown_step_fields(&listed).map_err(usage_error)?;
+                    }
                     let steps: Vec<workflow::Step> =
                         serde_json::from_str(&text).map_err(|e| usage_error(format!("The steps aren't valid: {e}")))?;
                     print_json(&workflow::save(&name, steps, overwrite, group.as_deref()).map_err(error)?);
@@ -833,9 +853,11 @@ fn run_script(args: &mut Args) -> Result<i32, Exit> {
     let mut data_file = None;
     let mut junit_file = None;
     let mut quiet = false;
+    let mut validate_only = false;
     let mut cli_vars = BTreeMap::new();
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--validate" => validate_only = true,
             "--env" => env_file = Some(args.value(&arg)?),
             "--data" => data_file = Some(args.value(&arg)?),
             "--junit" => junit_file = Some(args.value(&arg)?),
@@ -858,6 +880,11 @@ fn run_script(args: &mut Args) -> Result<i32, Exit> {
     let text = file_or_text(if source.starts_with('@') { source } else { format!("@{source}") })?;
     let script = script::parse_script(&text).map_err(usage_error)?;
     let name = script.name.clone().unwrap_or(default_name);
+    if validate_only {
+        workflow::validate(&script.steps).map_err(usage_error)?;
+        print_json(&serde_json::json!({ "valid": true, "script": name, "steps": script.steps.len() }));
+        return Ok(EXIT_OK);
+    }
 
     // the script's own variables, then the environment file, then --var
     let mut base = script.variables.clone();
@@ -898,7 +925,11 @@ fn run_script(args: &mut Args) -> Result<i32, Exit> {
                 let verdict = if step.skipped { "SKIP" } else if step.ok { "PASS" } else { "FAIL" };
                 let status = step.status.map(|s| format!(" {s}")).unwrap_or_default();
                 let took = step.elapsed_ms.map(|ms| format!(" {ms} ms")).unwrap_or_default();
-                eprintln!("{verdict} {}. {}{status}{took}", step.step, step.label);
+                let sent = if step.requests > 1 { format!(" ({} requests)", step.requests) } else { String::new() };
+                eprintln!("{verdict} {}. {}{status}{took}{sent}", step.step, step.label);
+                if let Some(w) = &step.warning {
+                    eprintln!("       warning: {w}");
+                }
                 for a in step.asserts.iter().filter(|a| !a.ok) {
                     eprintln!("       {}: {}", a.name, a.message.as_deref().unwrap_or("failed"));
                 }

@@ -11,6 +11,7 @@ pub mod outline;
 pub mod json_display;
 pub mod extract;
 pub mod assertion;
+pub mod transform;
 pub mod condition;
 pub mod filename;
 pub mod timefmt;

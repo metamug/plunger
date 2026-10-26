@@ -192,6 +192,36 @@ A workflow is a saved list of requests where a later one can use a value from an
 
 From a terminal: `plunger workflow save shop @steps.json`, `plunger workflow run shop --var base=http://localhost:8080` (exit code 4 when a step fails), `plunger workflow list|show|delete`. Variables a workflow sets stay afterwards and show in the window under "Set by agents", unless a step used `"scope": "run"` or the run was made with `--cleanup` (`cleanup: true` over MCP), which removes the variables the run stored once it is done.
 
+### Checks, paging, loops and an answer
+
+A step can also check its response and do the work a hand-written script would do, with no code:
+
+- `asserts`: `[{"from": "json:$.id", "equals": 7}, {"from": "time", "lt": 500}]`. `from` is a JSON path, `header:Name`, `status`, `time` (milliseconds) or `body`. The checks are `equals`, `not_equals`, `contains`, `exists`, `gt`, `gte`, `lt`, `lte`, `type` and `length`; `name` labels one. Every assert is run and reported, and the step fails if any fails.
+- `paginate`: send the request again for the next page and gather the items. `style` is `offset` (default; `total` says where the count is), `page`, `cursor` (`next` says where the next cursor is) or `link` (the `Link: rel="next"` header). The request uses `{{page.offset}}`, `{{page.number}}` and `{{page.cursor?}}`. `page_size` marks a short page as the last, and `max_pages` (default 20, at most 500) bounds it; a step that stopped there says so in its `warning`.
+- `for_each`: send the step once per element of a collected list (or a list written out). The element is `{{item}}`, or the name in `as`; for an object its fields are `{{item.key}}` and `{{item.fields.name}}`; `{{loop.index}}` counts from 0. `continue_on_error` records a failed element and goes on; `delay_ms` waits between requests.
+- `collect`: keeps what the step fetched as `{{name}}` for the later steps: the items of every page, the response body, or a list with one entry per element. It lives for this run only and is never stored; known secrets in it are masked.
+- `poll`: `{"until": "{{state}} == DONE", "every_ms": 2000, "max_attempts": 30}` repeats the request until the condition holds. Read the value being waited for with an `extract` that has `"scope": "run"`.
+- `retry`: `{"attempts": 3, "backoff_ms": 500, "on_status": [429, 503]}` tries again after a rate limit, a busy server or a dropped connection, waiting for the server's `Retry-After` when it sends one.
+- `return`: a [jq](https://jqlang.org/manual/) program that turns the collected data into the answer. Its input is an object of the run's values (collected lists, `scope: run` extracts, the variables passed in), without secrets; what it produces is the run's `output`. A step may hold only a `return`. jq here has no file, network or environment access, and a run that loops for ever is stopped after 10 seconds.
+
+A sprint report in one call, where the agent reads ten lines instead of two hundred issues:
+
+```json
+[
+  {"label": "issues in the sprint", "url": "{{base}}/rest/api/3/search?jql=sprint={{sprint}}&startAt={{page.offset}}&maxResults=100",
+   "headers": {"Authorization": "Bearer {{jira_token}}"},
+   "paginate": {"items": "json:$.issues", "total": "json:$.total"}, "collect": "issues"},
+  {"label": "summary",
+   "return": "{issues: (.issues|length), points: ([.issues[].fields.storypoints // 0]|add), by_assignee: (.issues | group_by(.fields.assignee.displayName // \"unassigned\") | map({(.[0].fields.assignee.displayName // \"unassigned\"): length}) | add)}"}
+]
+```
+
+Limits: a step sends at most 500 pages, 100,000 items and 1,000 `for_each` elements; a `return` produces at most 500,000 characters. A field that does not exist (`paginat`) is refused with a suggestion, not ignored.
+
+### Scripts from a file
+
+`plunger run script.json` runs the same steps from a file without saving them, for CI and for jobs you want in version control. The file is a list of steps or `{"name": ..., "variables": {...}, "steps": [...]}`. `--env FILE` loads variables (`NAME=value` lines or JSON), `--var` sets one, `--data FILE` runs the script once per row of a CSV or JSON array, `--junit FILE` writes a JUnit report, `--validate` checks the script and sends nothing. Progress goes to standard error and the result (with `output`) to standard output; the exit code is 0 when everything passed and 4 when a step failed. `scripts/shop-smoke.json` and `scripts/shop-report.json` are worked examples against `scripts/shop-api.py`.
+
 ## Workflows in the window
 
 <p align="center">

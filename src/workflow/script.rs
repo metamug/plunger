@@ -31,9 +31,58 @@ fn text_of(value: &serde_json::Value) -> String {
     }
 }
 
+/// The fields a step can have.
+fn step_fields() -> Vec<String> {
+    let schema = serde_json::to_value(rmcp::schemars::schema_for!(Step)).unwrap_or_default();
+    schema.get("properties").and_then(|p| p.as_object()).map(|p| p.keys().cloned().collect()).unwrap_or_default()
+}
+
+/// How many single-character edits turn `a` into `b`.
+fn distance(a: &str, b: &str) -> usize {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut prev = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let cost = if ca == cb { prev } else { prev.min(row[j]).min(row[j + 1]) + 1 };
+            prev = row[j + 1];
+            row[j + 1] = cost;
+        }
+    }
+    row[b.len()]
+}
+
+/// A step field that does not exist is usually a typo (`paginat`, `foreach`), and would otherwise be ignored
+/// without a word, so the step would quietly do less than it says.
+pub fn unknown_step_fields(steps: &[serde_json::Value]) -> Result<(), String> {
+    let known = step_fields();
+    if known.is_empty() {
+        return Ok(());
+    }
+    for (i, step) in steps.iter().enumerate() {
+        let Some(object) = step.as_object() else { return Err(format!("Step {} is not an object", i + 1)) };
+        if let Some(key) = object.keys().find(|k| !known.contains(k)) {
+            let near = known.iter().min_by_key(|k| distance(key, k)).filter(|k| distance(key, k) <= 3);
+            return Err(match near {
+                Some(near) => format!("Step {}: unknown field `{key}`. Did you mean `{near}`?", i + 1),
+                None => format!("Step {}: unknown field `{key}`.", i + 1),
+            });
+        }
+    }
+    Ok(())
+}
+
 pub fn parse_script(text: &str) -> Result<Script, String> {
     let value: serde_json::Value =
         serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| format!("The script isn't valid JSON: {e}"))?;
+    let listed = match &value {
+        serde_json::Value::Array(steps) => Some(steps.as_slice()),
+        other => other.get("steps").and_then(|s| s.as_array()).map(Vec::as_slice),
+    };
+    if let Some(steps) = listed {
+        unknown_step_fields(steps)?;
+    }
     if value.is_array() {
         let steps = serde_json::from_value(value).map_err(|e| format!("The steps aren't valid: {e}"))?;
         return Ok(Script { name: None, variables: BTreeMap::new(), steps });
@@ -140,6 +189,17 @@ mod tests {
         assert_eq!(doc.variables["n"], "3");
         assert!(parse_script("{}").unwrap_err().contains("steps"));
         assert!(parse_script("nope").unwrap_err().contains("JSON"));
+    }
+
+    #[test]
+    fn a_misspelt_field_is_named_instead_of_ignored() {
+        let err = parse_script(r#"[{"url": "http://h/a", "paginat": {}}]"#).unwrap_err();
+        assert_eq!(err, "Step 1: unknown field `paginat`. Did you mean `paginate`?");
+        let err = parse_script(r#"{"steps": [{"url": "http://h/a"}, {"url": "http://h/b", "foreach": "x"}]}"#).unwrap_err();
+        assert!(err.contains("Step 2") && err.contains("for_each"), "{err}");
+        assert!(parse_script(r#"[{"url": "http://h/a", "method": "POST", "json": {}, "asserts": [], "return": "."}]"#).is_ok());
+        assert!(parse_script(r#"[{"url": "http://h/a", "paginate": {"stile": "page"}}]"#).unwrap_err().contains("stile"));
+        assert!(parse_script(r#"[{"url": "http://h/a", "asserts": [{"from": "status", "equal": 1}]}]"#).unwrap_err().contains("equal"));
     }
 
     #[test]

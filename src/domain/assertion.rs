@@ -9,6 +9,7 @@ use serde_json::Value;
 
 /// One check on a response. Give `from` and at least one operator; every operator given must hold.
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct Assert {
     /// What to check: `json:$.data.id` (or just `$.data.id`), `header:Name`, `status`, `time` (milliseconds
     /// the response took) or `body` (the whole body as text).
