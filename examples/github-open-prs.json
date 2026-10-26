@@ -1,0 +1,25 @@
+{
+  "name": "github open pull requests",
+  "variables": {
+    "repo": "metamug/plunger",
+    "per_page": "100"
+  },
+  "steps": [
+    {
+      "label": "open pull requests",
+      "url": "https://api.github.com/repos/{{repo}}/pulls?state=open&per_page={{per_page}}",
+      "headers": {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "plunger"
+      },
+      "paginate": {
+        "style": "link"
+      },
+      "collect": "prs"
+    },
+    {
+      "label": "summary",
+      "return": "{open: (.prs|length), by_author: (.prs | group_by(.user.login) | map({(.[0].user.login): length}) | add), oldest: (.prs | sort_by(.created_at) | .[0] | {number, title, created_at})}"
+    }
+  ]
+}

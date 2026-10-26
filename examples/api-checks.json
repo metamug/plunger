@@ -1,0 +1,46 @@
+{
+  "name": "api checks",
+  "variables": {
+    "base": "http://127.0.0.1:18095"
+  },
+  "steps": [
+    {
+      "label": "a page of items",
+      "url": "{{base}}/items?page={{page}}&per_page={{per_page}}",
+      "asserts": [
+        {
+          "from": "status",
+          "equals": 200
+        },
+        {
+          "from": "time",
+          "lt": 1000,
+          "name": "answers within a second"
+        },
+        {
+          "from": "header:Content-Type",
+          "contains": "json"
+        },
+        {
+          "from": "json:$.items",
+          "type": "array"
+        },
+        {
+          "from": "json:$.total",
+          "gte": 1
+        }
+      ]
+    },
+    {
+      "label": "an unknown path is a 404",
+      "url": "{{base}}/no-such-thing",
+      "expect_status": 404,
+      "asserts": [
+        {
+          "from": "status",
+          "equals": 404
+        }
+      ]
+    }
+  ]
+}

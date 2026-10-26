@@ -4,6 +4,9 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+- **Teaching agents to script:** the MCP server serves the scripting guide as the resource `plunger://scripting`, has a `build_script` prompt that walks an agent through building a paging, looping or waiting workflow with a `return`, and the instructions and the steering file that `plunger install` writes tell agents to do their looping in workflow steps instead of a throwaway script. The guide is [docs/scripting.md](docs/scripting.md); [examples/](examples/) has scripts for GitHub, Jira, Slack, waiting for a job and CI. A test keeps every example and every JSON block of the guide valid.
+
 ## [0.8.0] - 2026-10-26
 
 Plunger can run scripts: files of requests that check their responses, page through lists, loop, wait, retry and boil the result down to an answer, with no scripting language to run.

@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn the_steering_tells_agents_what_to_avoid_and_what_to_use() {
-        for needle in ["curl", "Invoke-RestMethod", "send_request", "select", "extract", "set_variable", "get_history"] {
+        for needle in ["curl", "Invoke-RestMethod", "send_request", "select", "extract", "set_variable", "get_history", "paginate", "return", "plunger://scripting"] {
             assert!(STEERING.contains(needle), "the steering does not mention {needle}");
         }
     }

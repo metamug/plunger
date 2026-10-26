@@ -1,0 +1,28 @@
+{
+  "name": "slack channels",
+  "steps": [
+    {
+      "label": "every channel",
+      "url": "https://slack.com/api/conversations.list?limit=200&exclude_archived=true&cursor={{page.cursor?}}",
+      "headers": {
+        "Authorization": "Bearer {{slack_token}}"
+      },
+      "paginate": {
+        "style": "cursor",
+        "items": "json:$.channels",
+        "next": "json:$.response_metadata.next_cursor"
+      },
+      "asserts": [
+        {
+          "from": "json:$.ok",
+          "equals": true
+        }
+      ],
+      "collect": "channels"
+    },
+    {
+      "label": "summary",
+      "return": "{channels: (.channels|length), biggest: (.channels | sort_by(.num_members) | reverse | .[:5] | map({name, num_members}))}"
+    }
+  ]
+}

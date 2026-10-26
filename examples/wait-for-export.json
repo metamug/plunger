@@ -1,0 +1,52 @@
+{
+  "name": "start an export and wait for it",
+  "variables": {
+    "base": "https://api.example.com"
+  },
+  "steps": [
+    {
+      "label": "start the export",
+      "method": "POST",
+      "url": "{{base}}/exports",
+      "headers": {
+        "Authorization": "Bearer {{api_token}}"
+      },
+      "expect_status": 202,
+      "extract": [
+        {
+          "name": "export_id",
+          "from": "json:$.id",
+          "scope": "run"
+        }
+      ]
+    },
+    {
+      "label": "wait until it is done",
+      "url": "{{base}}/exports/{{export_id}}",
+      "headers": {
+        "Authorization": "Bearer {{api_token}}"
+      },
+      "poll": {
+        "until": "{{state}} == done",
+        "every_ms": 2000,
+        "max_attempts": 60
+      },
+      "extract": [
+        {
+          "name": "state",
+          "from": "json:$.state",
+          "scope": "run"
+        },
+        {
+          "name": "file_url",
+          "from": "json:$.url",
+          "scope": "run"
+        }
+      ]
+    },
+    {
+      "label": "answer",
+      "return": "{export: .export_id, download: .file_url}"
+    }
+  ]
+}

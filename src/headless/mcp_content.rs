@@ -9,6 +9,9 @@ const VARIABLES_URI: &str = "plunger://variables";
 const SAVED_URI: &str = "plunger://saved-requests";
 const WORKFLOWS_URI: &str = "plunger://workflows";
 const HISTORY_URI: &str = "plunger://history";
+pub const SCRIPTING_URI: &str = "plunger://scripting";
+/// The scripting guide: the same page as `docs/scripting.md`, so the docs and what an agent reads cannot differ.
+pub const SCRIPTING_GUIDE: &str = include_str!("../../docs/scripting.md");
 const SAVED_PREFIX: &str = "plunger://saved-requests/";
 const WORKFLOW_PREFIX: &str = "plunger://workflows/";
 
@@ -25,6 +28,7 @@ pub const RESOURCES: &[Listed] = &[
     Listed { uri: VARIABLES_URI, name: "variables", description: "The {{variables}} in use (secrets by name only) and the built-ins.", mime: "application/json" },
     Listed { uri: SAVED_URI, name: "saved-requests", description: "The requests the user saved, with method, URL, headers and the variables each needs.", mime: "application/json" },
     Listed { uri: WORKFLOWS_URI, name: "workflows", description: "Saved workflows: ordered requests where one response feeds the next.", mime: "application/json" },
+    Listed { uri: SCRIPTING_URI, name: "scripting", description: "How to do many requests, paging, loops, waiting and a short answer with workflow steps (paginate, for_each, poll, retry, collect, return), with recipes.", mime: "text/markdown" },
     Listed { uri: HISTORY_URI, name: "history", description: "The 20 most recent requests, who sent them, status and time.", mime: "application/json" },
 ];
 
@@ -72,6 +76,7 @@ fn decode_name(text: &str) -> Result<String, String> {
 pub fn read(uri: &str, guide: &str) -> Result<String, String> {
     match uri {
         GUIDE_URI => Ok(guide.to_string()),
+        SCRIPTING_URI => Ok(SCRIPTING_GUIDE.to_string()),
         VARIABLES_URI => json(&agent::list_variables()),
         SAVED_URI => json(&agent::list_saved_requests(None)?),
         WORKFLOWS_URI => json(&workflow::list(None)?),
@@ -134,6 +139,14 @@ pub const PROMPTS: &[PromptInfo] = &[
         arguments: &[("search", "Part of the URL, or a status like 500, to find the request", false)],
     },
     PromptInfo {
+        name: "build_script",
+        description: "Build a reusable workflow that pages, loops or waits and returns a short answer (a report, a count, a list of ids), instead of writing a script.",
+        arguments: &[
+            ("goal", "What the workflow should find out or do, e.g. 'points per assignee for sprint 12'", true),
+            ("api", "Which API and where, e.g. 'Jira at https://example.atlassian.net'", false),
+        ],
+    },
+    PromptInfo {
         name: "record_workflow",
         description: "Turn the requests you just made into a reusable workflow.",
         arguments: &[("name", "A name for the workflow", true), ("goal", "What the workflow achieves", false)],
@@ -185,6 +198,19 @@ pub fn prompt(name: &str, args: &serde_json::Map<String, serde_json::Value>) -> 
                  2. Read its headers and body in the history entry; call get_saved_request if it was saved.\n\
                  3. Re-send it with send_request, changing one thing at a time (a header, a variable, the body).\n\
                  4. Explain the cause and the smallest fix. Do not print secret values; they are shown as [redacted:name]."
+            )
+        }
+        "build_script" => {
+            let goal = arg(args, "goal").unwrap_or_default();
+            let api = arg(args, "api").map(|a| format!(" The API: {a}.")).unwrap_or_default();
+            format!(
+                "Use Plunger to build a reusable workflow that does this: {goal}.{api}
+                 1. Read the resource plunger://scripting: it lists the step fields (paginate, for_each, poll, retry, collect, return) with recipes.
+                 2. Call list_saved_requests and list_variables: the request, its base URL and its auth may already exist. Use {{{{variables}}}} for anything secret; if a credential is missing, ask the user to add it in the Plunger window.
+                 3. Send ONE request with send_request first and look at its shape (use `select` or the outline), so the paths in `paginate.items`, `total`, `next` and `return` are right.
+                 4. Call save_workflow: a step that fetches (with `paginate` and/or `for_each`, `retry` if the API rate-limits) and `collect`s, then a last step with only a `return` that boils the data down to the answer. The workflow is checked as it is saved; fix what it reports.
+                 5. Run it with run_workflow and read `output`. If a step failed, read its `error` and `warning`, fix that step and run again. Tell the user the answer and how to run it again (workflow name and the `variables` it takes).
+                 Prefer this to writing a script: you read only the answer, and secrets never pass through you. Write a script only for something these steps cannot do."
             )
         }
         "record_workflow" => {
@@ -239,6 +265,18 @@ mod tests {
             let (_, text) = prompt(p.name, &a).unwrap();
             assert!(text.contains("Plunger"), "{} does not mention Plunger", p.name);
         }
+    }
+
+    #[test]
+    fn the_scripting_guide_is_a_resource_and_the_build_prompt_points_to_it() {
+        assert!(RESOURCES.iter().any(|r| r.uri == SCRIPTING_URI));
+        let guide = read(SCRIPTING_URI, "").unwrap();
+        for needle in ["paginate", "for_each", "poll", "retry", "collect", "return", "asserts", "plunger run"] {
+            assert!(guide.contains(needle), "the scripting guide does not mention {needle}");
+        }
+        let (_, text) = prompt("build_script", &args(json!({"goal": "points per assignee", "api": "Jira at https://j.example"}))).unwrap();
+        assert!(text.contains("plunger://scripting") && text.contains("points per assignee") && text.contains("Jira at https://j.example"), "{text}");
+        assert!(prompt("build_script", &args(json!({}))).unwrap_err().contains("`goal`"));
     }
 
     #[test]

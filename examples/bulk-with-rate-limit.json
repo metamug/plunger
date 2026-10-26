@@ -1,0 +1,41 @@
+{
+  "name": "worklog hours per issue",
+  "variables": {
+    "base": "https://your-domain.atlassian.net",
+    "sprint": "12"
+  },
+  "steps": [
+    {
+      "label": "issues",
+      "url": "{{base}}/rest/api/3/search?jql=sprint={{sprint}}&startAt={{page.offset}}&maxResults=100&fields=summary",
+      "headers": {
+        "Authorization": "Bearer {{jira_token}}"
+      },
+      "paginate": {
+        "items": "json:$.issues",
+        "total": "json:$.total"
+      },
+      "collect": "issues"
+    },
+    {
+      "label": "worklog of each issue",
+      "for_each": "issues",
+      "as": "issue",
+      "url": "{{base}}/rest/api/3/issue/{{issue.key}}/worklog",
+      "headers": {
+        "Authorization": "Bearer {{jira_token}}"
+      },
+      "retry": {
+        "attempts": 4,
+        "backoff_ms": 500
+      },
+      "delay_ms": 100,
+      "continue_on_error": true,
+      "collect": "worklogs"
+    },
+    {
+      "label": "summary",
+      "return": "{issues: (.issues|length), hours: ([.worklogs[] | select(. != null) | .worklogs[].timeSpentSeconds] | add // 0 | . / 3600), failed: ([.worklogs[] | select(. == null)] | length)}"
+    }
+  ]
+}

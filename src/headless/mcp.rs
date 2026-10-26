@@ -48,7 +48,7 @@ HOW IT BEHAVES
 - Failures are reported, not hidden: a request that could not be sent returns an error and is not recorded; one that got no response (DNS, refused, timeout) is recorded in the history.
 
 RESOURCES AND PROMPTS
-- Resources (plunger://guide, variables, saved-requests, workflows, history, and one per saved request and workflow) can be read without calling a tool. Prompts (test_endpoint, login_workflow, debug_failed_request, record_workflow) start common jobs.
+- Resources (plunger://guide, scripting, variables, saved-requests, workflows, history, and one per saved request and workflow) can be read without calling a tool. Read plunger://scripting before you write a workflow that pages, loops, waits or has to return a short answer: it lists the step fields with recipes. Prompts (test_endpoint, login_workflow, debug_failed_request, build_script, record_workflow) start common jobs.
 
 NOT SUPPORTED YET
 - Cookies are not carried from one request to the next, and multipart/form-data file uploads are not possible (`form` is url-encoded only).";
@@ -392,7 +392,7 @@ impl ServerHandler for PlungerMcp {
         let text = blocking(move || mcp_content::read(&for_read, INSTRUCTIONS))
             .await
             .map_err(|message| ErrorData::resource_not_found(message, None))?;
-        let mime = if uri == mcp_content::GUIDE_URI { "text/markdown" } else { "application/json" };
+        let mime = if uri == mcp_content::GUIDE_URI || uri == mcp_content::SCRIPTING_URI { "text/markdown" } else { "application/json" };
         Ok(ReadResourceResult::new(vec![ResourceContents::text(text, uri).with_mime_type(mime)]).into())
     }
 

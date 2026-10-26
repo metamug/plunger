@@ -191,6 +191,42 @@ mod tests {
         assert!(parse_script("nope").unwrap_err().contains("JSON"));
     }
 
+    /// Every file in `examples/` and `scripts/` that is a script, and every JSON example in the scripting guide,
+    /// must be a script Plunger accepts: a rename of a field cannot leave the documentation behind.
+    #[test]
+    fn the_examples_and_the_guide_are_valid_scripts() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut checked = 0;
+        for dir in ["examples", "scripts"] {
+            for entry in std::fs::read_dir(root.join(dir)).unwrap().flatten() {
+                let path = entry.path();
+                let name = path.file_name().unwrap().to_string_lossy().to_string();
+                if path.extension().is_none_or(|e| e != "json") || name.starts_with("package") {
+                    continue;
+                }
+                let text = std::fs::read_to_string(&path).unwrap();
+                let script = parse_script(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
+                crate::workflow::validate(&script.steps).unwrap_or_else(|e| panic!("{name}: {e}"));
+                checked += 1;
+            }
+        }
+        assert!(checked >= 8, "only {checked} example scripts were found");
+
+        let guide = std::fs::read_to_string(root.join("docs/scripting.md")).unwrap();
+        let mut blocks = 0;
+        for block in guide.split("```json").skip(1) {
+            let json = block.split("```").next().unwrap().trim();
+            // a fragment that is one step is wrapped into a list
+            let text = if json.starts_with('[') { json.to_string() } else { format!("[{json}]") };
+            let script = parse_script(&text).unwrap_or_else(|e| panic!("a JSON example in docs/scripting.md: {e}
+{json}"));
+            crate::workflow::validate(&script.steps).unwrap_or_else(|e| panic!("a JSON example in docs/scripting.md: {e}
+{json}"));
+            blocks += 1;
+        }
+        assert!(blocks >= 5, "only {blocks} JSON examples were found in the guide");
+    }
+
     #[test]
     fn a_misspelt_field_is_named_instead_of_ignored() {
         let err = parse_script(r#"[{"url": "http://h/a", "paginat": {}}]"#).unwrap_err();

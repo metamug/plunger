@@ -1,0 +1,26 @@
+{
+  "name": "jira sprint report",
+  "variables": {
+    "base": "https://your-domain.atlassian.net",
+    "sprint": "12"
+  },
+  "steps": [
+    {
+      "label": "issues in the sprint",
+      "url": "{{base}}/rest/api/3/search?jql=sprint={{sprint}}&startAt={{page.offset}}&maxResults=100&fields=summary,assignee,status,customfield_10016",
+      "headers": {
+        "Authorization": "Bearer {{jira_token}}",
+        "Accept": "application/json"
+      },
+      "paginate": {
+        "items": "json:$.issues",
+        "total": "json:$.total"
+      },
+      "collect": "issues"
+    },
+    {
+      "label": "summary",
+      "return": "{issues: (.issues|length), points: ([.issues[].fields.customfield_10016 // 0] | add), by_status: (.issues | group_by(.fields.status.name) | map({(.[0].fields.status.name): length}) | add), unassigned: [.issues[] | select(.fields.assignee == null) | .key]}"
+    }
+  ]
+}

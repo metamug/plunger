@@ -238,7 +238,7 @@ Only the result is recorded for a run (names and statuses, never values or respo
 
 ## Resources and prompts
 
-Besides tools, the MCP server offers resources a client can read without calling a tool: `plunger://guide`, `plunger://variables`, `plunger://saved-requests`, `plunger://workflows`, `plunger://history`, and one for each saved request and workflow (`plunger://saved-requests/{name}`, `plunger://workflows/{name}`). It also offers prompts that start common jobs: `test_endpoint`, `login_workflow`, `debug_failed_request` and `record_workflow`.
+Besides tools, the MCP server offers resources a client can read without calling a tool: `plunger://guide`, `plunger://scripting` (the page [scripting.md](scripting.md): every step field for paging, loops, waiting and a short `return`, with recipes), `plunger://variables`, `plunger://saved-requests`, `plunger://workflows`, `plunger://history`, and one for each saved request and workflow (`plunger://saved-requests/{name}`, `plunger://workflows/{name}`). It also offers prompts that start common jobs: `test_endpoint`, `login_workflow`, `debug_failed_request`, `build_script` (build a workflow that pages, loops or waits and returns a short answer) and `record_workflow`.
 
 ## Command line
 
