@@ -131,7 +131,7 @@ pub fn variable_is_defined(name: &str, variables: &[Variable]) -> bool {
     if let Some(var) = name.strip_prefix("$env:") {
         return std::env::var_os(var).is_some();
     }
-    matches!(name, "$uuid" | "$timestamp" | "$randomInt") || variables.iter().any(|v| v.name.trim() == name && !name.is_empty())
+    matches!(name, "$uuid" | "$timestamp" | "$timestampMs" | "$isoTimestamp" | "$randomInt" | "$randomHex" | "$randomString") || variables.iter().any(|v| v.name.trim() == name && !name.is_empty())
 }
 
 /// Text with each `{{variable}}` coloured by whether it is defined (accent) or not (red, the

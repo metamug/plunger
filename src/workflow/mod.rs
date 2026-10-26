@@ -3,6 +3,10 @@
 //! response into variables (`{{name}}`) for the steps after it. A value named like a credential
 //! (`token`, `password`...) is kept as a secret: it is used in later requests but never shown.
 
+pub mod junit;
+pub mod script;
+
+pub use crate::domain::assertion::{Assert, AssertOutcome};
 pub use crate::domain::extract::{self, Extract};
 
 #[cfg(test)]
@@ -54,6 +58,10 @@ pub struct Step {
     /// passes; a step that fails stops the workflow.
     #[serde(default)]
     pub expect_status: Option<ExpectStatus>,
+    /// Checks on the response (`{"from": "json:$.id", "equals": 7}`, `{"from": "time", "lt": 500}`). Every one is
+    /// run and reported; the step fails if any does. They run after the status check and before `extract`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asserts: Vec<Assert>,
     /// Skip this step (it counts as passed) when the condition holds. A condition is `{{a}} == b`, `{{a}} != b`,
     /// or a single value that is true when it is not empty, `false`, `0` or `null`. A variable with no value is
     /// empty. `{{previous_status}}` is the status of the step before.
@@ -82,6 +90,9 @@ pub struct StepResult {
     /// The variables this step set (secrets by name only).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub set: Vec<VariableInfo>,
+    /// What each of the step's `asserts` found.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asserts: Vec<AssertOutcome>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -183,6 +194,9 @@ fn check(steps: &[Step]) -> Result<(), String> {
             if condition.as_deref().is_some_and(|c| c.trim().is_empty()) {
                 return Err(format!("Step {}: `{field}` is empty.", i + 1));
             }
+        }
+        for (n, a) in step.asserts.iter().enumerate() {
+            a.validate().map_err(|m| format!("Step {}: assert {}: {m}", i + 1, n + 1))?;
         }
         for e in &step.request.extract {
             if let Some(scope) = e.scope.as_deref() {
@@ -291,12 +305,34 @@ pub fn run_reporting(
     report: &mut dyn FnMut(Progress),
 ) -> Result<WorkflowResult, String> {
     let info = get(name)?;
+    Ok(run_loaded(&info.name, &info.steps, variables, source, cancel, report))
+}
+
+/// Runs steps that are not saved (a script file), checking them first. Recorded like any run.
+pub fn run_inline(
+    name: &str,
+    steps: &[Step],
+    variables: &std::collections::BTreeMap<String, String>,
+    source: Source,
+) -> Result<WorkflowResult, String> {
+    check(steps)?;
+    Ok(run_loaded(name, steps, variables, source, &std::sync::atomic::AtomicBool::new(false), &mut |_| {}))
+}
+
+fn run_loaded(
+    name: &str,
+    steps: &[Step],
+    variables: &std::collections::BTreeMap<String, String>,
+    source: Source,
+    cancel: &std::sync::atomic::AtomicBool,
+    report: &mut dyn FnMut(Progress),
+) -> WorkflowResult {
     let started_at = time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_default();
     let result = run_steps_reporting(
-        &info.name,
-        &info.steps,
+        name,
+        steps,
         variables,
         |params| agent::send_request_raw(params, source),
         |name, value, secret| agent::set_variable(name, value, secret, source),
@@ -305,7 +341,7 @@ pub fn run_reporting(
         report,
     );
     record(&result, &started_at, source);
-    Ok(result)
+    result
 }
 
 /// Writes the run to the history database; a failure to do so never fails the run.
@@ -377,7 +413,7 @@ fn run_steps_reporting(
         });
         report(Progress::Started { step: i + 1 });
         let mut result =
-            StepResult { step: i + 1, label, ok: false, skipped: false, status: None, elapsed_ms: None, set: Vec::new(), error: None };
+            StepResult { step: i + 1, label, ok: false, skipped: false, status: None, elapsed_ms: None, set: Vec::new(), asserts: Vec::new(), error: None };
 
         // what a condition and the request itself can see: the run's variables, then the run-scoped values
         let mut visible = variables.clone();
@@ -443,7 +479,19 @@ fn run_steps_reporting(
                     result.error = Some(format!("expected {want}, got {}", shaped.status));
                 } else {
                     result.ok = true;
-                    for e in &step.request.extract {
+                    result.asserts = step.asserts.iter().map(|a| crate::domain::assertion::evaluate(a, &raw, shaped.elapsed_ms)).collect();
+                    let failed: Vec<String> = result
+                        .asserts
+                        .iter()
+                        .filter(|o| !o.ok)
+                        .map(|o| format!("{}: {}", o.name, o.message.as_deref().unwrap_or("failed")))
+                        .collect();
+                    if !failed.is_empty() {
+                        result.ok = false;
+                        result.error = Some(format!("{} of {} asserts failed: {}", failed.len(), result.asserts.len(), failed.join("; ")));
+                    }
+                    let extracts: &[Extract] = if result.ok { &step.request.extract } else { &[] };
+                    for e in extracts {
                         if e.scope.as_deref() == Some("run") {
                             match extract::extract(&raw, &e.from) {
                                 Ok(value) => {
@@ -589,6 +637,47 @@ mod tests {
     }
 
     #[test]
+    fn every_assert_is_reported_and_one_failure_fails_the_step() {
+        use serde_json::json;
+        let mut s = step("http://h/a");
+        s.asserts = vec![
+            Assert { from: "json:$.id".into(), equals: Some(json!(7)), ..Default::default() },
+            Assert { from: "$.name".into(), equals: Some(json!("Bob")), ..Default::default() },
+            Assert { from: "$.nope".into(), exists: Some(true), ..Default::default() },
+        ];
+        s.request.extract = vec![Extract { name: "id".into(), from: "json:$.id".into(), secret: None, scope: Some("run".into()) }];
+        let result = run_steps("w", &[s, step("http://h/b")], &BTreeMap::new(), |_| Ok(reply(200, r#"{"id": 7, "name": "Ada"}"#)), |n, _, _| Ok(info(n)));
+        assert!(!result.ok);
+        assert_eq!(result.steps_run, 1, "the failed step stops the run");
+        let step = &result.steps[0];
+        assert_eq!(step.asserts.iter().map(|a| a.ok).collect::<Vec<_>>(), [true, false, false]);
+        let error = step.error.as_deref().unwrap();
+        assert!(error.starts_with("2 of 3 asserts failed"), "{error}");
+        assert!(error.contains("expected \"Bob\", got \"Ada\""), "{error}");
+        assert!(step.set.is_empty(), "nothing is extracted from a failed step");
+    }
+
+    #[test]
+    fn passing_asserts_let_the_extract_run() {
+        use serde_json::json;
+        let mut s = step("http://h/a");
+        s.asserts = vec![Assert { from: "status".into(), equals: Some(json!(200)), ..Default::default() }];
+        s.request.extract = vec![Extract { name: "id".into(), from: "json:$.id".into(), secret: None, scope: Some("run".into()) }];
+        let result = run_steps("w", &[s], &BTreeMap::new(), |_| Ok(reply(200, r#"{"id": 7}"#)), |n, _, _| Ok(info(n)));
+        assert!(result.ok);
+        assert_eq!(result.steps[0].asserts.len(), 1);
+        assert_eq!(result.steps[0].set[0].name, "id");
+    }
+
+    #[test]
+    fn an_assert_that_checks_nothing_is_refused_before_anything_is_sent() {
+        let mut s = step("http://h/a");
+        s.asserts = vec![Assert { from: "$.id".into(), ..Default::default() }];
+        let err = check(&[s]).unwrap_err();
+        assert!(err.contains("Step 1") && err.contains("checks nothing"), "{err}");
+    }
+
+    #[test]
     fn progress_is_reported_and_a_cancel_stops_before_the_next_step() {
         let steps = vec![step("http://h/a"), step("http://h/b"), step("http://h/c")];
         let cancel = std::sync::atomic::AtomicBool::new(false);
@@ -628,6 +717,7 @@ mod tests {
             status: Some(200),
             elapsed_ms: Some(12),
             set: vec![VariableInfo { name: "token".into(), secret: true, has_value: true, remembered: false, value: Some("tok_SECRET".into()), source: "agent".into() }],
+            asserts: vec![],
             error: None,
         };
         let json = serde_json::to_string(&StoredStep::from(&result)).unwrap();

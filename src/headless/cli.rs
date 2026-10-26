@@ -29,6 +29,8 @@ USAGE
   plunger save <name> [send options]    Save a request without sending it (--overwrite replaces)
   plunger workflow list|show|delete|run|save ...
                                         Ordered requests where one response feeds the next
+  plunger run <script.json> [--env FILE] [--data FILE] [--var k=v] [--junit FILE]
+                                        Run a script file of requests, asserts and captures (for CI too)
   plunger install [agent ...] [--scope project|user] [--via exe|uvx] [--dry-run]
                                         Add Plunger to Claude Code, Cursor, Kiro, Codex, Windsurf,
                                         VS Code or Gemini CLI, with steering that says to use it
@@ -184,10 +186,43 @@ json / body / form) plus:
                  the step is not sent and counts as passed. {{previous_status}} is the step before's status
   stop_if        the same condition: the run ends here, successfully
   extract scope  \"scope\": \"run\" keeps the value for this run's later steps only, never stored
+  asserts        checks on the response, e.g. [{\"from\": \"json:$.id\", \"equals\": 7}] (see `plunger run --help`)
 
 Example: [{\"method\":\"POST\",\"url\":\"{{base}}/login\",\"json\":{\"user\":\"{{username}}\",\"password\":\"{{password}}\"},
           \"extract\":[{\"name\":\"token\",\"from\":\"json:$.token\"}]},
          {\"url\":\"{{base}}/me\",\"headers\":{\"Authorization\":\"Bearer {{token}}\"}}]
+",
+        "run" => "\
+plunger run <script.json> [options]     run a script file: ordered requests, each with asserts and captures
+plunger run @-                          ...read from standard input
+
+  --env FILE      variables from a file: NAME=value lines, or a JSON object
+  --var name=value (repeatable)           a variable; wins over --env and the script's own
+  --data FILE     run the whole script once per row: a CSV with a header row, or a JSON array of objects;
+                  the columns are that run's variables
+  --junit FILE    also write the results as JUnit XML (GitHub Actions, Jenkins and GitLab show it as a test report)
+  --quiet         no progress lines on standard error
+
+The script is a JSON array of steps (same as `plunger workflow save`), or
+{\"name\": \"smoke\", \"variables\": {\"base\": \"http://localhost:3000\"}, \"steps\": [...]}.
+A step is a request (method / url / headers / json / body / form, or saved_request) plus:
+  expect_status  the status to expect, or a list [200, 404] (default: any 2xx)
+  asserts        [{\"from\": \"json:$.id\", \"equals\": 7}, {\"from\": \"time\", \"lt\": 500}]
+                 from: json:$.path (or $.path), header:Name, status, time (ms), body
+                 checks: equals, not_equals, contains, exists, gt, gte, lt, lte, type, length; `name` labels one
+  extract        [{\"name\": \"token\", \"from\": \"json:$.token\"}]  keep a value as {{token}} for the next steps
+  skip_if / stop_if                       conditions, see `plunger workflow --help`
+Built-in variables: {{$uuid}} {{$timestamp}} {{$timestampMs}} {{$isoTimestamp}} {{$randomInt}} {{$randomHex}}
+{{$randomString}} and {{$env:NAME}}.
+
+Progress goes to standard error, the full result to standard output as JSON. The first failing step ends a run;
+with --data the next row still runs. Exit code 0 when everything passed, 4 when a step failed.
+
+Example: {\"steps\": [{\"method\": \"POST\", \"url\": \"{{base}}/login\", \"json\": {\"user\": \"{{user}}\"},
+           \"asserts\": [{\"from\": \"json:$.token\", \"type\": \"string\"}],
+           \"extract\": [{\"name\": \"token\", \"from\": \"json:$.token\"}]},
+          {\"url\": \"{{base}}/me\", \"headers\": {\"Authorization\": \"Bearer {{token}}\"},
+           \"asserts\": [{\"from\": \"json:$.user\", \"equals\": \"{{user}}\"}, {\"from\": \"time\", \"lt\": 800}]}]}
 ",
         "install" => "\
 plunger install [agent ...] [options]
@@ -495,6 +530,7 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
             }
             Ok(EXIT_OK)
         }
+        "run" => run_script(&mut args),
         "where" => {
             args.finish()?;
             let dir = crate::store::history::app_data_dir();
@@ -789,6 +825,111 @@ fn file_or_text(value: String) -> Result<String, Exit> {
     read.map_err(|e| usage_error(format!("Couldn't read {}: {e}", if source == "-" { "standard input" } else { source })))
 }
 
+/// `plunger run`: a script file's steps, once or once per data row, with a JUnit report if asked.
+fn run_script(args: &mut Args) -> Result<i32, Exit> {
+    use crate::workflow::{junit, script};
+    let mut file = None;
+    let mut env_file = None;
+    let mut data_file = None;
+    let mut junit_file = None;
+    let mut quiet = false;
+    let mut cli_vars = BTreeMap::new();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--env" => env_file = Some(args.value(&arg)?),
+            "--data" => data_file = Some(args.value(&arg)?),
+            "--junit" => junit_file = Some(args.value(&arg)?),
+            "--quiet" => quiet = true,
+            "--var" => {
+                let (k, v) = args.pair(&arg)?;
+                cli_vars.insert(k, v);
+            }
+            _ if file.is_none() => file = Some(arg),
+            _ => return Err(usage_error(format!("Unexpected argument `{arg}`"))),
+        }
+    }
+    let source = file.ok_or_else(|| usage_error("Give the script file: plunger run script.json"))?;
+    let default_name = std::path::Path::new(&source)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .filter(|_| source != "@-")
+        .unwrap_or("script")
+        .to_string();
+    let text = file_or_text(if source.starts_with('@') { source } else { format!("@{source}") })?;
+    let script = script::parse_script(&text).map_err(usage_error)?;
+    let name = script.name.clone().unwrap_or(default_name);
+
+    // the script's own variables, then the environment file, then --var
+    let mut base = script.variables.clone();
+    if let Some(path) = env_file {
+        let text = file_or_text(format!("@{path}"))?;
+        base.extend(script::parse_env(&text).map_err(usage_error)?);
+    }
+    base.extend(cli_vars);
+    let rows = match data_file {
+        Some(path) => {
+            let rows = script::parse_data(&file_or_text(format!("@{path}"))?).map_err(usage_error)?;
+            if rows.is_empty() {
+                return Err(usage_error("The data file has no rows"));
+            }
+            Some(rows)
+        }
+        None => None,
+    };
+
+    let iterations: Vec<Option<BTreeMap<String, String>>> = match rows {
+        Some(rows) => rows.into_iter().map(Some).collect(),
+        None => vec![None],
+    };
+    let many = iterations.len() > 1;
+    let mut outcomes = Vec::new();
+    for (n, row) in iterations.into_iter().enumerate() {
+        let mut variables = base.clone();
+        if let Some(row) = &row {
+            variables.extend(row.clone());
+        }
+        let label = if many { format!("{name} [row {}]", n + 1) } else { name.clone() };
+        if many && !quiet {
+            eprintln!("{label}");
+        }
+        let result = workflow::run_inline(&name, &script.steps, &variables, Source::Cli).map_err(error)?;
+        if !quiet {
+            for step in &result.steps {
+                let verdict = if step.skipped { "SKIP" } else if step.ok { "PASS" } else { "FAIL" };
+                let status = step.status.map(|s| format!(" {s}")).unwrap_or_default();
+                let took = step.elapsed_ms.map(|ms| format!(" {ms} ms")).unwrap_or_default();
+                eprintln!("{verdict} {}. {}{status}{took}", step.step, step.label);
+                for a in step.asserts.iter().filter(|a| !a.ok) {
+                    eprintln!("       {}: {}", a.name, a.message.as_deref().unwrap_or("failed"));
+                }
+                if step.asserts.iter().all(|a| a.ok) {
+                    if let Some(e) = &step.error {
+                        eprintln!("       {e}");
+                    }
+                }
+            }
+        }
+        outcomes.push((label, row, result));
+    }
+
+    if let Some(path) = junit_file {
+        let runs: Vec<(String, &workflow::WorkflowResult)> = outcomes.iter().map(|(label, _, r)| (label.clone(), r)).collect();
+        std::fs::write(&path, junit::to_junit(&runs)).map_err(|e| error(format!("Couldn't write {path}: {e}")))?;
+    }
+    let ok = outcomes.iter().all(|(_, _, r)| r.ok);
+    if !quiet {
+        let passed = outcomes.iter().filter(|(_, _, r)| r.ok).count();
+        eprintln!("{} of {} run{} passed", passed, outcomes.len(), if outcomes.len() == 1 { "" } else { "s" });
+    }
+    if many {
+        let runs: Vec<_> = outcomes.iter().map(|(label, row, result)| serde_json::json!({ "run": label, "data": row, "result": result })).collect();
+        print_json(&serde_json::json!({ "script": name, "ok": ok, "runs": runs }));
+    } else if let Some((_, _, result)) = outcomes.first() {
+        print_json(result);
+    }
+    Ok(if ok { EXIT_OK } else { EXIT_HTTP_ERROR })
+}
+
 /// A cursor over the arguments with small helpers for option values.
 struct Args {
     items: std::vec::IntoIter<String>,
@@ -911,7 +1052,7 @@ mod tests {
 
     #[test]
     fn every_command_in_the_usage_has_its_own_help() {
-        for command in ["send", "vars", "saved", "save", "workflow", "install", "history", "import", "export", "mcp", "where"] {
+        for command in ["send", "vars", "saved", "save", "workflow", "run", "install", "history", "import", "export", "mcp", "where"] {
             assert!(command_help(command).is_some(), "{command}");
         }
         assert!(command_help("nonsense").is_none());

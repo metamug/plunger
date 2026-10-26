@@ -61,7 +61,7 @@ A small desktop app that sends an HTTP request and shows you what came back.
 - **Request:** GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS. Params, headers and a Bearer token field.
 - **Body:** JSON, XML, form-urlencoded, raw text, or multipart form-data with real file uploads.
 - **Response:** status, time and size, the headers, and the body as a collapsible JSON tree. Copy it or save it to a file.
-- **Variables:** `{{name}}` anywhere in the request, plus `{{$uuid}}`, `{{$timestamp}}`, `{{$randomInt}}` and `{{$env:NAME}}` for reading an OS environment variable at send time. A request with an undefined variable is refused, never sent with the placeholder in it.
+- **Variables:** `{{name}}` anywhere in the request, plus `{{$uuid}}`, `{{$timestamp}}`, `{{$timestampMs}}`, `{{$isoTimestamp}}`, `{{$randomInt}}`, `{{$randomHex}}`, `{{$randomString}}` and `{{$env:NAME}}` for reading an OS environment variable at send time. A request with an undefined variable is refused, never sent with the placeholder in it.
 - **Import and export:** paste a curl command (bash or Windows cmd, including `-F` uploads) or a PowerShell `Invoke-WebRequest` / `Invoke-RestMethod` command, such as DevTools' Copy as cURL or Copy as PowerShell; or open a HAR file. Copy any request back out as curl (bash), curl (Windows cmd), PowerShell or a JavaScript `fetch` call with **Ctrl+Shift+C** or **File > Export request**, shown with syntax highlighting.
 - **Keep what matters:** local history, named saved requests (Ctrl+S) and tabs (Ctrl+T).
 - **Local HTTPS:** skip certificate checks for a self-signed dev server, with a warning that stays visible while it's on.
@@ -113,6 +113,22 @@ When one response feeds the next request (log in, then use the token; look up an
 </p>
 
 <p align="center"><sub>Step 1 looks up the id of the "Done" transition and keeps it for this run only; step 2 uses it. Steps can expect several statuses, be skipped or stop the run on a condition. Details in <a href="docs/agents.md">docs/agents.md</a>.</sub></p>
+
+## Scripts and CI
+
+`plunger run script.json` runs a file of requests where each step can check its response (`asserts`) and hand values to the next (`extract`). It prints a PASS/FAIL line per step, exits non-zero when anything fails, and `--junit report.xml` writes a test report your CI understands. `--env` loads variables from a file and `--data` runs the script once per row of a CSV.
+
+```json
+{"steps": [
+  {"method": "POST", "url": "{{base}}/login", "json": {"username": "demo", "password": "{{password}}"},
+   "asserts": [{"from": "json:$.token", "type": "string"}],
+   "extract": [{"name": "token", "from": "json:$.token"}]},
+  {"url": "{{base}}/me", "headers": {"Authorization": "Bearer {{token}}"},
+   "asserts": [{"from": "json:$.user", "equals": "demo"}, {"from": "time", "lt": 800}]}
+]}
+```
+
+There is no scripting language to learn or sandbox to trust: a script is data, so it diffs and reviews like data. See `plunger run --help` for every option.
 
 ## Small by design
 

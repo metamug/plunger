@@ -1,0 +1,39 @@
+{
+  "name": "shop smoke test",
+  "variables": { "base": "http://127.0.0.1:18095", "username": "demo" },
+  "steps": [
+    {
+      "label": "log in",
+      "method": "POST",
+      "url": "{{base}}/login",
+      "json": { "username": "{{username}}", "password": "demo" },
+      "asserts": [
+        { "from": "json:$.token", "type": "string" },
+        { "from": "time", "lt": 2000, "name": "answers within 2 s" }
+      ],
+      "extract": [{ "name": "token", "from": "json:$.token" }]
+    },
+    {
+      "label": "who am I",
+      "url": "{{base}}/me",
+      "headers": { "Authorization": "Bearer {{token}}", "X-Request-Id": "{{$uuid}}" }
+    },
+    {
+      "label": "list items",
+      "url": "{{base}}/items?page=1&per_page=5",
+      "asserts": [
+        { "from": "status", "equals": 200 },
+        { "from": "header:Content-Type", "contains": "json" }
+      ]
+    },
+    {
+      "label": "order an item",
+      "method": "POST",
+      "url": "{{base}}/orders",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "json": { "item_id": 1, "qty": 2 },
+      "expect_status": 201,
+      "asserts": [{ "from": "header:Location", "exists": true }]
+    }
+  ]
+}

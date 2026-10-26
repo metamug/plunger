@@ -1,5 +1,6 @@
 //! `{{name}}` variable substitution, plus a few dynamic built-ins
-//! (`{{$uuid}}`, `{{$timestamp}}`, `{{$randomInt}}`, and `{{$env:NAME}}`).
+//! (`{{$uuid}}`, `{{$timestamp}}`, `{{$timestampMs}}`, `{{$isoTimestamp}}`, `{{$randomInt}}`, `{{$randomHex}}`,
+//! `{{$randomString}}`, and `{{$env:NAME}}`).
 
 use crate::domain::model::{BodyMode, PersistedState, Variable};
 use std::collections::BTreeSet;
@@ -342,8 +343,26 @@ fn dynamic_value(name: &str) -> Option<String> {
         "$uuid" => Some(uuid_v4()),
         "$timestamp" => Some(SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()).to_string()),
         "$randomInt" => Some((random_u64() % 1000).to_string()),
+        "$timestampMs" => Some(SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis()).to_string()),
+        "$isoTimestamp" => time::OffsetDateTime::now_utc().format(&time::format_description::well_known::Rfc3339).ok(),
+        "$randomHex" => Some(format!("{:016x}", random_u64())),
+        "$randomString" => Some(random_string(12)),
         _ => None,
     }
+}
+
+/// `len` random letters and digits.
+fn random_string(len: usize) -> String {
+    const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let mut out = String::with_capacity(len);
+    while out.len() < len {
+        for byte in random_u64().to_le_bytes() {
+            if out.len() < len {
+                out.push(ALPHABET[byte as usize % ALPHABET.len()] as char);
+            }
+        }
+    }
+    out
 }
 
 fn uuid_v4() -> String {
@@ -418,6 +437,19 @@ mod tests {
         assert_eq!(&u[14..15], "4");
         assert!(parts[2].parse::<u64>().unwrap() > 1_700_000_000);
         assert!(parts[3].parse::<u32>().unwrap() < 1000);
+    }
+
+    #[test]
+    fn the_other_dynamic_variables_have_the_right_shape() {
+        let (out, res) = resolve("{{$timestampMs}}|{{$isoTimestamp}}|{{$randomHex}}|{{$randomString}}");
+        assert!(res.is_ok());
+        let parts: Vec<&str> = out.split('|').collect();
+        assert!(parts[0].parse::<u64>().unwrap() > 1_700_000_000_000);
+        assert!(parts[1].ends_with('Z') && parts[1].contains('T'), "{}", parts[1]);
+        assert_eq!(parts[2].len(), 16);
+        assert!(parts[2].chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(parts[3].len(), 12);
+        assert!(parts[3].chars().all(|c| c.is_ascii_alphanumeric()));
     }
 
     #[test]

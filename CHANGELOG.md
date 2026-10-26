@@ -6,6 +6,9 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ### Added
 - An **XML** body type next to JSON: the editor is highlighted, the request is sent as `application/xml` unless you set a Content-Type yourself, and `{{variables}}` are filled in. A curl command or an agent's text body that says XML (`application/xml`, `text/xml`, `+xml`) opens in it, and the curl, PowerShell, Python and JavaScript exports carry the right Content-Type. Thanks @tayfuryldz (#58, #9); the change is ported onto the current code.
+- **Scripts, without code:** `plunger run script.json` runs a file of requests and exits non-zero when one fails, so it works in CI in place of Newman or `bru run`. Each step can have `asserts` (`{"from": "json:$.id", "equals": 7}`; `from` is a JSON path, `header:Name`, `status`, `time` or `body`; checks are `equals`, `not_equals`, `contains`, `exists`, `gt`, `gte`, `lt`, `lte`, `type`, `length`), and every assert is reported, not just the first failure. `--env FILE` (NAME=value lines or JSON), `--var`, `--data FILE` (CSV or JSON, one run per row) and `--junit FILE` (JUnit XML for GitHub Actions, Jenkins, GitLab). Saved workflows and `save_workflow` take `asserts` too.
+- More built-in variables: `{{$timestampMs}}`, `{{$isoTimestamp}}`, `{{$randomHex}}` and `{{$randomString}}`.
+
 ## [0.7.4] - 2026-10-21
 
 Secrets stay out of what is stored, and two TLS advisories are fixed.
