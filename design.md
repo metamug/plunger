@@ -11,7 +11,7 @@ Design rules that decide most questions:
 - **One job: see what an API did.** Features that don't help with that (accounts, sync, collaboration, monitors) don't belong.
 - **Local only.** No account, no cloud, no telemetry, no update checks. The only traffic is the requests that are sent.
 - **One engine.** The window, the command line and MCP send through the same code, so their safety behaviour can't drift apart.
-- **Small.** One exe of about 7 MB, no webview, no async runtime in the GUI path.
+- **Small.** One exe of about 12 MB, no webview, no async runtime in the GUI path.
 - **Secrets never touch disk by accident.** Credentials are blanked before anything is written, and only stored (in the OS credential store) if the user opts in.
 
 ## 2. Big picture
@@ -89,7 +89,7 @@ Details that matter:
 | | `store/secrets.rs` | Remembered secrets in the OS credential store. |
 | Agents | `engine/` | `session.rs` (variables, remembered secrets), `mod.rs` (send with history), `response.rs` (the `Scrubber` and agent-shaped results). |
 | | `agent/` | `mod.rs` (send), `requests.rs` (saved requests, history, curl), `variables.rs`: the operations shared by the CLI and MCP. |
-| | `workflow/` | Saved sequences of requests, and pulling a value out of a response (`extract.rs`). |
+| | `workflow/` | Saved sequences of requests, and pulling a value out of a response (`extract.rs`); the runner with paging, loops, polling and retry (`mod.rs`, `flow.rs`), script, env and data files (`script.rs`) and JUnit output (`junit.rs`). |
 | | `headless/install.rs`, `crates/mcp-install` | `plunger install`: Plunger's server and instructions on top of the `mcp-install` crate, which holds each AI tool's config files and the careful writing (merge, backup, markers, dry run). |
 | | `headless/cli.rs`, `headless/curl_cli.rs`, `headless/mcp.rs`, `headless/mcp_content.rs` | Argument parsing, output and exit codes; `plunger curl`; MCP tool definitions; MCP resources and prompts. |
 
@@ -207,7 +207,8 @@ What is deliberately *not* prevented: an agent can put `{{token}}` into a reques
 | Agents read the window's state file for variables | No second store to keep in sync. | Up to about 30 seconds of lag. |
 | Saved requests live in the history table | One list, one schema, and "name it to keep it" is natural. | A column-per-feature table that grows by migration. |
 | `rmcp`, the official MCP SDK | Correct protocol handling, typed tools and schemas. | A tokio dependency (kept to the MCP path). |
-| No automatic retry | A human is watching, and clicking Send again is a retry. | None for the intended use. |
+| No automatic retry | A human is watching, and clicking Send again is a retry. A workflow step can ask for `retry`, because nobody is watching a run. | None for the intended use. |
+| Scripts are data (steps with asserts, paging, loops), with jq only for the final reshaping | A script file diffs and reviews like data, has no sandbox to escape, and an agent can write and check it before it runs. jq (the `jaq` crate) has no files, network or environment, so the one place that computes cannot do harm. | About 1.5 MB of binary. Work that needs real code stays in a script that calls `plunger send`. |
 
 ## 12. Known limits and open items
 

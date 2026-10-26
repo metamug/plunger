@@ -19,7 +19,7 @@ All three send requests through the same path and write to the same SQLite datab
 | `domain/` | The request itself: form state (`model`), building (`request`) and sending (`http`), `{{variables}}`, the query string, redaction, outlines, file names, time formatting | nothing else in the program |
 | `store/` | The SQLite history (`history/`: requests and saved requests, with agent variables and workflows plus their runs in their own files), the audit log it is derived from (`log.rs`: events, the hash chain, `apply`, verify) and the opt-in secret store | `domain` |
 | `convert/` | curl, cmd and PowerShell commands and HAR, in and out; JavaScript `fetch` out | `domain` |
-| `engine/`, `agent/`, `workflow/` | What an agent gets: sending with secrets masked, the tool logic, ordered steps with `extract` | `domain`, `store` |
+| `engine/`, `agent/`, `workflow/` | What an agent gets: sending with secrets masked, the tool logic, ordered steps with `extract`, asserts, paging, loops, polling, retry and a jq `return` (`workflow/flow.rs`, `domain/transform.rs`), and `plunger run` files with JUnit output | `domain`, `store` |
 | `headless/` | The ways in without a window: the CLI, `plunger curl`, the MCP server, `plunger install` | everything above |
 | `ui/` | Drawing helpers: theme, icons, highlighting, the JSON tree, fallback fonts | `domain` |
 | `app/` | The window: tabs, panels, menus and actions, sidebar, workflows window | everything above |

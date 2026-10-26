@@ -112,7 +112,7 @@ When one response feeds the next request (log in, then use the token; look up an
   <img src="docs/images/workflow-run.gif" alt="The workflow window running two steps against a local issue tracker: transitions finishes with 200 and hands transition_id to the second step, move to Done returns 204, and the run ends with all 2 steps passed" width="760">
 </p>
 
-<p align="center"><sub>Step 1 looks up the id of the "Done" transition and keeps it for this run only; step 2 uses it. Steps can expect several statuses, be skipped or stop the run on a condition. Details in <a href="docs/agents.md">docs/agents.md</a>.</sub></p>
+<p align="center"><sub>Step 1 looks up the id of the "Done" transition and keeps it for this run only; step 2 uses it. Steps can expect several statuses, be skipped or stop the run on a condition, check their responses (`asserts`), page through lists, repeat per item, wait for a job and return a short answer (see [Scripts and CI](#scripts-and-ci)). Details in <a href="docs/agents.md">docs/agents.md</a>.</sub></p>
 
 ## Scripts and CI
 
@@ -134,7 +134,7 @@ There is no scripting language to learn or sandbox to trust: a script is data, s
 
 ## Small by design
 
-Built in Rust with [egui](https://github.com/emilk/egui) because we wanted a small, fast, native application. No webview, no bundled browser: one exe of about 7 MB, which is also a command-line client and an MCP server for AI agents.
+Built in Rust with [egui](https://github.com/emilk/egui) because we wanted a small, fast, native application. No webview, no bundled browser: one exe of about 12 MB, which is also a command-line client and an MCP server for AI agents.
 
 No account to create. No cloud to sync to. The only network traffic is the requests that get sent, by you or by an agent you've connected: no analytics, no telemetry, no update checks. History and saved requests live in one local folder, `%APPDATA%\Plunger\data`. Bearer tokens and secret variables are never written to a file unless you tick "remember", which keeps them in Windows Credential Manager. Credential-looking headers are blanked before history is saved. Details are in the [privacy policy](docs/privacy.md).
 
