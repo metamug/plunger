@@ -4,6 +4,10 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-04
+
+What a real Metabase and Jira session cost an agent, and what hid the reason when a request failed.
+
 ### Fixed
 - **`select` no longer drags the rest of the response along.** A `select` that returned values came back with a 13 KB `outline` of the body next to them, and when any one path failed it also returned every response header (about 3 KB for a Metabase or GitHub response). Now a `select` that answered returns only what it selected, no outline and no headers unless `include_headers` asks for them. If every path failed the whole response still comes back, with only the relevant headers.
 - A saved request keeps `X-Atlassian-Token: no-check`. The header's name looks like a credential, so its value was blanked, and Jira and Confluence uploads failed with a 404. A fixed switch like that is not a secret. A save now also says which header values it did not keep (in `not_saved`), with the `{{variable}}` form to use instead.
