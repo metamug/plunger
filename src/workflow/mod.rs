@@ -225,7 +225,16 @@ pub struct WorkflowResult {
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
 pub struct WorkflowInfo {
     pub name: String,
+    /// The steps. `list_workflows` leaves them out unless asked (`include_steps`); `step_count` and
+    /// `step_labels` say what is in there.
+    #[serde(default)]
     pub steps: Vec<Step>,
+    /// How many steps there are (always present).
+    #[serde(default)]
+    pub step_count: usize,
+    /// Each step's label, or its URL or saved request when it has none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub step_labels: Vec<String>,
     /// The group it is filed under (`Jira`, `Jira/Issues`), when it has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
@@ -351,7 +360,22 @@ pub fn save(name: &str, steps: Vec<Step>, overwrite: bool, group: Option<&str>) 
         history.set_workflow_group(&name, group.as_deref()).map_err(|e| e.to_string())?;
     }
     let group = history.workflow_groups().map_err(|e| e.to_string())?.remove(&name);
-    Ok(WorkflowInfo { name, steps, group })
+    Ok(info_of(name, steps, group, true))
+}
+
+/// A step's name for a list: its label, or the saved request it sends, or `METHOD url`.
+fn step_label(step: &Step) -> String {
+    step.label.clone().unwrap_or_else(|| {
+        if !step.has_request() {
+            return "return".to_string();
+        }
+        step.request.saved_request.clone().unwrap_or_else(|| format!("{} {}", step.request.method.as_deref().unwrap_or("GET"), step.request.url.as_deref().unwrap_or("")))
+    })
+}
+
+fn info_of(name: String, steps: Vec<Step>, group: Option<String>, include_steps: bool) -> WorkflowInfo {
+    let step_labels = steps.iter().map(step_label).collect();
+    WorkflowInfo { name, step_count: steps.len(), step_labels, steps: if include_steps { steps } else { Vec::new() }, group }
 }
 
 pub(crate) fn parse_steps(json: &str) -> Result<Vec<Step>, String> {
@@ -365,11 +389,11 @@ pub fn get(name: &str) -> Result<WorkflowInfo, String> {
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("No workflow named '{}'. See list_workflows.", name.trim()))?;
     let group = history.workflow_groups().map_err(|e| e.to_string())?.remove(name.trim());
-    Ok(WorkflowInfo { name: name.trim().to_string(), steps: parse_steps(&json)?, group })
+    Ok(info_of(name.trim().to_string(), parse_steps(&json)?, group, true))
 }
 
 /// The workflows, optionally only those in `group` (or under it).
-pub fn list(group: Option<&str>) -> Result<WorkflowList, String> {
+pub fn list(group: Option<&str>, include_steps: bool) -> Result<WorkflowList, String> {
     let history = agent::open_history()?;
     let groups = history.workflow_groups().map_err(|e| e.to_string())?;
     let mut workflows = Vec::new();
@@ -378,7 +402,7 @@ pub fn list(group: Option<&str>) -> Result<WorkflowList, String> {
         if group.is_some_and(|g| !crate::store::history::group_matches(filed.as_deref(), g)) {
             continue;
         }
-        workflows.push(WorkflowInfo { name, steps: parse_steps(&json)?, group: filed });
+        workflows.push(info_of(name, parse_steps(&json)?, filed, include_steps));
     }
     Ok(WorkflowList { workflows })
 }

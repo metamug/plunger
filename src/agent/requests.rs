@@ -144,6 +144,11 @@ pub(super) fn save_request_with(
     shown.group = engine::find_saved(history, name.trim()).ok().and_then(|e| e.group);
     shown.options = Some(options).filter(|o| !o.is_empty());
     shown.not_saved = not_saved(params);
+    for name in crate::domain::redact::blanked_header_names(&state.headers_text) {
+        shown.not_saved.push(format!(
+            "header `{name}`: its name looks like a credential, so its value is not stored. Use a {{{{variable}}}} (for example `{name}: {{{{your_value}}}}`) so the request keeps working when it is sent by name"
+        ));
+    }
     Ok(shown)
 }
 

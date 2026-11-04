@@ -229,15 +229,37 @@ pub fn redact_raw_body(text: &str) -> String {
     }
 }
 
+/// A header whose name looks like a credential but whose value is a fixed switch, not a secret:
+/// `X-Atlassian-Token: no-check` (Jira and Confluence need it on an upload). Blanking it breaks the request
+/// and hides nothing.
+fn is_plain_switch(name: &str, value: &str) -> bool {
+    name.trim().eq_ignore_ascii_case("x-atlassian-token") && value.trim().eq_ignore_ascii_case("no-check")
+}
+
+fn would_blank(name: &str, value: &str) -> bool {
+    is_sensitive_header(name) && !is_placeholder_only(value) && !is_plain_switch(name, value) && !value.trim().is_empty()
+}
+
 /// `Name: Value` lines with credential-bearing values blanked out.
 pub fn redact_headers_text(text: &str) -> String {
     text.lines()
         .map(|line| match line.split_once(':') {
-            Some((name, value)) if is_sensitive_header(name) && !is_placeholder_only(value) => format!("{}:", name.trim_end()),
+            Some((name, value)) if is_sensitive_header(name) && !is_placeholder_only(value) && !is_plain_switch(name, value) => {
+                format!("{}:", name.trim_end())
+            }
             _ => line.to_string(),
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// The names of the headers whose values [`redact_headers_text`] will blank, so a save can say so.
+pub fn blanked_header_names(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| line.split_once(':'))
+        .filter(|(name, value)| would_blank(name, value))
+        .map(|(name, _)| name.trim().to_string())
+        .collect()
 }
 
 /// Blanks credential-looking query parameters and any `user:password@`
@@ -396,6 +418,13 @@ mod tests {
         for h in ["Accept", "Content-Type", "X-Request-Id", "User-Agent", "Cache-Control"] {
             assert!(!is_sensitive_header(h), "{h}");
         }
+    }
+
+    #[test]
+    fn a_fixed_switch_header_is_not_blanked_and_a_real_credential_is() {
+        // Jira's upload needs this one, and "no-check" is not a secret
+        assert_eq!(redact_headers_text("X-Atlassian-Token: no-check\nX-Atlassian-Token: abc123\nAuthorization: Bearer x"), "X-Atlassian-Token: no-check\nX-Atlassian-Token:\nAuthorization:");
+        assert_eq!(blanked_header_names("X-Atlassian-Token: no-check\nX-Api-Key: k1\nAccept: */*\nAuthorization: Bearer {{t}}"), ["X-Api-Key"]);
     }
 
     #[test]

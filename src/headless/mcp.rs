@@ -125,6 +125,16 @@ pub struct ListParams {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct ListWorkflowsParams {
+    /// Only the ones in this group, or under it ("Jira" includes "Jira/Issues").
+    #[serde(default)]
+    pub group: Option<String>,
+    /// Include every workflow's full steps. Off by default: the list is names, groups and step labels.
+    #[serde(default)]
+    pub include_steps: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct SetGroupParams {
     /// `request` (a saved request) or `workflow`.
     pub kind: String,
@@ -145,6 +155,10 @@ pub struct RunWorkflowParams {
     /// runs do not leave values behind. Values extracted with `scope: "run"` are never stored at all.
     #[serde(default)]
     pub cleanup: Option<bool>,
+    /// Leave the last step's full response out of the result (`false`). The step results, the variables set and
+    /// any `return` output are still there; use this when the last response is large and you do not need it.
+    #[serde(default)]
+    pub include_last_response: Option<bool>,
 }
 
 /// A tool's structured result is a JSON object, so lists are wrapped. MCP 2025-06-18 and 2025-11-25
@@ -333,13 +347,22 @@ impl PlungerMcp {
     /// variables it set, plus the last response in full.
     #[tool(name = "run_workflow", annotations(title = "Run a workflow", open_world_hint = true))]
     async fn run_workflow(&self, Parameters(p): Parameters<RunWorkflowParams>) -> Result<Json<WorkflowResult>, String> {
-        blocking(move || workflow::run(&p.name, &p.variables.unwrap_or_default(), Source::Mcp, p.cleanup.unwrap_or(false))).await.map(Json)
+        blocking(move || {
+            let mut result = workflow::run(&p.name, &p.variables.unwrap_or_default(), Source::Mcp, p.cleanup.unwrap_or(false))?;
+            if p.include_last_response == Some(false) {
+                result.last_response = None;
+            }
+            Ok(result)
+        })
+        .await
+        .map(Json)
     }
 
-    /// List the saved workflows with their steps.
+    /// List the saved workflows: name, group, how many steps and each step's label. Pass `include_steps: true` for the
+    /// full steps (they are long; ask for them only when you need to read or change one).
     #[tool(name = "list_workflows", annotations(title = "List workflows", read_only_hint = true))]
-    async fn list_workflows(&self, Parameters(p): Parameters<ListParams>) -> Result<Json<WorkflowList>, String> {
-        blocking(move || workflow::list(p.group.as_deref())).await.map(Json)
+    async fn list_workflows(&self, Parameters(p): Parameters<ListWorkflowsParams>) -> Result<Json<WorkflowList>, String> {
+        blocking(move || workflow::list(p.group.as_deref(), p.include_steps.unwrap_or(false))).await.map(Json)
     }
 
     /// Remove a workflow by name. Returns what was removed.

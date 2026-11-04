@@ -112,8 +112,8 @@ python scripts/mcp-demo-client.py path\to\plunger.exe
 | `delete_variable` | Removes a variable an agent set. The user's own variables cannot be changed or removed by an agent. |
 | `export_curl` | A saved request or history entry as a curl command, with `{{variables}}` left as placeholders. |
 | `save_workflow` | Saves a workflow: ordered steps, each described like `send_request`, plus `extract` and `expect_status`. See [Workflows](#workflows). |
-| `run_workflow` | Runs a workflow by name, optionally with `variables` for every step. Returns each step's status and the variables it set (secrets by name only), and the last response in full. |
-| `list_workflows` / `delete_workflow` | List the saved workflows with their steps, or remove one. |
+| `run_workflow` | Runs a workflow by name, optionally with `variables` for every step. Returns each step's status and the variables it set (secrets by name only), and the last response in full (`include_last_response: false` leaves that out). |
+| `list_workflows` / `delete_workflow` | List the saved workflows (name, group, step count and step labels; `include_steps: true` adds the full steps), or remove one. |
 
 The read-only tools are marked as such, so a client can run them without asking.
 

@@ -79,7 +79,7 @@ pub fn read(uri: &str, guide: &str) -> Result<String, String> {
         SCRIPTING_URI => Ok(SCRIPTING_GUIDE.to_string()),
         VARIABLES_URI => json(&agent::list_variables()),
         SAVED_URI => json(&agent::list_saved_requests(None)?),
-        WORKFLOWS_URI => json(&workflow::list(None)?),
+        WORKFLOWS_URI => json(&workflow::list(None, true)?),
         HISTORY_URI => json(&agent::get_history(Some(20), None)?),
         _ => {
             if let Some(name) = uri.strip_prefix(SAVED_PREFIX) {
@@ -102,7 +102,7 @@ pub fn dynamic() -> Vec<(String, String, &'static str)> {
             out.push((format!("{SAVED_PREFIX}{}", encode_name(&name)), format!("saved request: {name}"), "application/json"));
         }
     }
-    if let Ok(list) = workflow::list(None) {
+    if let Ok(list) = workflow::list(None, false) {
         for w in list.workflows {
             out.push((format!("{WORKFLOW_PREFIX}{}", encode_name(&w.name)), format!("workflow: {}", w.name), "application/json"));
         }

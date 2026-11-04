@@ -489,7 +489,7 @@ fn dispatch(args: Vec<String>) -> Result<i32, Exit> {
                             return Err(usage_error(format!("Unexpected argument `{arg}`")));
                         }
                     }
-                    print_json(&workflow::list(group.as_deref()).map_err(error)?);
+                    print_json(&workflow::list(group.as_deref(), false).map_err(error)?);
                 }
                 Some("group") => {
                     let name = args.value("workflow group")?;

@@ -347,10 +347,17 @@ fn is_relevant_header(name: &str) -> bool {
         || n.starts_with("x-rate-limit")
 }
 
-/// Sets the response headers as `include_headers` says; without it, none when `select` was used (a header
-/// is still available as `header:Name`) and all otherwise. A failed `select` returns the whole response.
+/// Sets the response headers as `include_headers` says; without it, none when `select` returned values (a header
+/// is still available as `header:Name`), only the relevant ones when every `select` path failed, and all otherwise.
 fn apply_header_mode(shaped: &mut AgentResponse, every_header: Vec<engine::NameValue>, params: &SendParams) {
-    let default = if params.select.is_some() && shaped.problems.is_empty() { "none" } else { "all" };
+    // `select` answered (at least one value came back): the values are the whole answer, so no headers. If every
+    // path failed the response comes back whole, with only the headers worth reading.
+    let answered = shaped.selected.as_ref().is_some_and(|s| !s.is_empty());
+    let default = match (&params.select, answered) {
+        (Some(_), true) => "none",
+        (Some(_), false) => "relevant",
+        (None, _) => "all",
+    };
     let mode = params.include_headers.as_deref().map(|m| m.trim().to_ascii_lowercase());
     shaped.headers = match mode.as_deref().unwrap_or(default) {
         "none" => Vec::new(),
@@ -405,6 +412,7 @@ fn apply_select(shaped: &mut AgentResponse, raw: &ResponseData, paths: &[String]
     shaped.selected = Some(selected);
     shaped.json = None;
     shaped.body = None;
+    shaped.outline = None;
     shaped.body_cut_from_chars = None;
     shaped.headers.clear();
 }
@@ -796,6 +804,40 @@ mod tests {
     }
 
     #[test]
+    fn a_select_that_answered_returns_no_outline_and_no_headers() {
+        let raw = response_with(r#"{"key": "PRJ-1", "other": [1, 2, 3]}"#);
+        let mut out = shaped(serde_json::json!({"key": "PRJ-1"}));
+        out.outline = Some(serde_json::json!({"key": "string"}));
+        out.headers = vec![engine::NameValue { name: "x-big".into(), value: "y".repeat(500) }];
+        let every = out.headers.clone();
+        let params = SendParams { select: Some(vec!["$.key".into(), "$.nope".into()]), ..Default::default() };
+        apply_select(&mut out, &raw, params.select.as_ref().unwrap(), &Scrubber::new(&PersistedState::default(), ""));
+        apply_header_mode(&mut out, every, &params);
+        assert!(out.outline.is_none(), "the outline is for a body that was returned instead of selected");
+        assert!(out.headers.is_empty(), "a partly failed select still answered: headers only if asked for");
+        assert_eq!(out.selected.as_ref().unwrap()["$.key"], "PRJ-1");
+    }
+
+    #[test]
+    fn when_every_select_path_fails_only_the_relevant_headers_come_back() {
+        let raw = response_with("<html>502</html>");
+        let mut out = shaped(serde_json::Value::Null);
+        let every = vec![
+            engine::NameValue { name: "content-security-policy".into(), value: "x".repeat(800) },
+            engine::NameValue { name: "retry-after".into(), value: "3".into() },
+        ];
+        out.headers = every.clone();
+        let params = SendParams { select: Some(vec!["$.nope".into()]), ..Default::default() };
+        apply_select(&mut out, &raw, params.select.as_ref().unwrap(), &Scrubber::new(&PersistedState::default(), ""));
+        apply_header_mode(&mut out, every.clone(), &params);
+        assert_eq!(out.headers.iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), ["retry-after"]);
+        // asking for all of them still works
+        let asked = SendParams { include_headers: Some("all".into()), ..params };
+        apply_header_mode(&mut out, every, &asked);
+        assert_eq!(out.headers.len(), 2);
+    }
+
+    #[test]
     fn selecting_below_a_null_is_null_not_a_problem() {
         let raw = response_with(r#"{"fields": {"assignee": null, "summary": "x"}}"#);
         let mut out = shaped(serde_json::json!({"fields": {"assignee": null}}));
@@ -985,6 +1027,10 @@ mod tests {
         ]);
         let run = |mode: Option<&str>, select: bool| {
             let mut out = shaped(serde_json::json!({"a": 1}));
+            if select {
+                // what apply_select leaves when a path was read
+                out.selected = Some(BTreeMap::from([("$.a".to_string(), serde_json::json!(1))]));
+            }
             let params = SendParams {
                 include_headers: mode.map(str::to_string),
                 select: select.then(|| vec!["$.a".to_string()]),
