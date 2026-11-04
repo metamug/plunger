@@ -9,10 +9,12 @@ All notable changes to Plunger. The format follows [Keep a Changelog](https://ke
 - A saved request keeps `X-Atlassian-Token: no-check`. The header's name looks like a credential, so its value was blanked, and Jira and Confluence uploads failed with a 404. A fixed switch like that is not a secret. A save now also says which header values it did not keep (in `not_saved`), with the `{{variable}}` form to use instead.
 
 ### Changed
+- `run_workflow` leaves out the last raw response when a `return` produced the output (the output is the answer); `include_last_response` overrides either way.
 - `list_workflows` returns each workflow's name, group, step count and step labels, not every step in full (`include_steps: true` brings them back). A project with a few long workflows cost an agent about 12 KB each time it only wanted the names.
-- `run_workflow` takes `include_last_response: false` to leave the last step's full response out of the result.
 
 ### Added
+- **`select` accepts a jq program**: `"jq:[.items[] | {id, name}]"` reshapes the whole body in one call, without a workflow. It is the same pure jq the `return` of a script uses (no files, network or environment), and a mistake in it is refused before anything is sent.
+- **A `select` on a 4xx or 5xx keeps the start of the body** as `error_body` (400 characters, secrets masked). A 404 used to come back as "body is not JSON" with the reason hidden, and finding it took a second call.
 - **Teaching agents to script:** the MCP server serves the scripting guide as the resource `plunger://scripting`, has a `build_script` prompt that walks an agent through building a paging, looping or waiting workflow with a `return`, and the instructions and the steering file that `plunger install` writes tell agents to do their looping in workflow steps instead of a throwaway script. The guide is [docs/scripting.md](docs/scripting.md); [examples/](examples/) has scripts for GitHub, Jira, Slack, waiting for a job and CI. A test keeps every example and every JSON block of the guide valid.
 
 ## [0.8.0] - 2026-10-26

@@ -155,8 +155,9 @@ pub struct RunWorkflowParams {
     /// runs do not leave values behind. Values extracted with `scope: "run"` are never stored at all.
     #[serde(default)]
     pub cleanup: Option<bool>,
-    /// Leave the last step's full response out of the result (`false`). The step results, the variables set and
-    /// any `return` output are still there; use this when the last response is large and you do not need it.
+    /// Whether the result carries the last step's full response. Default: yes, unless a `return` produced the
+    /// output (then it is left out, since the output is the answer). `true` or `false` overrides. The step results,
+    /// the variables set and the `return` output are always there.
     #[serde(default)]
     pub include_last_response: Option<bool>,
 }
@@ -349,7 +350,8 @@ impl PlungerMcp {
     async fn run_workflow(&self, Parameters(p): Parameters<RunWorkflowParams>) -> Result<Json<WorkflowResult>, String> {
         blocking(move || {
             let mut result = workflow::run(&p.name, &p.variables.unwrap_or_default(), Source::Mcp, p.cleanup.unwrap_or(false))?;
-            if p.include_last_response == Some(false) {
+            // a `return` produced the answer: the last raw response is then dead weight unless asked for
+            if !p.include_last_response.unwrap_or(result.output.is_none()) {
                 result.last_response = None;
             }
             Ok(result)
@@ -519,6 +521,7 @@ mod tests {
             size_bytes: 0,
             json: None,
             body: None,
+            error_body: None,
             body_cut_from_chars: None,
             truncated_at_10mb: false,
             binary: false,

@@ -73,7 +73,9 @@ pub struct SendParams {
     pub extract: Vec<crate::domain::extract::Extract>,
     /// Return only these values instead of the whole body, e.g. ["$.data[0].id", "header:Location", "status"].
     /// Saves context on a big response; `json`, `body` and the headers are then left out. `[?(@.name=='Done')]`
-    /// keeps the array items whose field equals the value. If every path fails the whole response is returned with the reasons; if only some fail, the values that could be read come back and `problems` names the rest.
+    /// keeps the array items whose field equals the value. `jq:<program>` reshapes the whole body with a jq program
+    /// (e.g. "jq:[.items[] | {id, name}]"; pure, no files or network; several outputs come back as an array). On a 4xx or
+    /// 5xx the start of the body is returned as `error_body`, so the reason is not hidden. If every path fails the whole response is returned with the reasons; if only some fail, the values that could be read come back and `problems` names the rest.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub select: Option<Vec<String>>,
     /// Which response headers to return: `all`, `none`, or `relevant` (location, link, retry-after,
@@ -383,6 +385,9 @@ fn apply_header_mode(shaped: &mut AgentResponse, every_header: Vec<engine::NameV
 /// If a path could not be read (the server answered with an error page, say), the response is returned
 /// whole instead, with the reason in `problems`: the request has already been sent, and sending it
 /// again to see what came back could do its work twice.
+/// How much of an error answer's body is kept when `select` leaves the body out.
+const ERROR_BODY_CHARS: usize = 400;
+
 fn apply_select(shaped: &mut AgentResponse, raw: &ResponseData, paths: &[String], scrubber: &Scrubber) {
     let mut selected = BTreeMap::new();
     let mut failed = 0;
@@ -410,6 +415,13 @@ fn apply_select(shaped: &mut AgentResponse, raw: &ResponseData, paths: &[String]
         ));
     }
     shaped.selected = Some(selected);
+    // a 4xx or 5xx says why in its body: keep the start of it, since select would otherwise hide the reason
+    if raw.status >= 400 {
+        let text: String = scrubber.text(&raw.body).chars().take(ERROR_BODY_CHARS).collect();
+        if !text.trim().is_empty() {
+            shaped.error_body = Some(text);
+        }
+    }
     shaped.json = None;
     shaped.body = None;
     shaped.outline = None;
@@ -835,6 +847,26 @@ mod tests {
         let asked = SendParams { include_headers: Some("all".into()), ..params };
         apply_header_mode(&mut out, every, &asked);
         assert_eq!(out.headers.len(), 2);
+    }
+
+    #[test]
+    fn a_select_on_an_error_keeps_the_start_of_its_body_and_a_good_answer_keeps_none() {
+        let mut raw = response_with("<html>Forbidden: the token header is missing</html>");
+        raw.status = 403;
+        let mut out = shaped(serde_json::Value::Null);
+        out.json = None;
+        apply_select(&mut out, &raw, &["status".into()], &Scrubber::new(&PersistedState::default(), ""));
+        assert_eq!(out.error_body.as_deref(), Some("<html>Forbidden: the token header is missing</html>"));
+        assert!(out.body.is_none(), "the body itself is still left out");
+        let long = response_with(&"x".repeat(5000));
+        let mut bad = response_with(&"x".repeat(5000));
+        bad.status = 500;
+        let mut out = shaped(serde_json::Value::Null);
+        apply_select(&mut out, &bad, &["status".into()], &Scrubber::new(&PersistedState::default(), ""));
+        assert_eq!(out.error_body.as_deref().map(str::len), Some(ERROR_BODY_CHARS), "a few hundred characters, not the whole body");
+        let mut out = shaped(serde_json::Value::Null);
+        apply_select(&mut out, &long, &["status".into()], &Scrubber::new(&PersistedState::default(), ""));
+        assert!(out.error_body.is_none(), "a 200 has nothing to explain");
     }
 
     #[test]

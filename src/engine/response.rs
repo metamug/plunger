@@ -124,6 +124,10 @@ pub struct AgentResponse {
     /// The body as text, when it is not JSON or is too long to return whole.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
+    /// The first few hundred characters of the body of a 4xx or 5xx answer, when `select` left the body out:
+    /// the reason is usually in it ("body is not JSON" tells nothing, the 17 bytes it was do).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_body: Option<String>,
     /// The body was longer than the limit and has been cut; this is its full length in characters.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body_cut_from_chars: Option<usize>,
@@ -302,6 +306,7 @@ impl AgentResponse {
             size_bytes: r.size_bytes,
             json,
             body,
+            error_body: None,
             body_cut_from_chars,
             truncated_at_10mb: r.truncated,
             binary: r.binary.is_some(),

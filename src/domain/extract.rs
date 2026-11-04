@@ -83,6 +83,9 @@ pub fn check_source(spec: &str, bare_json: bool) -> Result<(), String> {
     if bare_json && (spec.starts_with('$') || spec.starts_with('[')) {
         return parse_path(spec).map(|_| ());
     }
+    if let (true, Some(program)) = (bare_json, spec.strip_prefix("jq:")) {
+        return crate::domain::transform::check(program).map_err(|m| format!("`jq:` {m}"));
+    }
     Err(format!("`{spec}` is not a source: use `json:$.path`, `header:Name` or `status`"))
 }
 
@@ -98,8 +101,13 @@ pub fn select(response: &ResponseData, spec: &str) -> Result<Value, String> {
             }
         });
     }
-    let path = spec.strip_prefix("json:").unwrap_or(spec);
     let text = response.raw_text.as_deref().unwrap_or(&response.body);
+    // `jq:<program>` reshapes the whole body (a pure program: no files, network or environment)
+    if let Some(program) = spec.strip_prefix("jq:") {
+        let value: Value = serde_json::from_str(text).map_err(|_| "the response body is not JSON".to_string())?;
+        return crate::domain::transform::run(program, &value);
+    }
+    let path = spec.strip_prefix("json:").unwrap_or(spec);
     let value: Value = serde_json::from_str(text).map_err(|_| "the response body is not JSON".to_string())?;
     json_path(&value, path)
 }
@@ -392,6 +400,19 @@ mod tests {
         assert_eq!(json_path(&v, "$.fields.assignee.avatars[0].url").unwrap(), json!(null));
         assert!(json_path(&v, "$.fields.reporter").unwrap_err().contains("no `reporter`"));
         assert!(json_path(&v, "$.fields.labels[0]").unwrap_err().contains("array has 0"));
+    }
+
+    #[test]
+    fn select_can_reshape_the_body_with_jq() {
+        let r = response(r#"{"items": [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}], "total": 2}"#);
+        assert_eq!(select(&r, "jq:[.items[].name]").unwrap(), json!(["a", "b"]));
+        assert_eq!(select(&r, "jq:.items | map({id, n: .name})").unwrap(), json!([{"id": 1, "n": "a"}, {"id": 2, "n": "b"}]));
+        assert_eq!(select(&r, "jq:.items[] | .id").unwrap(), json!([1, 2]), "several outputs come back as an array");
+        assert!(select(&response("not json"), "jq:.a").unwrap_err().contains("not JSON"));
+        // a mistake is found before anything is sent; and jq is for `select`, not for `extract`
+        assert!(check_source("jq:.items[", true).is_err());
+        assert!(check_source("jq:.items | length", true).is_ok());
+        assert!(check_source("jq:.a", false).is_err());
     }
 
     #[test]

@@ -1115,6 +1115,7 @@ mod tests {
             size_bytes: body.len(),
             json: None,
             body: None,
+            error_body: None,
             body_cut_from_chars: None,
             truncated_at_10mb: false,
             binary: false,
